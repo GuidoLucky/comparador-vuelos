@@ -8,7 +8,6 @@ app.use(express.static('public'));
 const PORT = process.env.PORT || 3000;
 const SCIWEB_USER = process.env.SCIWEB_USER;
 const SCIWEB_PASS = process.env.SCIWEB_PASS;
-
 const API_BASE = 'https://api-gwc.glas.travel/api';
 const COMPANY_ID = '3036';
 const WHOLESALER_ID = '538';
@@ -18,13 +17,7 @@ let tokenCache = { token: null, expiry: 0 };
 async function getToken() {
   if (tokenCache.token && Date.now() < tokenCache.expiry) return tokenCache.token;
   console.log('[Auth] Obteniendo token...');
-  const body = new URLSearchParams({
-    mode: 'pass',
-    username: SCIWEB_USER,
-    password: SCIWEB_PASS,
-    channel: 'GWC',
-    defaultWholesalerId: WHOLESALER_ID
-  });
+  const body = new URLSearchParams({ mode: 'pass', username: SCIWEB_USER, password: SCIWEB_PASS, channel: 'GWC', defaultWholesalerId: WHOLESALER_ID });
   const res = await fetch(`${API_BASE}/Account/token`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'Origin': 'https://sciweb.tucanotours.com.ar', 'Referer': 'https://sciweb.tucanotours.com.ar/' },
@@ -49,38 +42,6 @@ function getHeaders(token) {
 }
 
 app.get('/', (req, res) => res.sendFile(path.join(__dirname, 'public', 'index.html')));
-app.get('/debug-search', async (req, res) => {
-  try {
-    const token = await getToken();
-    const payload = {
-      DepartCode: 'BUE', ArrivalCode: 'MIA',
-      DepartDate: '2026-03-28T00:00:00', ArrivalDate: '2026-04-04T00:00:00',
-      ArrivalTime: null, DepartTime: null,
-      Adults: 2, Childs: 0, Infants: 0,
-      CabinType: null, Stops: null, Airlines: [],
-      TypeOfFlightAllowedInItinerary: 3, SortByGLASAlgorithm: null,
-      AlternateCurrencyCode: 'USD', CorporationCodeGlas: null, IncludeFiltersOptions: true
-    };
-    const searchRes = await fetch(`${API_BASE}/FlightSearch/RoundTripRemake`, {
-      method: 'POST', headers: getHeaders(token), body: JSON.stringify(payload)
-    });
-    const data = await searchRes.json();
-    // Devolver estructura sin minifiedQuotations para ver legs y flights
-    // Buscar la primera quotation con legs expandidos
-    const q = data.minifiedQuotations?.[0];
-    // Los legs pueden estar en minifiedLegs como objeto indexado por ID
-    const legsObj = data.minifiedLegs;
-    res.json({
-      minifiedLegsType: typeof legsObj,
-      minifiedLegsIsArray: Array.isArray(legsObj),
-      minifiedLegsKeys: legsObj ? Object.keys(legsObj).slice(0,5) : null,
-      firstLegById: legsObj ? legsObj["L_1"] || legsObj[Object.keys(legsObj)[0]] : null,
-      quotationLegs: q?.legs,
-      fullQuotation: q
-    });
-  } catch(e) { res.json({ error: e.message }); }
-});
-
 app.get('/health', (req, res) => res.json({ ok: true, configured: !!(SCIWEB_USER && SCIWEB_PASS) }));
 
 app.post('/buscar-vuelos', async (req, res) => {
@@ -89,41 +50,31 @@ app.post('/buscar-vuelos', async (req, res) => {
   try {
     const token = await getToken();
     const payload = {
-      SearchTravelType: 1,
-      OneWayModel: null,
-      MultipleLegsModel: null,
-      RoundTripModel: {
-        DepartCode: origen, ArrivalCode: destino,
-        DepartDate: `${salida}T00:00:00`, ArrivalDate: `${regreso}T00:00:00`,
-        ArrivalTime: null, DepartTime: null,
-        Adults: parseInt(adultos), Childs: parseInt(ninos), Infants: parseInt(infantes),
-        CabinType: null, Stops: null, Airlines: [],
-        TypeOfFlightAllowedInItinerary: 3, SortByGLASAlgorithm: null,
-        AlternateCurrencyCode: 'USD', CorporationCodeGlas: null, IncludeFiltersOptions: true
-      }
+      DepartCode: origen, ArrivalCode: destino,
+      DepartDate: `${salida}T00:00:00`, ArrivalDate: `${regreso}T00:00:00`,
+      ArrivalTime: null, DepartTime: null,
+      Adults: parseInt(adultos), Childs: parseInt(ninos), Infants: parseInt(infantes),
+      CabinType: null, Stops: null, Airlines: [],
+      TypeOfFlightAllowedInItinerary: 3, SortByGLASAlgorithm: null,
+      AlternateCurrencyCode: 'USD', CorporationCodeGlas: null, IncludeFiltersOptions: true
     };
 
-    // Paso 1: AddSearch - guarda el historial y devuelve searchId
-    const addRes = await fetch(`${API_BASE}/FlightSearchHistory/AddSearch`, {
-      method: 'POST', headers: getHeaders(token), body: JSON.stringify(payload)
+    await fetch(`${API_BASE}/FlightSearchHistory/AddSearch`, {
+      method: 'POST', headers: getHeaders(token),
+      body: JSON.stringify({ SearchTravelType: 1, OneWayModel: null, MultipleLegsModel: null, RoundTripModel: payload })
     });
-    console.log('[Vuelos] AddSearch status:', addRes.status);
 
-    // Paso 2: RoundTripRemake con el mismo payload
-    // RoundTripRemake recibe solo el RoundTripModel, no el wrapper
     const searchRes = await fetch(`${API_BASE}/FlightSearch/RoundTripRemake`, {
-      method: 'POST', headers: getHeaders(token), body: JSON.stringify(payload.RoundTripModel)
+      method: 'POST', headers: getHeaders(token), body: JSON.stringify(payload)
     });
 
     if (!searchRes.ok) {
       const errText = await searchRes.text();
       throw new Error(`API error: ${searchRes.status} - ${errText.substring(0, 300)}`);
     }
+
     const data = await searchRes.json();
-    console.log(`[Vuelos] ${data.minifiedQuotations?.length || 0} resultados`)
-    console.log('[Vuelos] Keys:', Object.keys(data).join(','))
-    if (data.minifiedLegs) console.log('[Vuelos] firstLeg:', JSON.stringify(data.minifiedLegs[0]))
-    if (data.minifiedAirlinesInformation) console.log('[Vuelos] firstAirline:', JSON.stringify(data.minifiedAirlinesInformation[0]));
+    console.log(`[Vuelos] ${data.minifiedQuotations?.length || 0} resultados`);
 
     const vuelos = procesarVuelos(data);
     res.json({ ok: true, vuelos, total: data.minifiedQuotations?.length || 0 });
@@ -136,52 +87,62 @@ app.post('/buscar-vuelos', async (req, res) => {
 
 function procesarVuelos(data) {
   if (!data.minifiedQuotations) return [];
-  const legsMap = {};
-  const flightsMap = {};
-  if (data.legs) data.legs.forEach(l => legsMap[l.legId] = l);
-  if (data.flights) data.flights.forEach(f => flightsMap[f.flightId] = f);
+  const legsMap = data.minifiedLegs || {};
+  const airlinesMap = data.minifiedAirlinesInformation || {};
 
   return data.minifiedQuotations
     .filter(q => !q.error)
-    .slice(0, 30)
     .map(q => {
       const itinerario = q.legs.map(legId => {
         const leg = legsMap[legId];
         if (!leg) return null;
-        const segmentos = (leg.flightIds || []).map(fId => {
-          const f = flightsMap[fId];
-          if (!f) return null;
-          return {
-            numero: `${f.marketingCarrier}${f.flightNumber}`,
-            aerolinea: f.marketingCarrier,
-            origen: f.departureAirportCode,
-            destino: f.arrivalAirportCode,
-            salida: f.departureDate,
-            llegada: f.arrivalDate,
-          };
-        }).filter(Boolean);
+
+        // Segmentos del leg (vuelos individuales)
+        const segmentos = [];
+        if (leg.connectingCityCodesList) {
+          // tiene escalas
+          const ciudades = [leg.originAirportCode, ...leg.connectingCityCodesList, leg.destinationAirportCode];
+          for (let i = 0; i < ciudades.length - 1; i++) {
+            segmentos.push({ origen: ciudades[i], destino: ciudades[i+1] });
+          }
+        }
+
+        const escalas = leg.connectingCityCodesList?.length || 0;
         return {
-          origen: leg.departureAirportCode || segmentos[0]?.origen,
-          destino: leg.arrivalAirportCode || segmentos[segmentos.length-1]?.destino,
-          salida: leg.departureDate || segmentos[0]?.salida,
-          llegada: leg.arrivalDate || segmentos[segmentos.length-1]?.llegada,
-          duracion: leg.totalDuration,
-          escalas: Math.max(0, (leg.flightIds?.length || 1) - 1),
-          segmentos
+          legId,
+          origen: leg.originAirportCode,
+          destino: leg.destinationAirportCode,
+          salida: leg.departure,
+          llegada: leg.arrival,
+          duracionMin: leg.elapsedFlightTimeInMinutes,
+          duracion: leg.elapsedFlightTimeInMinutesFormatted,
+          escalas,
+          ciudadesEscala: leg.connectingCityCodesList || [],
+          aerolineas: leg.involvedAirlines,
+          tripDays: leg.tripDays || 0,
+          overnight: leg.overNight || false
         };
       }).filter(Boolean);
 
       const equipaje = q.legsWithBaggageAllowance?.[0]?.baggageAllowance;
+      const checkedBag = equipaje?.checked?.[0];
+      const carryOn = equipaje?.carryOn?.[0];
+
+      // Escalas totales del viaje (max de los dos tramos)
+      const maxEscalas = Math.max(...itinerario.map(l => l.escalas));
+
       return {
         id: q.quotationId,
         aerolinea: q.validatingCarrier,
-        aerolineaDesc: q.sourceDescription || q.source,
+        aerolineaDesc: airlinesMap[q.validatingCarrier] || q.sourceDescription || q.source,
         precio: q.grandTotalSellingPriceAmount,
         moneda: q.grandTotalSellingPriceCurrency || 'USD',
         expira: q.offerExpirationTimeCTZ,
         itinerario,
-        maleta: equipaje?.checked?.[0]?.weight ? `${equipaje.checked[0].weight}${equipaje.checked[0].unit}` : 'Sin maleta',
-        handBag: equipaje?.carryOn?.length > 0 ? 'Incluido' : 'No incluido'
+        escalas: maxEscalas,
+        maleta: checkedBag ? (checkedBag.pieces > 0 ? `${checkedBag.pieces} maleta` : checkedBag.weight ? `${checkedBag.weight}${checkedBag.unit}` : 'Sin maleta') : 'Sin maleta',
+        handBag: carryOn ? 'Incluido' : 'No incluido',
+        source: q.source
       };
     })
     .sort((a, b) => a.precio - b.precio);
