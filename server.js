@@ -12,13 +12,7 @@ const COMPANY_ID = '3036';
 const WHOLESALER_ID = '538';
 
 // DB
-let db;
-try {
-  db = require('./db');
-  console.log('[DB] SQLite conectado');
-} catch(e) {
-  console.warn('[DB] Sin SQLite:', e.message);
-}
+const db = require('./db');
 
 let tokenCache = { token: null, expiry: 0 };
 
@@ -217,9 +211,12 @@ app.post('/check-availability', async (req, res) => {
       method:'POST', headers: getHeaders(token),
       body: JSON.stringify({ CompanyAssociationId: parseInt(COMPANY_ID), SearchId: searchId, QuotationId: String(quotationId) })
     });
-    const data = await r.json();
-    res.json({ ok:true, ...data });
+    const text = await r.text();
+    let data = {};
+    try { data = JSON.parse(text); } catch(e) { console.warn('[CheckAvail] respuesta no-JSON:', text.substring(0,100)); }
+    res.json({ ok:true, hasDifferences: data.hasDifferences || false, ...data });
   } catch(e) {
+    console.error('[CheckAvail] Error:', e.message);
     res.json({ ok:false, error: e.message });
   }
 });
@@ -232,10 +229,13 @@ app.get('/document-countries', async (req, res) => {
     const r = await fetch(`${API_BASE}/FlightBooking/GetDocumentCountries?documentFor=${documentFor}&includeDocumentTypes=True`, {
       headers: getHeaders(token)
     });
-    const data = await r.json();
-    res.json({ ok:true, data });
+    const text = await r.text();
+    let data = [];
+    try { data = JSON.parse(text); } catch(e) { console.warn('[DocCountries] respuesta no-JSON:', text.substring(0,100)); }
+    res.json({ ok:true, data: Array.isArray(data) ? data : [] });
   } catch(e) {
-    res.json({ ok:false, error: e.message });
+    console.error('[DocCountries] Error:', e.message);
+    res.json({ ok:false, error: e.message, data: [] });
   }
 });
 
