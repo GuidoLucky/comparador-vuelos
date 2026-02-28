@@ -187,6 +187,18 @@ header{background:var(--dark2);border-bottom:1px solid var(--border);padding:14p
 .badge-emitida{background:rgba(40,167,69,0.2);color:#28a745;}
 .badge-cancelada{background:rgba(220,53,69,0.2);color:#dc3545;}
 .pnr-code{font-family:monospace;font-size:15px;font-weight:700;color:var(--gold);letter-spacing:2px;}
+
+.cotizar-check{display:flex;align-items:center;gap:6px;font-size:11px;color:var(--muted);margin-top:6px;cursor:pointer;}
+.cotizar-check input[type=checkbox]{accent-color:var(--gold);width:14px;height:14px;cursor:pointer;}
+.cotizar-check:hover{color:var(--text);}
+.cotizar-bar{position:fixed;bottom:0;left:0;right:0;background:var(--dark2);border-top:1px solid var(--gold);padding:12px 24px;display:flex;align-items:center;gap:12px;z-index:100;transform:translateY(100%);transition:transform 0.3s;}
+.cotizar-bar.show{transform:translateY(0);}
+.cotizar-bar-txt{color:var(--gold);font-weight:700;font-size:13px;}
+.cotizar-bar select{background:var(--dark3);border:1px solid var(--border);border-radius:6px;color:var(--text);font-family:'Sora',sans-serif;font-size:12px;padding:6px 10px;outline:none;}
+.cotizar-bar select:focus{border-color:var(--gold);}
+.btn-cotizar-gen{background:var(--gold);color:#000;border:none;border-radius:7px;font-family:'Sora',sans-serif;font-size:13px;font-weight:700;padding:9px 20px;cursor:pointer;}
+.btn-cotizar-gen:disabled{opacity:0.5;cursor:not-allowed;}
+.btn-cotizar-cancel{background:none;border:1px solid var(--border);color:var(--muted);border-radius:7px;font-family:'Sora',sans-serif;font-size:12px;padding:8px 14px;cursor:pointer;}
 </style>
 </head>
 <body>
@@ -393,6 +405,9 @@ function renderVuelo(v){
         ${pax>1?`<div class="precio-pax">≈ ${fmtPrecio(precio/pax)} por pax</div>`:''}
         ${renderEquipaje(v.equipaje)}
         <div class="precio-expira ${urgente?'urgente':''}">${expiraStr}</div>
+        <label class="cotizar-check">
+          <input type="checkbox" onchange="toggleCotizar('${v.id}','${searchIdActual}',this.checked)"> Cotizar
+        </label>
         <button class="btn-detalle" onclick="verDetalle('${v.id}','${searchIdActual}',event)">📊 Ver precio</button>
       <div class="detalle-panel" data-detalle="${v.id}"></div>
         <button class="btn-reservar" onclick="abrirReserva('${v.id}','${searchIdActual}',event)">✈ Reservar</button>
@@ -1091,6 +1106,69 @@ async function cargarReservas() {
   } catch(e) { cont.innerHTML = `<div class="no-results">Error: ${e.message}</div>`; }
 }
 
+// ─── COTIZACIÓN ───
+let vuelosCotizar = []; // [{quotationId, searchId}]
+
+function toggleCotizar(quotationId, searchId, checked) {
+  if (checked) {
+    if (!vuelosCotizar.find(v => v.quotationId === quotationId)) {
+      vuelosCotizar.push({ quotationId, searchId });
+    }
+  } else {
+    vuelosCotizar = vuelosCotizar.filter(v => v.quotationId !== quotationId);
+  }
+  actualizarBarraCotizar();
+}
+
+function actualizarBarraCotizar() {
+  const bar = document.getElementById('cotizarBar');
+  const cnt = document.getElementById('cotizarCount');
+  if (vuelosCotizar.length > 0) {
+    bar.classList.add('show');
+    cnt.textContent = vuelosCotizar.length === 1 ? '1 vuelo seleccionado' : vuelosCotizar.length + ' vuelos seleccionados';
+  } else {
+    bar.classList.remove('show');
+  }
+}
+
+function limpiarCotizacion() {
+  vuelosCotizar = [];
+  document.querySelectorAll('.cotizar-check input[type=checkbox]').forEach(cb => cb.checked = false);
+  actualizarBarraCotizar();
+}
+
+async function generarCotizacion() {
+  if (!vuelosCotizar.length) return;
+  const btn = document.getElementById('btnGenerarCot');
+  btn.disabled = true;
+  btn.textContent = '⏳ Generando...';
+  try {
+    const vendedor = document.getElementById('cotizarVendedor').value;
+    const r = await fetch('/generar-cotizacion', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ opciones: vuelosCotizar, vendedor })
+    });
+    if (!r.ok) {
+      const err = await r.json();
+      throw new Error(err.error || 'Error al generar');
+    }
+    const blob = await r.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'cotizacion_lucky_tour.pdf';
+    a.click();
+    URL.revokeObjectURL(url);
+    limpiarCotizacion();
+  } catch(e) {
+    alert('Error: ' + e.message);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = '📄 Generar PDF';
+  }
+}
+
 function verDetalleReserva(id) { alert('Detalle de reserva #' + id + ' — próximamente'); }
 
 cargarMarkup();
@@ -1099,5 +1177,15 @@ cargarMarkup();
 </script>
 
 
+<div class="cotizar-bar" id="cotizarBar">
+  <span class="cotizar-bar-txt" id="cotizarCount">0 vuelos seleccionados</span>
+  <select id="cotizarVendedor">
+    <option value="guido">Guido</option>
+    <option value="julieta">Julieta</option>
+    <option value="ruthy">Ruthy</option>
+  </select>
+  <button class="btn-cotizar-gen" id="btnGenerarCot" onclick="generarCotizacion()">📄 Generar PDF</button>
+  <button class="btn-cotizar-cancel" onclick="limpiarCotizacion()">✕ Cancelar</button>
+</div>
 </body>
 </html>
