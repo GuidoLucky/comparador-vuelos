@@ -1041,6 +1041,7 @@ async function verDetalle(quotationId, searchId, e) {
         '<div class="detalle-row"><span class="detalle-label">Tarifa base</span><span class="detalle-valor">' + d.moneda + ' ' + p.tarifa.toFixed(2) + '</span></div>' +
         '<div class="detalle-row"><span class="detalle-label">Impuestos</span><span class="detalle-valor">' + d.moneda + ' ' + p.impuestos.toFixed(2) + '</span></div>' +
         '<div class="detalle-row"><span class="detalle-label">Fee Tucano</span><span class="detalle-valor">' + d.moneda + ' ' + p.fee.toFixed(2) + '</span></div>' +
+        (p.descuento > 0 ? '<div class="detalle-row" style="color:#28a745"><span class="detalle-label">Descuento (com/over)</span><span>-' + d.moneda + ' ' + p.descuento.toFixed(2) + '</span></div>' : '') +
         '<div class="detalle-row total"><span>Total Tucano</span><span>' + d.moneda + ' ' + p.total.toFixed(2) + '</span></div>' +
         '</div>';
     }).join('');
