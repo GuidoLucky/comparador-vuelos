@@ -41,18 +41,31 @@ function getHeaders(token) {
 }
 
 app.get('/', (req, res) => res.sendFile(path.join(__dirname, 'public', 'index.html')));
-// Tipo de cambio USD -> ARS (dólar blue via bluelytics)
-let tcCache = { valor: null, expiry: 0 };
+// Tipo de cambio BSP (Jazz Operador)
+let tcCache = { bsp: null, expiry: 0 };
 app.get('/tipo-cambio', async (req, res) => {
   try {
-    if (tcCache.valor && Date.now() < tcCache.expiry) return res.json({ usd_ars: tcCache.valor });
-    const r = await fetch('https://api.bluelytics.com.ar/v2/latest');
-    const d = await r.json();
-    const valor = d.blue?.value_sell || d.official?.value_sell || 1200;
-    tcCache = { valor, expiry: Date.now() + 30 * 60 * 1000 };
-    res.json({ usd_ars: valor });
+    if (tcCache.bsp && Date.now() < tcCache.expiry) return res.json({ bsp: tcCache.bsp });
+    const r = await fetch('https://jazzoperador.tur.ar/cotizacion-historica/');
+    const html = await r.text();
+    // Parsear la tabla: buscar la primera fila con valor BSP válido
+    const rows = html.match(/<tr[^>]*>[\s\S]*?<\/tr>/gi) || [];
+    let bsp = null;
+    for (const row of rows) {
+      const cells = row.match(/<td[^>]*>([\s\S]*?)<\/td>/gi) || [];
+      if (cells.length >= 2) {
+        const bspText = cells[1].replace(/<[^>]+>/g, '').trim().replace('.', '').replace(',', '.');
+        const val = parseFloat(bspText);
+        if (!isNaN(val) && val > 100) { bsp = val; break; }
+      }
+    }
+    if (!bsp) bsp = 1425; // fallback
+    tcCache = { bsp, expiry: Date.now() + 60 * 60 * 1000 }; // cache 1 hora
+    console.log('[BSP] Tipo de cambio BSP:', bsp);
+    res.json({ bsp });
   } catch(e) {
-    res.json({ usd_ars: tcCache.valor || 1200 });
+    console.error('[BSP] Error:', e.message);
+    res.json({ bsp: tcCache.bsp || 1425 });
   }
 });
 
