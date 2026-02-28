@@ -118,7 +118,14 @@ app.post('/buscar-vuelos', async (req, res) => {
     }
 
     const data = await searchRes.json();
-    console.log(`[Vuelos] ${data.minifiedQuotations?.length || 0} resultados`);
+    console.log(`[Vuelos] ${data.minifiedQuotations?.length || 0} resultados`)
+    // Debug: ver estructura de legs para entender escalas
+    const legsDebug = data.minifiedLegs || {};
+    const firstKeys = Object.keys(legsDebug).slice(0,3);
+    firstKeys.forEach(k => {
+      const l = legsDebug[k];
+      console.log(`[Leg ${k}] connecting=${JSON.stringify(l.connectingCityCodesList)} hasTech=${l.hasTechnicalStops} typeOfFlight=${l.typeOfFlight}`);
+    });;
 
     const vuelos = procesarVuelos(data, stopsFilter);
     res.json({ ok:true, vuelos, total: data.minifiedQuotations?.length || 0 });
