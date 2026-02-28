@@ -55,23 +55,16 @@ app.post('/buscar-vuelos', async (req, res) => {
 
     if (tipo === 'oneway') {
       // ONE WAY - usa MultipleLegs con un solo tramo
-      endpoint = `${API_BASE}/FlightSearch/MultipleLegsRemake`;
+      endpoint = `${API_BASE}/FlightSearch/OnewayRemake`;
       payload = {
-        Legs: [{
-          LegNumber: 1,
-          DepartCode: origen,
-          ArrivalCode: destino,
-          DepartDate: `${salida}T00:00:00`,
-          DepartTime: null,
-          CabinType: null,
-          Stops: stopsVal,
-          Airlines: []
-        }],
+        DepartCode: origen, ArrivalCode: destino,
+        DepartDate: `${salida}T00:00:00`, DepartTime: null,
         Adults: parseInt(adultos), Childs: parseInt(ninos), Infants: parseInt(infantes),
-        TypeOfFlightAllowedInItinerary: 3, SortByGLASAlgorithm: null,
+        CabinType: null, Stops: stopsVal, Airlines: [],
+        TypeOfFlightAllowedInItinerary: null, SortByGLASAlgorithm: null,
         AlternateCurrencyCode: 'USD', CorporationCodeGlas: null, IncludeFiltersOptions: true
       };
-      addSearchPayload = { SearchTravelType: 2, OneWayModel: null, MultipleLegsModel: payload, RoundTripModel: null };
+      addSearchPayload = { SearchTravelType: 2, OneWayModel: payload, MultipleLegsModel: null, RoundTripModel: null };
 
     } else if (tipo === 'roundtrip') {
       // ROUND TRIP
@@ -82,14 +75,14 @@ app.post('/buscar-vuelos', async (req, res) => {
         ArrivalTime: null, DepartTime: null,
         Adults: parseInt(adultos), Childs: parseInt(ninos), Infants: parseInt(infantes),
         CabinType: null, Stops: stopsVal, Airlines: [],
-        TypeOfFlightAllowedInItinerary: 3, SortByGLASAlgorithm: null,
+        TypeOfFlightAllowedInItinerary: null, SortByGLASAlgorithm: null,
         AlternateCurrencyCode: 'USD', CorporationCodeGlas: null, IncludeFiltersOptions: true
       };
       addSearchPayload = { SearchTravelType: 1, OneWayModel: null, MultipleLegsModel: null, RoundTripModel: payload };
 
     } else if (tipo === 'multidestino') {
       // MULTIDESTINO
-      endpoint = `${API_BASE}/FlightSearch/MultipleLegsRemake`;
+      endpoint = `${API_BASE}/FlightSearch/OnewayRemake`;
       const legs = tramos.map((t, i) => ({
         LegNumber: i + 1,
         DepartCode: t.origen,
@@ -103,7 +96,7 @@ app.post('/buscar-vuelos', async (req, res) => {
       payload = {
         Legs: legs,
         Adults: parseInt(adultos), Childs: parseInt(ninos), Infants: parseInt(infantes),
-        TypeOfFlightAllowedInItinerary: 3, SortByGLASAlgorithm: null,
+        TypeOfFlightAllowedInItinerary: null, SortByGLASAlgorithm: null,
         AlternateCurrencyCode: 'USD', CorporationCodeGlas: null, IncludeFiltersOptions: true
       };
       addSearchPayload = { SearchTravelType: 3, OneWayModel: null, MultipleLegsModel: payload, RoundTripModel: null };
