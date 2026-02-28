@@ -245,6 +245,8 @@ app.post('/crear-reserva', async (req, res) => {
   try {
     const token = await getToken();
 
+    const ARG_ID = '3144952d-b7f4-4ddf-9ed8-8021bfc67c4b';
+    function sv(v) { return (v && v !== 'undefined') ? v : null; }
     function buildPax(p, i, tipo) {
       const typeNum = tipo==='ADT'?0:tipo==='CHD'?1:2;
       return {
