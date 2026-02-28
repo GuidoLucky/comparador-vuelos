@@ -511,7 +511,6 @@ function getDocTipoOpts(paisId, selectedId) {
 }
 function getFactTipoOpts(paisId, selectedId) {
   const pais = paisesFactData.find(p=>p.id===paisId) || paisesData.find(p=>p.id===paisId);
-  console.log('[FactTipo] paisId:', paisId, 'pais:', pais?.name, 'tipos:', pais?.documentTypes?.length, 'paisesFactData len:', paisesFactData.length);
   const tipos = pais?.documentTypes || [];
   return tipos.map(t => `<option value="${t.id}" data-code="${t.code}" ${t.id===selectedId?'selected':''}>${t.name}</option>`).join('');
 }
@@ -605,10 +604,11 @@ function renderModalReserva(searchId, quotationId, hasDiff) {
 
 function renderPaxForm(idx) {
   const pax = pasajerosForms[idx];
-  const paisDefId = getPaisDefaultId();
   const saved = pax.data || {};
-  const docPaisId = saved.docPaisId || paisDefId;
-  const factPaisId = saved.factPaisId || paisDefId;
+  const argId = paisesData.find(p=>p.name==='Argentina')?.id || paisesData[0]?.id || '';
+  const docPaisId = saved.docPaisId || argId;
+  const factPaisId = saved.factPaisId || argId;
+  const paisDefId = argId;
 
   document.getElementById('paxForm').innerHTML = `
     <div class="cliente-search" style="margin-bottom:14px">
