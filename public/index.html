@@ -498,17 +498,17 @@ async function cargarPaises() {
 }
 
 function getPaisOpts(selectedId) {
-  return paisesData.map(p => `<option value="${p.Id}" ${p.Id===selectedId?'selected':''}>${p.Name}</option>`).join('');
+  return paisesData.map(p => `<option value="${p.Id}" ${p.id===selectedId?'selected':''}>${p.name}</option>`).join('');
 }
 function getDocTipoOpts(paisId, selectedId) {
-  const pais = paisesData.find(p=>p.Id===paisId);
-  const tipos = pais?.DocumentTypes || [];
-  return tipos.map(t => `<option value="${t.Id}" data-code="${t.Code}" ${t.Id===selectedId?'selected':''}>${t.Name}</option>`).join('');
+  const pais = paisesData.find(p=>p.id===paisId);
+  const tipos = pais?.documentTypes || [];
+  return tipos.map(t => `<option value="${t.id}" data-code="${t.code}" ${t.id===selectedId?'selected':''}>${t.name}</option>`).join('');
 }
 function getFactTipoOpts(paisId, selectedId) {
-  const pais = paisesData.find(p=>p.Id===paisId);
-  const tipos = pais?.AccountingDocumentTypes || pais?.DocumentTypes || [];
-  return tipos.map(t => `<option value="${t.Id}" data-code="${t.Code}" ${t.Id===selectedId?'selected':''}>${t.Name}</option>`).join('');
+  const pais = paisesData.find(p=>p.id===paisId);
+  const tipos = pais?.accountingDocumentTypes || pais?.documentTypes || [];
+  return tipos.map(t => `<option value="${t.id}" data-code="${t.code}" ${t.id===selectedId?'selected':''}>${t.name}</option>`).join('');
 }
 
 // País por defecto Argentina
@@ -684,8 +684,8 @@ function renderPaxForm(idx) {
   `;
 
   // Guardar valores iniciales
-  if (docPaisId) { guardarPaxField(idx,'docPaisId',docPaisId); guardarPaxField(idx,'docPais', paisesData.find(p=>p.Id===docPaisId)?.Name||''); }
-  if (factPaisId) { guardarPaxField(idx,'factPaisId',factPaisId); guardarPaxField(idx,'factPais', paisesData.find(p=>p.Id===factPaisId)?.Name||''); }
+  if (docPaisId) { guardarPaxField(idx,'docPaisId',docPaisId); guardarPaxField(idx,'docPais', paisesData.find(p=>p.id===docPaisId)?.Name||''); }
+  if (factPaisId) { guardarPaxField(idx,'factPaisId',factPaisId); guardarPaxField(idx,'factPais', paisesData.find(p=>p.id===factPaisId)?.name||''); }
 }
 
 function guardarPaxField(idx, campo, valor) {
