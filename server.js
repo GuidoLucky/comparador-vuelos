@@ -290,6 +290,7 @@ app.post('/crear-reserva', async (req, res) => {
       OnBehalfOfUserName: null
     };
 
+    console.log('[Reserva] pasajeros recibidos:', JSON.stringify(pasajeros, null, 2));
     console.log('[Reserva] Payload:', JSON.stringify(bookPayload, null, 2));
     const r = await fetch(`${API_BASE}/FlightReservation/CreateReservationRemake`, {
       method:'POST', headers: getHeaders(token), body: JSON.stringify(bookPayload)
