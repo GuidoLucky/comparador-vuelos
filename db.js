@@ -71,6 +71,13 @@ async function init() {
       email TEXT
     );
   `);
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS config (
+      clave TEXT PRIMARY KEY,
+      valor TEXT,
+      updated_at TIMESTAMP DEFAULT NOW()
+    );
+  `);
   console.log('[DB] PostgreSQL listo');
 }
 
