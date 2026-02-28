@@ -49,6 +49,35 @@ function getHeaders(token) {
 }
 
 app.get('/', (req, res) => res.sendFile(path.join(__dirname, 'public', 'index.html')));
+app.get('/debug-search', async (req, res) => {
+  try {
+    const token = await getToken();
+    const payload = {
+      DepartCode: 'BUE', ArrivalCode: 'MIA',
+      DepartDate: '2026-03-28T00:00:00', ArrivalDate: '2026-04-04T00:00:00',
+      ArrivalTime: null, DepartTime: null,
+      Adults: 2, Childs: 0, Infants: 0,
+      CabinType: null, Stops: null, Airlines: [],
+      TypeOfFlightAllowedInItinerary: 3, SortByGLASAlgorithm: null,
+      AlternateCurrencyCode: 'USD', CorporationCodeGlas: null, IncludeFiltersOptions: true
+    };
+    const searchRes = await fetch(`${API_BASE}/FlightSearch/RoundTripRemake`, {
+      method: 'POST', headers: getHeaders(token), body: JSON.stringify(payload)
+    });
+    const data = await searchRes.json();
+    // Devolver estructura sin minifiedQuotations para ver legs y flights
+    res.json({
+      keys: Object.keys(data),
+      legsCount: data.legs?.length,
+      flightsCount: data.flights?.length,
+      quotationsCount: data.minifiedQuotations?.length,
+      firstLeg: data.legs?.[0],
+      firstFlight: data.flights?.[0],
+      firstQuotation: data.minifiedQuotations?.[0]
+    });
+  } catch(e) { res.json({ error: e.message }); }
+});
+
 app.get('/health', (req, res) => res.json({ ok: true, configured: !!(SCIWEB_USER && SCIWEB_PASS) }));
 
 app.post('/buscar-vuelos', async (req, res) => {
