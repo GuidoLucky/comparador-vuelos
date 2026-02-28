@@ -71,12 +71,16 @@ app.post('/buscar-vuelos', async (req, res) => {
       }
     };
 
-    await fetch(`${API_BASE}/FlightSearchHistory/AddSearch`, {
+    // Paso 1: AddSearch - guarda el historial y devuelve searchId
+    const addRes = await fetch(`${API_BASE}/FlightSearchHistory/AddSearch`, {
       method: 'POST', headers: getHeaders(token), body: JSON.stringify(payload)
     });
+    console.log('[Vuelos] AddSearch status:', addRes.status);
 
+    // Paso 2: RoundTripRemake con el mismo payload
+    // RoundTripRemake recibe solo el RoundTripModel, no el wrapper
     const searchRes = await fetch(`${API_BASE}/FlightSearch/RoundTripRemake`, {
-      method: 'POST', headers: getHeaders(token), body: JSON.stringify(payload)
+      method: 'POST', headers: getHeaders(token), body: JSON.stringify(payload.RoundTripModel)
     });
 
     if (!searchRes.ok) {
