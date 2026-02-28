@@ -491,3 +491,106 @@ app.post('/config-markup', async (req, res) => {
     res.json({ ok: true });
   } catch(e) { res.json({ ok: false, error: e.message }); }
 });
+
+// ─── COTIZACIÓN PDF ───
+const { execFile } = require('child_process');
+const fsModule = require('fs');
+const pathModule = require('path');
+
+app.post('/generar-cotizacion', async (req, res) => {
+  const { opciones, vendedor } = req.body;
+  try {
+    const token = await getToken();
+
+    // Para cada opción, traer el detalle de precio
+    const opcionesCompletas = await Promise.all(opciones.map(async (op) => {
+      const r = await fetch(`${API_BASE}/FlightSearch/ItineraryDetailRemake?searchId=${op.searchId}&quotationId=${op.quotationId}`, {
+        headers: getHeaders(token)
+      });
+      const text = await r.text();
+      let d;
+      try { d = JSON.parse(text); } catch(e) { throw new Error('Error al obtener detalle del vuelo'); }
+
+      const q = d.quote;
+      const amounts = q.amounts?.originalAmounts || {};
+      const rates = q.flightRates || [];
+
+      // Armar pasajeros con neto y comisión
+      const pasajeros = rates.map(rate => {
+        const neto = rate.sellingPriceAmount;
+        const comOver = (rate.commissionRule?.ceded?.valueApplied || 0) + (rate.overCommissionRule?.ceded?.valueApplied || 0);
+        const tipoTarifa = rate.fareType === 'PNEG' ? 'PNEG' : 'PUB';
+        const tipoLabel = rate.passengerTypeCode === 'ADT' ? 'adulto' : rate.passengerTypeCode === 'CHD' ? 'menor' : 'infante';
+        return {
+          tipo: tipoLabel,
+          cantidad: rate.passengerQuantity,
+          neto: neto,
+          tipo_tarifa: tipoTarifa,
+          comision_over: comOver
+        };
+      });
+
+      // Armar itinerario desde el trip
+      const trip = q.trip || [];
+      const vuelos = [];
+      for (const tramo of trip) {
+        for (const flight of (tramo.legFlights || [])) {
+          const dep = new Date(flight.departure || tramo.departure);
+          const arr = new Date(flight.arrival || tramo.arrival);
+          const fecha = `${String(dep.getDate()).padStart(2,'0')}/${String(dep.getMonth()+1).padStart(2,'0')}`;
+          const salida = `${String(dep.getHours()).padStart(2,'0')}.${String(dep.getMinutes()).padStart(2,'0')}`;
+          const llegada = `${String(arr.getHours()).padStart(2,'0')}.${String(arr.getMinutes()).padStart(2,'0')}`;
+          vuelos.push({
+            fecha,
+            origen: `${tramo.cityNameFrom} (${tramo.airportCodeFrom})`,
+            destino: `${tramo.cityNameTo} (${tramo.airportCodeTo})`,
+            salida,
+            llegada,
+            numero_vuelo: `${flight.airlineCode} ${flight.flightNumber}`
+          });
+        }
+      }
+
+      const brandName = trip[0]?.legFlights?.[0]?.brandName || '';
+      const cabinMap = { 0: 'Primera', 1: 'Economica', 2: 'Business', 3: 'Premium Economy' };
+      const cabin = cabinMap[trip[0]?.legFlights?.[0]?.cabinType] || 'Economica';
+      const detalle = brandName ? `${cabin} - ${brandName}` : cabin;
+
+      return {
+        aerolinea: d.airlinesDictionary?.[q.validatingCarrier] || q.validatingCarrier,
+        vuelos,
+        detalle_vuelo: detalle,
+        pasajeros
+      };
+    }));
+
+    // Generar PDF
+    const timestamp = Date.now();
+    const outputPath = `/tmp/cotizacion_${timestamp}.pdf`;
+    const logoPath = pathModule.join(__dirname, 'logo_transparent.png');
+    const scriptPath = pathModule.join(__dirname, 'generar_cotizacion.py');
+
+    const payload = JSON.stringify({
+      opciones: opcionesCompletas,
+      vendedor: vendedor || 'guido',
+      output_path: outputPath,
+      logo_path: logoPath
+    });
+
+    await new Promise((resolve, reject) => {
+      execFile('python3', [scriptPath, payload], (err, stdout, stderr) => {
+        if (err) reject(new Error(stderr || err.message));
+        else resolve(stdout);
+      });
+    });
+
+    // Devolver el PDF
+    const pdf = fsModule.readFileSync(outputPath);
+    fsModule.unlinkSync(outputPath);
+    res.set({ 'Content-Type': 'application/pdf', 'Content-Disposition': 'attachment; filename="cotizacion_lucky_tour.pdf"' });
+    res.send(pdf);
+  } catch(e) {
+    console.error('[Cotizacion] Error:', e.message);
+    res.status(500).json({ ok: false, error: e.message });
+  }
+});
