@@ -207,7 +207,7 @@ app.post('/check-availability', async (req, res) => {
   const { searchId, quotationId } = req.body;
   try {
     const token = await getToken();
-    const r = await fetch(`${API_BASE}/FlightSearch/CheckAvailabilityRemake`, {
+    const r = await fetch(`${API_BASE}/FlightReservation/CheckAvailabilityRemake`, {
       method:'POST', headers: getHeaders(token),
       body: JSON.stringify({ CompanyAssociationId: parseInt(COMPANY_ID), SearchId: searchId, QuotationId: String(quotationId) })
     });
@@ -295,7 +295,7 @@ app.post('/crear-reserva', async (req, res) => {
       OnBehalfOfUserName: null
     };
 
-    const r = await fetch(`${API_BASE}/FlightBooking/CreateReservationRemake`, {
+    const r = await fetch(`${API_BASE}/FlightReservation/CreateReservationRemake`, {
       method:'POST', headers: getHeaders(token), body: JSON.stringify(bookPayload)
     });
     if (!r.ok) throw new Error(`API ${r.status}: ${await r.text().then(t=>t.substring(0,300))}`);
