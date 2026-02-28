@@ -72,7 +72,7 @@ app.get('/debug-search', async (req, res) => {
       quotationsCount: data.minifiedQuotations?.length,
       firstLeg: data.minifiedLegs?.[0],
       firstQuotation: data.minifiedQuotations?.[0],
-      airlinesInfo: data.minifiedAirlinesInformation?.slice(0,3)
+      airlinesInfo: data.minifiedAirlinesInformation
     });
   } catch(e) { res.json({ error: e.message }); }
 });
