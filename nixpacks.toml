@@ -1,8 +1,6 @@
 [phases.setup]
-nixPkgs = ["nodejs_20", "python3", "python312Packages.pip"]
-
+nixPkgs = ["nodejs_20"]
 [phases.install]
-cmds = ["npm install", "pip install reportlab"]
-
+cmds = ["npm install"]
 [start]
 cmd = "npm start"
