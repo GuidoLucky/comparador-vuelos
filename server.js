@@ -45,7 +45,7 @@ app.get('/', (req, res) => res.sendFile(path.join(__dirname, 'public', 'index.ht
 app.get('/health', (req, res) => res.json({ ok: true, configured: !!(SCIWEB_USER && SCIWEB_PASS) }));
 
 app.post('/buscar-vuelos', async (req, res) => {
-  const { origen, destino, salida, regreso, adultos, ninos, infantes } = req.body;
+  const { origen, destino, salida, regreso, adultos, ninos, infantes, stops } = req.body;
   console.log(`[Vuelos] ${origen}→${destino} | ${salida}-${regreso} | ${adultos}A ${ninos}N ${infantes}I`);
   try {
     const token = await getToken();
@@ -54,7 +54,7 @@ app.post('/buscar-vuelos', async (req, res) => {
       DepartDate: `${salida}T00:00:00`, ArrivalDate: `${regreso}T00:00:00`,
       ArrivalTime: null, DepartTime: null,
       Adults: parseInt(adultos), Childs: parseInt(ninos), Infants: parseInt(infantes),
-      CabinType: null, Stops: null, Airlines: [],
+      CabinType: null, Stops: stops !== undefined ? parseInt(stops) : null, Airlines: [],
       TypeOfFlightAllowedInItinerary: 3, SortByGLASAlgorithm: null,
       AlternateCurrencyCode: 'USD', CorporationCodeGlas: null, IncludeFiltersOptions: true
     };
