@@ -485,16 +485,7 @@ let paisesData = [];
 let paxActivo = 0;
 let pasajerosForms = [];
 
-// Guardar searchId al buscar
-const _buscarOriginal = buscar;
-async function buscar() {
-  searchIdActual = '';
-  await _buscarOriginal();
-}
-
-// Override para capturar searchId
-const _fetchOriginal = window.fetch;
-// Capturamos searchId de la respuesta de buscar-vuelos
+// searchId se captura en la respuesta de /buscar-vuelos
 const _buscarBtn = document.getElementById('btnBuscar');
 
 async function cargarPaises() {
