@@ -156,8 +156,20 @@ function procesarVuelos(data, stopsFilter) {
           llegada: leg.arrival,
           duracionMin: leg.elapsedFlightTimeInMinutes,
           duracion: leg.elapsedFlightTimeInMinutesFormatted,
-          escalas: Array.isArray(leg.connectingCityCodesList) ? leg.connectingCityCodesList.length : (leg.hasTechnicalStops ? 1 : 0),
-          ciudadesEscala: Array.isArray(leg.connectingCityCodesList) ? leg.connectingCityCodesList : [],
+          escalas: (() => {
+            const c = leg.connectingCityCodesList;
+            if (!c) return 0;
+            if (Array.isArray(c)) return c.length;
+            if (typeof c === 'string') return c.split(',').filter(Boolean).length;
+            return 0;
+          })(),
+          ciudadesEscala: (() => {
+            const c = leg.connectingCityCodesList;
+            if (!c) return [];
+            if (Array.isArray(c)) return c;
+            if (typeof c === 'string') return c.split(',').filter(Boolean);
+            return [];
+          })(),
           tripDays: leg.tripDays || 0,
         };
       }).filter(Boolean);
