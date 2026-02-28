@@ -556,13 +556,7 @@ document.addEventListener('keydown',e=>{if(e.key==='Enter')buscar();});
   <div id="reservasTabla" style="overflow-x:auto;"></div>
 </div>
 
-<!-- MARKUP BAR -->
-<div id="markupBar" class="markup-bar" style="max-width:1100px;margin:0 auto 16px;display:none;">
-  <label>💰 Tu markup:</label>
-  <select id="markupTipo" onchange="guardarMarkup()"><option value="porcentaje">%</option><option value="fijo">USD fijo</option></select>
-  <input type="number" id="markupValor" value="0" min="0" step="0.5" oninput="guardarMarkup()" style="width:80px;">
-  <span id="markupInfo" style="font-size:12px;color:var(--muted);"></span>
-</div>
+
 
 <!-- MODAL DE RESERVA -->
 <div id="modalReserva" class="modal-overlay" style="display:none">
@@ -1014,8 +1008,7 @@ async function verDetalle(quotationId, searchId, e) {
     if (!d) { const r = await fetch(`/detalle-vuelo?searchId=${searchId}&quotationId=${quotationId}`); d = await r.json(); if (d.ok) detalleCache[quotationId] = d; }
     if (!d.ok) throw new Error(d.error);
     const bsp = tcUsdArs || 1425;
-    const precioVenta = calcularPrecioVenta(d.total);
-    const markupLabel = markupConfig.valor > 0 ? (markupConfig.tipo === 'porcentaje' ? `+${markupConfig.valor}%` : `+USD ${markupConfig.valor}`) : 'Sin markup';
+    const precioVenta = d.total;
     const desgloseHTML = d.desglose.map(p => `
       <div style="margin-bottom:8px;padding:8px;background:rgba(255,255,255,0.02);border-radius:6px;">
         <div style="font-size:10px;color:var(--gold);font-weight:700;margin-bottom:5px">${p.tipo} × ${p.cantidad}</div>
@@ -1033,10 +1026,10 @@ async function verDetalle(quotationId, searchId, e) {
       ${desgloseHTML}
       <div style="display:flex;gap:6px;flex-wrap:wrap;margin:8px 0">${penHTML.join('')}</div>
       <div class="detalle-venta">
-        <div class="detalle-venta-label">Tu precio de venta (${markupLabel})</div>
+        <div class="detalle-venta-label">Precio Tucano (neto)</div>
         <div class="detalle-venta-precio">USD ${precioVenta.toFixed(2)}</div>
         <div style="font-size:11px;color:var(--muted);margin-top:2px">≈ ARS ${Math.round(precioVenta * bsp).toLocaleString('es-AR')}</div>
-      </div>`;
+      </div>\`;
   } catch(err) {
     panel.innerHTML = `<div style="color:var(--red);font-size:12px;padding:8px">Error: ${err.message}</div>`;
   }
@@ -1050,18 +1043,18 @@ function mostrarVista(vista, btn) {
   const resultados = document.getElementById('resultados');
   const filtrosCol = document.querySelector('.filtros-col');
   const vistaReservas = document.getElementById('vistaReservas');
-  const markupBar = document.getElementById('markupBar');
+  
   if (vista === 'buscar') {
     buscador.style.display = '';
     if (resultados) resultados.style.display = '';
     if (filtrosCol) filtrosCol.style.display = '';
     vistaReservas.classList.remove('show');
-    if (todosLosVuelos.length) markupBar.style.display = 'flex';
+    
   } else {
     buscador.style.display = 'none';
     if (resultados) resultados.style.display = 'none';
     if (filtrosCol) filtrosCol.style.display = 'none';
-    markupBar.style.display = 'none';
+    
     vistaReservas.classList.add('show');
     cargarReservas();
   }
