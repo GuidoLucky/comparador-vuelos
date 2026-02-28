@@ -185,7 +185,7 @@ let filtros={escalas:-1,maxPrecioUSD:null,aerolineas:[],ordenar:'precio'};
 
 // Cargar tipo de cambio al iniciar
 fetch('/tipo-cambio').then(r=>r.json()).then(d=>{
-  tcUsdArs=d.usd_ars||1200;
+  tcUsdArs=d.bsp||1425;
   console.log('TC USD/ARS:',tcUsdArs);
 }).catch(()=>{});
 
@@ -340,7 +340,7 @@ function aplicarFiltrosYRender(){
   const currentMaxUSD=filtros.maxPrecioUSD||precioMaxUSD;
   const sym=simboloMoneda();
   const conv=monedaActual==='ARS'?tcUsdArs:1;
-  const tcLabel=monedaActual==='ARS'?`<span class="tc-badge">TC: $${Math.round(tcUsdArs).toLocaleString()}</span>`:'';
+  const tcLabel=monedaActual==='ARS'?`<span class="tc-badge">BSP: $${Math.round(tcUsdArs).toLocaleString()}</span>`:'';
 
   document.getElementById('mainContent').innerHTML=`
     <div class="results-layout">
