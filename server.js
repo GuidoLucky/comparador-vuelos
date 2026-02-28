@@ -446,6 +446,7 @@ app.get('/detalle-vuelo', async (req, res) => {
       tarifa: r.fareAmount,
       impuestos: r.taxAmount,
       fee: r.feeAmount,
+      descuento: r.discountAmount || 0,
       total: r.sellingPriceAmount,
       detImpuestos: r.taxDetails || []
     }));
