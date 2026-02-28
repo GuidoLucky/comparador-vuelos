@@ -702,10 +702,12 @@ function onDocPaisChange(idx) {
   const sel = document.getElementById(`p_docPais_${idx}`);
   const paisId = sel.value;
   const paisNombre = sel.options[sel.selectedIndex]?.text || '';
+  console.log('[DocPais] idx:', idx, 'paisId:', paisId, 'paisesData len:', paisesData.length);
+  const tiposHtml = getDocTipoOpts(paisId,'');
+  console.log('[DocTipos] html len:', tiposHtml.length, tiposHtml.substring(0,100));
   guardarPaxField(idx,'docPaisId',paisId);
   guardarPaxField(idx,'docPais',paisNombre);
-  // Actualizar tipos de doc
-  document.getElementById(`p_docTipo_${idx}`).innerHTML = '<option value="">-</option>' + getDocTipoOpts(paisId,'');
+  document.getElementById(`p_docTipo_${idx}`).innerHTML = '<option value="">-</option>' + tiposHtml;
   document.getElementById(`p_nac_${idx}`).innerHTML = '<option value="">Seleccionar</option>' + getPaisOpts(paisId);
   guardarPaxField(idx,'nacionalidadId',paisId);
 }
