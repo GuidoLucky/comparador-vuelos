@@ -245,51 +245,46 @@ app.post('/crear-reserva', async (req, res) => {
   try {
     const token = await getToken();
 
-    const adults = pasajeros.filter(p=>p.tipo==='ADT').map((p,i) => ({
-      key: `ADT${i+1}`, indexUI: i+1, passengerType: 0,
-      FirstName: p.nombre.toUpperCase(), LastName: p.apellido.toUpperCase(),
-      Gender: parseInt(p.genero),
-      BirthdateDay: parseInt(p.fechaNacDia), BirthdateMonth: parseInt(p.fechaNacMes), BirthdateYear: parseInt(p.fechaNacAnio),
-      Email: p.email,
-      DocumentType: p.docTipoId, DocumentCountry: p.docPaisId, DocumentNumber: p.docNumero,
-      ExpirationdateDay: parseInt(p.docVencDia), ExpirationdateMonth: parseInt(p.docVencMes), ExpirationdateYear: parseInt(p.docVencAnio),
-      Nationality: p.nacionalidadId,
-      AccountingDocumentType: p.factTipoId, AccountingDocumentCountry: p.factPaisId, AccountingDocumentNumber: p.factNumero,
-      LoyaltyProgramAccounts: null
-    }));
+    function buildPax(p, i, tipo) {
+      const typeNum = tipo==='ADT'?0:tipo==='CHD'?1:2;
+      return {
+        key: `${tipo}${i+1}`, indexUI: i+1, passengerType: typeNum,
+        FirstName: p.nombre.toUpperCase(), LastName: p.apellido.toUpperCase(),
+        Gender: parseInt(p.genero),
+        BirthdateDay: parseInt(p.fechaNacDia), BirthdateMonth: parseInt(p.fechaNacMes), BirthdateYear: parseInt(p.fechaNacAnio),
+        Email: p.email,
+        DocumentType: p.docTipoId, DocumentCountry: p.docPaisId, DocumentNumber: p.docNumero,
+        ExpirationdateDay: parseInt(p.docVencDia), ExpirationdateMonth: parseInt(p.docVencMes), ExpirationdateYear: parseInt(p.docVencAnio),
+        Nationality: p.nacionalidadId,
+        AccountingDocumentType: tipo!=='INF' ? p.factTipoId : null,
+        AccountingDocumentCountry: tipo!=='INF' ? p.factPaisId : null,
+        AccountingDocumentNumber: tipo!=='INF' ? p.factNumero : null,
+        LoyaltyProgramAccounts: null,
+        documentTypes: p.docTipos || [],
+        accountingDocumentTypes: p.factTipos || []
+      };
+    }
 
-    const childs = pasajeros.filter(p=>p.tipo==='CHD').map((p,i) => ({
-      key: `CHD${i+1}`, indexUI: i+1, passengerType: 1,
-      FirstName: p.nombre.toUpperCase(), LastName: p.apellido.toUpperCase(),
-      Gender: parseInt(p.genero),
-      BirthdateDay: parseInt(p.fechaNacDia), BirthdateMonth: parseInt(p.fechaNacMes), BirthdateYear: parseInt(p.fechaNacAnio),
-      Email: p.email,
-      DocumentType: p.docTipoId, DocumentCountry: p.docPaisId, DocumentNumber: p.docNumero,
-      ExpirationdateDay: parseInt(p.docVencDia), ExpirationdateMonth: parseInt(p.docVencMes), ExpirationdateYear: parseInt(p.docVencAnio),
-      Nationality: p.nacionalidadId,
-      AccountingDocumentType: p.factTipoId, AccountingDocumentCountry: p.factPaisId, AccountingDocumentNumber: p.factNumero,
-      LoyaltyProgramAccounts: null
-    }));
+    const adults = pasajeros.filter(p=>p.tipo==='ADT').map((p,i) => buildPax(p,i,'ADT'));
+    const childs = pasajeros.filter(p=>p.tipo==='CHD').map((p,i) => buildPax(p,i,'CHD'));
+    const infants = pasajeros.filter(p=>p.tipo==='INF').map((p,i) => buildPax(p,i,'INF'));
 
-    const infants = pasajeros.filter(p=>p.tipo==='INF').map((p,i) => ({
-      key: `INF${i+1}`, indexUI: i+1, passengerType: 2,
-      FirstName: p.nombre.toUpperCase(), LastName: p.apellido.toUpperCase(),
-      Gender: parseInt(p.genero),
-      BirthdateDay: parseInt(p.fechaNacDia), BirthdateMonth: parseInt(p.fechaNacMes), BirthdateYear: parseInt(p.fechaNacAnio),
-      Email: p.email,
-      DocumentType: p.docTipoId, DocumentCountry: p.docPaisId, DocumentNumber: p.docNumero,
-      ExpirationdateDay: parseInt(p.docVencDia), ExpirationdateMonth: parseInt(p.docVencMes), ExpirationdateYear: parseInt(p.docVencAnio),
-      Nationality: p.nacionalidadId,
-      AccountingDocumentType: null, AccountingDocumentCountry: null, AccountingDocumentNumber: null,
-      LoyaltyProgramAccounts: null
-    }));
+    // Parsear teléfono: puede venir como string "+54 911 1234-5678" o ya como objeto
+    function parsePhone(tel) {
+      if (!tel) return { Country: 'AR', DialCode: '+54', Number: null };
+      if (typeof tel === 'object') return tel;
+      const clean = tel.replace(/[\s\-]/g, '');
+      return { Country: 'AR', DialCode: '+54', Number: clean.replace(/^\+54/, '') };
+    }
 
     const bookPayload = {
       SearchId: searchId, QuotationId: String(quotationId), SelectedUpsellId: null,
       Adults: adults, Childs: childs, Infants: infants,
       Contact: {
         FirstName: contacto.nombre, LastName: contacto.apellido,
-        Email: contacto.email, Phone1: contacto.telefono1, Phone2: contacto.telefono2 || null
+        Email: contacto.email,
+        Phone1: parsePhone(contacto.telefono1),
+        Phone2: parsePhone(contacto.telefono2)
       },
       PaymentType: null, Cash: null, CreditCard: null, BankTransfer: null,
       OnBehalfOfUserName: null
