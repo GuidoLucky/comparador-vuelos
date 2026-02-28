@@ -77,7 +77,7 @@ app.post('/buscar-vuelos', async (req, res) => {
         Adults: parseInt(adultos), Childs: parseInt(ninos), Infants: parseInt(infantes),
         CabinType: null, Stops: stopsVal, Airlines: [],
         TypeOfFlightAllowedInItinerary: null, SortByGLASAlgorithm: null,
-        AlternateCurrencyCode: 'ARS', CorporationCodeGlas: null, IncludeFiltersOptions: true
+        AlternateCurrencyCode: 'USD', CorporationCodeGlas: null, IncludeFiltersOptions: true
       };
       addSearchPayload = { SearchTravelType: 2, OneWayModel: payload, MultipleLegsModel: null, RoundTripModel: null };
 
@@ -91,7 +91,7 @@ app.post('/buscar-vuelos', async (req, res) => {
         Adults: parseInt(adultos), Childs: parseInt(ninos), Infants: parseInt(infantes),
         CabinType: null, Stops: stopsVal, Airlines: [],
         TypeOfFlightAllowedInItinerary: null, SortByGLASAlgorithm: null,
-        AlternateCurrencyCode: 'ARS', CorporationCodeGlas: null, IncludeFiltersOptions: true
+        AlternateCurrencyCode: 'USD', CorporationCodeGlas: null, IncludeFiltersOptions: true
       };
       addSearchPayload = { SearchTravelType: 1, OneWayModel: null, MultipleLegsModel: null, RoundTripModel: payload };
 
@@ -112,7 +112,7 @@ app.post('/buscar-vuelos', async (req, res) => {
         Legs: legs,
         Adults: parseInt(adultos), Childs: parseInt(ninos), Infants: parseInt(infantes),
         TypeOfFlightAllowedInItinerary: null, SortByGLASAlgorithm: null,
-        AlternateCurrencyCode: 'ARS', CorporationCodeGlas: null, IncludeFiltersOptions: true
+        AlternateCurrencyCode: 'USD', CorporationCodeGlas: null, IncludeFiltersOptions: true
       };
       addSearchPayload = { SearchTravelType: 3, OneWayModel: null, MultipleLegsModel: payload, RoundTripModel: null };
     }
@@ -210,17 +210,12 @@ function procesarVuelos(data, stopsFilter) {
         ? (checkedItem.pieces > 0 ? `${checkedItem.pieces}x ${checkedItem.weight}${checkedItem.unit}` : `${checkedItem.weight}${checkedItem.unit}`)
         : 'No incluida';
 
-      // Precio: grandTotal es ARS, alternatePrice puede tener USD
-      const precioARS = q.grandTotalSellingPriceAmount;
-      const altPrices = q.alternatePrice || q.alternatePrices || [];
-      const altUSD = Array.isArray(altPrices) ? altPrices.find(p => p.currency === 'USD' || p.Currency === 'USD') : null;
-      const precioUSD = altUSD ? (altUSD.amount || altUSD.Amount || altUSD.totalAmount) : null;
+      const precioUSD = q.grandTotalSellingPriceAmount || 0;
 
       return {
         id: q.quotationId,
         aerolinea: q.validatingCarrier,
         aerolineaDesc: airlinesMap[q.validatingCarrier] || q.sourceDescription || q.source,
-        precioARS,
         precioUSD,
         expira: q.offerExpirationTimeCTZ,
         itinerario,
