@@ -68,12 +68,11 @@ app.get('/debug-search', async (req, res) => {
     // Devolver estructura sin minifiedQuotations para ver legs y flights
     res.json({
       keys: Object.keys(data),
-      legsCount: data.legs?.length,
-      flightsCount: data.flights?.length,
+      minifiedLegsCount: data.minifiedLegs?.length,
       quotationsCount: data.minifiedQuotations?.length,
-      firstLeg: data.legs?.[0],
-      firstFlight: data.flights?.[0],
-      firstQuotation: data.minifiedQuotations?.[0]
+      firstLeg: data.minifiedLegs?.[0],
+      firstQuotation: data.minifiedQuotations?.[0],
+      airlinesInfo: data.minifiedAirlinesInformation?.slice(0,3)
     });
   } catch(e) { res.json({ error: e.message }); }
 });
@@ -117,7 +116,10 @@ app.post('/buscar-vuelos', async (req, res) => {
       throw new Error(`API error: ${searchRes.status} - ${errText.substring(0, 300)}`);
     }
     const data = await searchRes.json();
-    console.log(`[Vuelos] ${data.minifiedQuotations?.length || 0} resultados`);
+    console.log(`[Vuelos] ${data.minifiedQuotations?.length || 0} resultados`)
+    console.log('[Vuelos] Keys:', Object.keys(data).join(','))
+    if (data.minifiedLegs) console.log('[Vuelos] firstLeg:', JSON.stringify(data.minifiedLegs[0]))
+    if (data.minifiedAirlinesInformation) console.log('[Vuelos] firstAirline:', JSON.stringify(data.minifiedAirlinesInformation[0]));
 
     const vuelos = procesarVuelos(data);
     res.json({ ok: true, vuelos, total: data.minifiedQuotations?.length || 0 });
