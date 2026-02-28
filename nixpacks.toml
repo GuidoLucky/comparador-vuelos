@@ -1,0 +1,8 @@
+[phases.setup]
+aptPkgs = ['fonts-dejavu-core', 'python3', 'python3-pip']
+
+[phases.install]
+cmds = ['npm install', 'pip install reportlab --break-system-packages']
+
+[start]
+cmd = 'node server.js'
