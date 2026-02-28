@@ -149,8 +149,8 @@ function procesarVuelos(data, stopsFilter) {
           llegada: leg.arrival,
           duracionMin: leg.elapsedFlightTimeInMinutes,
           duracion: leg.elapsedFlightTimeInMinutesFormatted,
-          escalas: leg.connectingCityCodesList?.length || 0,
-          ciudadesEscala: leg.connectingCityCodesList || [],
+          escalas: Array.isArray(leg.connectingCityCodesList) ? leg.connectingCityCodesList.length : (leg.hasTechnicalStops ? 1 : 0),
+          ciudadesEscala: Array.isArray(leg.connectingCityCodesList) ? leg.connectingCityCodesList : [],
           tripDays: leg.tripDays || 0,
         };
       }).filter(Boolean);
@@ -158,7 +158,7 @@ function procesarVuelos(data, stopsFilter) {
       const equipaje = q.legsWithBaggageAllowance?.[0]?.baggageAllowance;
       const checkedBag = equipaje?.checked?.[0];
       const carryOn = equipaje?.carryOn?.[0];
-      const maxEscalas = itinerario.length > 0 ? Math.max(...itinerario.map(l => l.escalas)) : 0;
+      const maxEscalas = itinerario.length > 0 ? itinerario.reduce((max, l) => Math.max(max, l.escalas || 0), 0) : 0;
 
       // Maleta despachada
       let maletaLabel = 'Sin maleta';
