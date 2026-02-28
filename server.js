@@ -67,12 +67,11 @@ app.get('/debug-search', async (req, res) => {
     const data = await searchRes.json();
     // Devolver estructura sin minifiedQuotations para ver legs y flights
     res.json({
-      keys: Object.keys(data),
       minifiedLegsCount: data.minifiedLegs?.length,
-      quotationsCount: data.minifiedQuotations?.length,
-      firstLeg: data.minifiedLegs?.[0],
-      firstQuotation: data.minifiedQuotations?.[0],
-      airlinesInfo: data.minifiedAirlinesInformation
+      firstMinifiedLeg: data.minifiedLegs?.[0],
+      secondMinifiedLeg: data.minifiedLegs?.[1],
+      airlinesInfo: data.minifiedAirlinesInformation,
+      filtersOptions: data.filtersOptions
     });
   } catch(e) { res.json({ error: e.message }); }
 });
