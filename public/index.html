@@ -992,72 +992,55 @@ let detalleAbiertoId = null;
 async function verDetalle(quotationId, searchId, e) {
   e.stopPropagation();
   if (detalleAbiertoId === quotationId) {
-    const p = document.querySelector(`.detalle-panel[data-detalle="${quotationId}"]`);
+    const p = document.querySelector('.detalle-panel[data-detalle="' + quotationId + '"]');
     if (p) { p.classList.remove('show'); p.innerHTML = ''; }
     detalleAbiertoId = null;
     return;
   }
-  document.querySelectorAll('.detalle-panel.show').forEach(p => { p.classList.remove('show'); p.innerHTML = ''; });
-  const panel = document.querySelector(`.detalle-panel[data-detalle="${quotationId}"]`);
-  if (!panel) { console.error('No se encontró panel para', quotationId); return; }
+  document.querySelectorAll('.detalle-panel.show').forEach(function(p) { p.classList.remove('show'); p.innerHTML = ''; });
+  const panel = document.querySelector('.detalle-panel[data-detalle="' + quotationId + '"]');
+  if (!panel) { console.error('No panel para', quotationId); return; }
   panel.innerHTML = '<div style="text-align:center;padding:10px;color:var(--muted);font-size:12px">⏳ Cargando desglose...</div>';
   panel.classList.add('show');
   detalleAbiertoId = quotationId;
-  if (!searchId || searchId === 'undefined') { panel.innerHTML = '<div style="color:var(--red);font-size:12px;padding:8px">Hacé una nueva búsqueda para ver el desglose.</div>'; return; }
-  try {
-    let d = detalleCache[quotationId];
-    if (!d) { const r = await fetch(`/detalle-vuelo?searchId=${searchId}&quotationId=${quotationId}`); d = await r.json(); if (d.ok) detalleCache[quotationId] = d; }
-    if (!d.ok) throw new Error(d.error);
-    const bsp = tcUsdArs || 1425;
-    const precioVenta = d.total;
-    const desgloseHTML = d.desglose.map(p => `
-      <div style="margin-bottom:8px;padding:8px;background:rgba(255,255,255,0.02);border-radius:6px;">
-        <div style="font-size:10px;color:var(--gold);font-weight:700;margin-bottom:5px">${p.tipo} × ${p.cantidad}</div>
-        <div class="detalle-row"><span class="detalle-label">Tarifa base</span><span class="detalle-valor">${d.moneda} ${p.tarifa.toFixed(2)}</span></div>
-        <div class="detalle-row"><span class="detalle-label">Impuestos</span><span class="detalle-valor">${d.moneda} ${p.impuestos.toFixed(2)}</span></div>
-        <div class="detalle-row"><span class="detalle-label">Fee Tucano</span><span class="detalle-valor">${d.moneda} ${p.fee.toFixed(2)}</span></div>
-        <div class="detalle-row total"><span>Total Tucano</span><span>${d.moneda} ${p.total.toFixed(2)}</span></div>
-      </div>`).join('');
-    const penHTML = [];
-    if (d.penalidades?.cambio) penHTML.push(`<span style="font-size:11px;color:var(--muted)">✏️ Cambio: ${d.penalidades.cambio.moneda} ${d.penalidades.cambio.monto}</span>`);
-    if (d.penalidades?.cancelacion) penHTML.push(`<span style="font-size:11px;color:var(--muted)">❌ Cancelación: ${d.penalidades.cancelacion.moneda} ${d.penalidades.cancelacion.monto}</span>`);
-    if (!penHTML.length) penHTML.push('<span style="font-size:11px;color:#28a745">✅ Sin penalidades</span>');
-    panel.innerHTML = `
-      <div style="font-size:10px;color:var(--gold);font-weight:700;text-transform:uppercase;letter-spacing:1px;margin-bottom:10px">📊 Desglose de precio</div>
-      ${desgloseHTML}
-      <div style="display:flex;gap:6px;flex-wrap:wrap;margin:8px 0">${penHTML.join('')}</div>
-      <div class="detalle-venta">
-        <div class="detalle-venta-label">Precio Tucano (neto)</div>
-        <div class="detalle-venta-precio">USD ${precioVenta.toFixed(2)}</div>
-        <div style="font-size:11px;color:var(--muted);margin-top:2px">≈ ARS ${Math.round(precioVenta * bsp).toLocaleString('es-AR')}</div>
-      </div>\`;
-  } catch(err) {
-    panel.innerHTML = `<div style="color:var(--red);font-size:12px;padding:8px">Error: ${err.message}</div>`;
+  if (!searchId || searchId === 'undefined') {
+    panel.innerHTML = '<div style="color:var(--red);font-size:12px;padding:8px">Hacé una nueva búsqueda para ver el desglose.</div>';
+    return;
   }
-}
-
-// ─── NAVEGACIÓN ───
-function mostrarVista(vista, btn) {
-  document.querySelectorAll('.nav-tab').forEach(t => t.classList.remove('active'));
-  btn.classList.add('active');
-  const buscador = document.querySelector('.search-card');
-  const resultados = document.getElementById('resultados');
-  const filtrosCol = document.querySelector('.filtros-col');
-  const vistaReservas = document.getElementById('vistaReservas');
-  
-  if (vista === 'buscar') {
-    buscador.style.display = '';
-    if (resultados) resultados.style.display = '';
-    if (filtrosCol) filtrosCol.style.display = '';
-    vistaReservas.classList.remove('show');
-    
-  } else {
-    buscador.style.display = 'none';
-    if (resultados) resultados.style.display = 'none';
-    if (filtrosCol) filtrosCol.style.display = 'none';
-    
-    vistaReservas.classList.add('show');
-    cargarReservas();
+  try {
+    var d = detalleCache[quotationId];
+    if (!d) {
+      var r = await fetch('/detalle-vuelo?searchId=' + searchId + '&quotationId=' + quotationId);
+      d = await r.json();
+      if (d.ok) detalleCache[quotationId] = d;
+    }
+    if (!d.ok) throw new Error(d.error);
+    var bsp = tcUsdArs || 1425;
+    var precioVenta = d.total;
+    var desgloseHTML = d.desglose.map(function(p) {
+      return '<div style="margin-bottom:8px;padding:8px;background:rgba(255,255,255,0.02);border-radius:6px;">' +
+        '<div style="font-size:10px;color:var(--gold);font-weight:700;margin-bottom:5px">' + p.tipo + ' x ' + p.cantidad + '</div>' +
+        '<div class="detalle-row"><span class="detalle-label">Tarifa base</span><span class="detalle-valor">' + d.moneda + ' ' + p.tarifa.toFixed(2) + '</span></div>' +
+        '<div class="detalle-row"><span class="detalle-label">Impuestos</span><span class="detalle-valor">' + d.moneda + ' ' + p.impuestos.toFixed(2) + '</span></div>' +
+        '<div class="detalle-row"><span class="detalle-label">Fee Tucano</span><span class="detalle-valor">' + d.moneda + ' ' + p.fee.toFixed(2) + '</span></div>' +
+        '<div class="detalle-row total"><span>Total Tucano</span><span>' + d.moneda + ' ' + p.total.toFixed(2) + '</span></div>' +
+        '</div>';
+    }).join('');
+    var penHTML = [];
+    if (d.penalidades && d.penalidades.cambio) penHTML.push('<span style="font-size:11px;color:var(--muted)">✏️ Cambio: ' + d.penalidades.cambio.moneda + ' ' + d.penalidades.cambio.monto + '</span>');
+    if (d.penalidades && d.penalidades.cancelacion) penHTML.push('<span style="font-size:11px;color:var(--muted)">❌ Cancelación: ' + d.penalidades.cancelacion.moneda + ' ' + d.penalidades.cancelacion.monto + '</span>');
+    if (!penHTML.length) penHTML.push('<span style="font-size:11px;color:#28a745">✅ Sin penalidades</span>');
+    panel.innerHTML =
+      '<div style="font-size:10px;color:var(--gold);font-weight:700;text-transform:uppercase;letter-spacing:1px;margin-bottom:10px">📊 Desglose de precio</div>' +
+      desgloseHTML +
+      '<div style="display:flex;gap:6px;flex-wrap:wrap;margin:8px 0">' + penHTML.join('') + '</div>' +
+      '<div class="detalle-venta">' +
+        '<div class="detalle-venta-label">Precio Tucano (neto)</div>' +
+        '<div class="detalle-venta-precio">USD ' + precioVenta.toFixed(2) + '</div>' +
+        '<div style="font-size:11px;color:var(--muted);margin-top:2px">≈ ARS ' + Math.round(precioVenta * bsp).toLocaleString('es-AR') + '</div>' +
+      '</div>';
+  } catch(err) {
+    panel.innerHTML = '<div style="color:var(--red);font-size:12px;padding:8px">Error: ' + err.message + '</div>';
   }
 }
 
