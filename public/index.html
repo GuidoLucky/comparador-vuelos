@@ -567,6 +567,7 @@ document.addEventListener('keydown',e=>{if(e.key==='Enter')buscar();});
 </div>
 
 <script>
+
 // ─── ESTADO RESERVA ───
 let searchIdActual = '';
 let vueloSeleccionado = null;
@@ -949,8 +950,8 @@ function cerrarModal() {
 document.getElementById('modalReserva').addEventListener('click', function(e) {
   if(e.target === this) cerrarModal();
 });
-</script>
-<script>
+
+
 // ─── MARKUP ───
 let markupConfig = { tipo: 'porcentaje', valor: 0 };
 
@@ -1092,7 +1093,9 @@ function verDetalleReserva(id) { alert('Detalle de reserva #' + id + ' — próx
 
 cargarMarkup();
 
+
 </script>
+
 
 </body>
 </html>
