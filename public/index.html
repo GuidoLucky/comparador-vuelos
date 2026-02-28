@@ -786,14 +786,18 @@ async function confirmarReserva(searchId, quotationId) {
     if(el) guardarPaxField(i, key, el.value);
   }
   // Guardar selects
+  const argId = paisesData.find(p=>p.name==='Argentina')?.id || '';
+  function safeVal(v) { return (v && v!=='undefined') ? v : null; }
   ['docPais','docTipo','nac','factPais','factTipo'].forEach(campo => {
     const el = document.getElementById(`p_${campo}_${i}`);
     if(!el) return;
-    if(campo==='docPais') { guardarPaxField(i,'docPaisId',el.value); guardarPaxField(i,'docPais',el.options[el.selectedIndex]?.text||''); }
-    else if(campo==='docTipo') { guardarPaxField(i,'docTipoId',el.value); guardarPaxField(i,'docTipo',el.options[el.selectedIndex]?.dataset?.code||''); }
-    else if(campo==='nac') { guardarPaxField(i,'nacionalidadId',el.value); }
-    else if(campo==='factPais') { guardarPaxField(i,'factPaisId',el.value); guardarPaxField(i,'factPais',el.options[el.selectedIndex]?.text||''); }
-    else if(campo==='factTipo') { guardarPaxField(i,'factTipoId',el.value); guardarPaxField(i,'factTipo',el.options[el.selectedIndex]?.dataset?.code||''); }
+    const val = safeVal(el.value);
+    const txt = el.options[el.selectedIndex]?.text||'';
+    if(campo==='docPais') { guardarPaxField(i,'docPaisId', val||argId); guardarPaxField(i,'docPais',txt); }
+    else if(campo==='docTipo') { guardarPaxField(i,'docTipoId',val); guardarPaxField(i,'docTipo',el.options[el.selectedIndex]?.dataset?.code||''); }
+    else if(campo==='nac') { guardarPaxField(i,'nacionalidadId', val||argId); }
+    else if(campo==='factPais') { guardarPaxField(i,'factPaisId', val||argId); guardarPaxField(i,'factPais',txt); }
+    else if(campo==='factTipo') { guardarPaxField(i,'factTipoId',val); guardarPaxField(i,'factTipo',el.options[el.selectedIndex]?.dataset?.code||''); }
   });
 
   // Validar
