@@ -493,102 +493,200 @@ app.post('/config-markup', async (req, res) => {
 });
 
 // ─── COTIZACIÓN PDF ───
-const { execFile } = require('child_process');
+const PDFDocument = require('pdfkit');
 const fsModule = require('fs');
 const pathModule = require('path');
+
+// Tablas de cálculo Lucky Tour
+const FEE_TABLE = [
+  [0, 599, 25], [600, 999, 30], [1000, 1499, 35],
+  [1500, 1999, 40], [2000, 2999, 50], [3000, 3999, 55],
+  [4000, 5499, 60], [5500, Infinity, 80]
+];
+const DESCUENTO_TABLE = [
+  [0, 50, 0], [51, 80, 10], [81, 100, 20], [101, 140, 30],
+  [141, 180, 40], [181, 220, 50], [221, 260, 60], [261, Infinity, 70]
+];
+const CONTACTOS = {
+  guido:   { nombre: 'Guido Finkelstein',  mail: 'Guido@luckytourviajes.com',    tel: '+54 9 11 6846 3892' },
+  julieta: { nombre: 'Julieta Zubeldia',   mail: 'Julietaz@luckytourviajes.com', tel: '+54 9 11 3295 5404' },
+  ruthy:   { nombre: 'Ruthy Tuchsznajder', mail: 'Ventas@luckytourviajes.com',   tel: '+54 9 11 6847 0985' },
+};
+
+function getFee(neto) {
+  for (const [low, high, fee] of FEE_TABLE) if (neto >= low && neto <= high) return fee;
+  return 80;
+}
+function getDescuento(com) {
+  for (const [low, high, desc] of DESCUENTO_TABLE) if (com >= low && com <= high) return desc;
+  return 70;
+}
+function redondearArriba(p) { return Math.ceil(p / 5) * 5; }
+function redondearAbajo(p)  { return Math.floor(p / 5) * 5; }
+function calcularPrecio(neto, tipoTarifa, comOver) {
+  if (tipoTarifa === 'PNEG' || comOver <= 50) return redondearArriba(neto + getFee(neto));
+  return redondearAbajo(neto - getDescuento(comOver));
+}
+function etiquetaPrecio(precio, tipo, cantidad, totalPax, multiTipos) {
+  if (totalPax === 1) return `USD ${precio.toLocaleString('en')}`;
+  if (!multiTipos) return `USD ${precio.toLocaleString('en')} cada ${tipo}`;
+  return cantidad > 1 ? `USD ${precio.toLocaleString('en')} cada ${tipo}` : `USD ${precio.toLocaleString('en')} ${tipo}`;
+}
+
+function generarPDFBuffer(opciones, vendedor) {
+  return new Promise((resolve, reject) => {
+    const NAVY = '#1B3A5C';
+    const contacto = CONTACTOS[vendedor] || CONTACTOS.guido;
+    const logoPath = pathModule.join(__dirname, 'logo_transparent.png');
+    const doc = new PDFDocument({ size: 'A4', margin: 40, bufferPages: true });
+    const chunks = [];
+    doc.on('data', c => chunks.push(c));
+    doc.on('end', () => resolve(Buffer.concat(chunks)));
+    doc.on('error', reject);
+
+    const esMultiple = opciones.length > 1;
+    const W = 515; // ancho útil
+    const BOTTOM_MARGIN = 80;
+
+    function dibujarCabecera() {
+      // Fecha
+      doc.fontSize(9).fillColor('#666666').text(new Date().toLocaleDateString('es-AR'), { align: 'right' });
+      // Logo
+      if (fsModule.existsSync(logoPath)) {
+        doc.image(logoPath, (W / 2) - 55 + 40, doc.y, { width: 110 });
+        doc.moveDown(5.5);
+      } else {
+        doc.moveDown(1);
+      }
+      // Título
+      doc.fontSize(18).fillColor(NAVY).font('Helvetica-Bold').text('Cotización', { align: 'center' });
+      doc.moveDown(0.3);
+      // Línea
+      doc.moveTo(40, doc.y).lineTo(40 + W, doc.y).lineWidth(2).strokeColor(NAVY).stroke();
+      doc.moveDown(0.8);
+    }
+
+    function dibujarFooter() {
+      const pages = doc.bufferedPageRange();
+      for (let i = 0; i < pages.count; i++) {
+        doc.switchToPage(pages.start + i);
+        const y = doc.page.height - 60;
+        doc.moveTo(40, y).lineTo(40 + W, y).lineWidth(1.5).strokeColor(NAVY).stroke();
+        doc.fontSize(9).font('Helvetica-Bold').fillColor(NAVY).text('Contacto:', 40, y + 8);
+        doc.font('Helvetica-Bold').text(contacto.nombre, 105, y + 8);
+        doc.fontSize(9).font('Helvetica').fillColor('#333333').text(contacto.mail, 40, y + 22);
+        doc.text(contacto.tel, 40, y + 34);
+      }
+    }
+
+    dibujarCabecera();
+
+    for (let i = 0; i < opciones.length; i++) {
+      if (i > 0) {
+        doc.addPage();
+        dibujarCabecera();
+      }
+      const op = opciones[i];
+
+      // Badge OPCIÓN N
+      if (esMultiple) {
+        doc.rect(40, doc.y, W, 22).fill(NAVY);
+        doc.fontSize(10).font('Helvetica-Bold').fillColor('white')
+           .text(`  OPCIÓN ${i + 1}`, 46, doc.y - 17);
+        doc.moveDown(1.2);
+      }
+
+      // Itinerario
+      const tituloItin = op.aerolinea ? `✈  ITINERARIO - ${op.aerolinea}` : '✈  ITINERARIO';
+      doc.fontSize(9).font('Helvetica-Bold').fillColor(NAVY).text(tituloItin);
+      doc.moveDown(0.4);
+
+      for (const v of op.vuelos) {
+        doc.fontSize(10).font('Helvetica-Bold').fillColor('#000000')
+           .text(`${v.fecha}   ${v.origen} → ${v.destino}   ${v.salida} → ${v.llegada}`);
+        if (v.numero_vuelo) {
+          doc.fontSize(8).font('Helvetica').fillColor('#555555').text(v.numero_vuelo);
+        }
+        doc.moveDown(0.2);
+      }
+      doc.fontSize(8).font('Helvetica').fillColor('#555555').text(op.detalle_vuelo);
+      doc.moveDown(0.6);
+
+      // Precios
+      const totalPax = op.pasajeros.reduce((s, p) => s + p.cantidad, 0);
+      const multiTipos = op.pasajeros.length > 1;
+      const tituloPrecios = totalPax === 1 ? '💰  PRECIO' : '💰  PRECIOS';
+      doc.fontSize(9).font('Helvetica-Bold').fillColor(NAVY).text(tituloPrecios);
+      doc.moveDown(0.4);
+
+      for (const pax of op.pasajeros) {
+        const precio = calcularPrecio(pax.neto, pax.tipo_tarifa, pax.comision_over);
+        const linea = etiquetaPrecio(precio, pax.tipo, pax.cantidad, totalPax, multiTipos);
+        doc.fontSize(10).font('Helvetica-Bold').fillColor(NAVY).text(linea);
+        doc.moveDown(0.3);
+      }
+    }
+
+    doc.flushPages();
+    dibujarFooter();
+    doc.end();
+  });
+}
 
 app.post('/generar-cotizacion', async (req, res) => {
   const { opciones, vendedor } = req.body;
   try {
     const token = await getToken();
 
-    // Para cada opción, traer el detalle de precio
     const opcionesCompletas = await Promise.all(opciones.map(async (op) => {
       const r = await fetch(`${API_BASE}/FlightSearch/ItineraryDetailRemake?searchId=${op.searchId}&quotationId=${op.quotationId}`, {
         headers: getHeaders(token)
       });
       const text = await r.text();
       let d;
-      try { d = JSON.parse(text); } catch(e) { throw new Error('Error al obtener detalle del vuelo'); }
+      try { d = JSON.parse(text); } catch(e) { throw new Error('Error al obtener detalle'); }
 
       const q = d.quote;
-      const amounts = q.amounts?.originalAmounts || {};
       const rates = q.flightRates || [];
 
-      // Armar pasajeros con neto y comisión
       const pasajeros = rates.map(rate => {
         const neto = rate.sellingPriceAmount;
         const comOver = (rate.commissionRule?.ceded?.valueApplied || 0) + (rate.overCommissionRule?.ceded?.valueApplied || 0);
-        const tipoTarifa = rate.fareType === 'PNEG' ? 'PNEG' : 'PUB';
         const tipoLabel = rate.passengerTypeCode === 'ADT' ? 'adulto' : rate.passengerTypeCode === 'CHD' ? 'menor' : 'infante';
-        return {
-          tipo: tipoLabel,
-          cantidad: rate.passengerQuantity,
-          neto: neto,
-          tipo_tarifa: tipoTarifa,
-          comision_over: comOver
-        };
+        return { tipo: tipoLabel, cantidad: rate.passengerQuantity, neto, tipo_tarifa: rate.fareType || 'PUB', comision_over: comOver };
       });
 
-      // Armar itinerario desde el trip
       const trip = q.trip || [];
       const vuelos = [];
       for (const tramo of trip) {
         for (const flight of (tramo.legFlights || [])) {
           const dep = new Date(flight.departure || tramo.departure);
           const arr = new Date(flight.arrival || tramo.arrival);
-          const fecha = `${String(dep.getDate()).padStart(2,'0')}/${String(dep.getMonth()+1).padStart(2,'0')}`;
-          const salida = `${String(dep.getHours()).padStart(2,'0')}.${String(dep.getMinutes()).padStart(2,'0')}`;
-          const llegada = `${String(arr.getHours()).padStart(2,'0')}.${String(arr.getMinutes()).padStart(2,'0')}`;
           vuelos.push({
-            fecha,
+            fecha: `${String(dep.getDate()).padStart(2,'0')}/${String(dep.getMonth()+1).padStart(2,'0')}`,
             origen: `${tramo.cityNameFrom} (${tramo.airportCodeFrom})`,
             destino: `${tramo.cityNameTo} (${tramo.airportCodeTo})`,
-            salida,
-            llegada,
+            salida: `${String(dep.getHours()).padStart(2,'0')}.${String(dep.getMinutes()).padStart(2,'0')}`,
+            llegada: `${String(arr.getHours()).padStart(2,'0')}.${String(arr.getMinutes()).padStart(2,'0')}`,
             numero_vuelo: `${flight.airlineCode} ${flight.flightNumber}`
           });
         }
       }
 
-      const brandName = trip[0]?.legFlights?.[0]?.brandName || '';
       const cabinMap = { 0: 'Primera', 1: 'Economica', 2: 'Business', 3: 'Premium Economy' };
       const cabin = cabinMap[trip[0]?.legFlights?.[0]?.cabinType] || 'Economica';
-      const detalle = brandName ? `${cabin} - ${brandName}` : cabin;
+      const brand = trip[0]?.legFlights?.[0]?.brandName || '';
+      const detalle = brand ? `${cabin} - ${brand}` : cabin;
 
       return {
         aerolinea: d.airlinesDictionary?.[q.validatingCarrier] || q.validatingCarrier,
-        vuelos,
-        detalle_vuelo: detalle,
-        pasajeros
+        vuelos, detalle_vuelo: detalle, pasajeros
       };
     }));
 
-    // Generar PDF
-    const timestamp = Date.now();
-    const outputPath = `/tmp/cotizacion_${timestamp}.pdf`;
-    const logoPath = pathModule.join(__dirname, 'logo_transparent.png');
-    const scriptPath = pathModule.join(__dirname, 'generar_cotizacion.py');
-
-    const payload = JSON.stringify({
-      opciones: opcionesCompletas,
-      vendedor: vendedor || 'guido',
-      output_path: outputPath,
-      logo_path: logoPath
-    });
-
-    await new Promise((resolve, reject) => {
-      execFile('python3', [scriptPath, payload], (err, stdout, stderr) => {
-        if (err) reject(new Error(stderr || err.message));
-        else resolve(stdout);
-      });
-    });
-
-    // Devolver el PDF
-    const pdf = fsModule.readFileSync(outputPath);
-    fsModule.unlinkSync(outputPath);
+    const pdfBuffer = await generarPDFBuffer(opcionesCompletas, vendedor || 'guido');
     res.set({ 'Content-Type': 'application/pdf', 'Content-Disposition': 'attachment; filename="cotizacion_lucky_tour.pdf"' });
-    res.send(pdf);
+    res.send(pdfBuffer);
   } catch(e) {
     console.error('[Cotizacion] Error:', e.message);
     res.status(500).json({ ok: false, error: e.message });
