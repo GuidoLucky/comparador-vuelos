@@ -355,6 +355,7 @@ function renderVuelo(v){
         ${pax>1?`<div class="precio-pax">≈ ${fmtPrecio(precio/pax)} por pax</div>`:''}
         ${renderEquipaje(v.equipaje)}
         <div class="precio-expira ${urgente?'urgente':''}">${expiraStr}</div>
+        <button class="btn-reservar" onclick="abrirReserva('${v.id}','${searchIdActual}',event)">✈ Reservar</button>
       </div>
     </div>
   </div>`;
