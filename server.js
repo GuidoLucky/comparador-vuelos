@@ -305,74 +305,69 @@ app.post('/crear-reserva', async (req, res) => {
     // Guardar en DB
     if (db) {
       try {
-        // Guardar/actualizar clientes
         for (const p of pasajeros) {
-          const existing = db.prepare('SELECT id FROM clientes WHERE doc_numero=? AND doc_tipo=?').get(p.docNumero, p.docTipo);
-          if (existing) {
-            db.prepare(`UPDATE clientes SET apellido=?,nombre=?,email=?,genero=?,
-              fecha_nac_dia=?,fecha_nac_mes=?,fecha_nac_anio=?,
-              doc_pais=?,doc_pais_id=?,doc_tipo=?,doc_tipo_id=?,doc_numero=?,
-              doc_venc_dia=?,doc_venc_mes=?,doc_venc_anio=?,
-              nacionalidad=?,nacionalidad_id=?,
-              fact_pais=?,fact_pais_id=?,fact_tipo=?,fact_tipo_id=?,fact_numero=?,
-              updated_at=CURRENT_TIMESTAMP WHERE id=?`).run(
-              p.apellido,p.nombre,p.email,p.genero,
-              p.fechaNacDia,p.fechaNacMes,p.fechaNacAnio,
-              p.docPais,p.docPaisId,p.docTipo,p.docTipoId,p.docNumero,
-              p.docVencDia,p.docVencMes,p.docVencAnio,
-              p.nacionalidad,p.nacionalidadId,
-              p.factPais,p.factPaisId,p.factTipo,p.factTipoId,p.factNumero,
-              existing.id
-            );
-            p._clienteId = existing.id;
+          const ex = await db.query('SELECT id FROM clientes WHERE doc_numero=$1 AND doc_tipo=$2', [p.docNumero, p.docTipo]);
+          if (ex.rows.length) {
+            await db.query(`UPDATE clientes SET apellido=$1,nombre=$2,email=$3,genero=$4,
+              fecha_nac_dia=$5,fecha_nac_mes=$6,fecha_nac_anio=$7,
+              doc_pais=$8,doc_pais_id=$9,doc_tipo=$10,doc_tipo_id=$11,doc_numero=$12,
+              doc_venc_dia=$13,doc_venc_mes=$14,doc_venc_anio=$15,
+              nacionalidad=$16,nacionalidad_id=$17,
+              fact_pais=$18,fact_pais_id=$19,fact_tipo=$20,fact_tipo_id=$21,fact_numero=$22,
+              updated_at=NOW() WHERE id=$23`,
+              [p.apellido,p.nombre,p.email,p.genero,
+               p.fechaNacDia,p.fechaNacMes,p.fechaNacAnio,
+               p.docPais,p.docPaisId,p.docTipo,p.docTipoId,p.docNumero,
+               p.docVencDia,p.docVencMes,p.docVencAnio,
+               p.nacionalidad,p.nacionalidadId,
+               p.factPais,p.factPaisId,p.factTipo,p.factTipoId,p.factNumero,
+               ex.rows[0].id]);
+            p._clienteId = ex.rows[0].id;
           } else {
-            const info = db.prepare(`INSERT INTO clientes (apellido,nombre,email,genero,
+            const ins = await db.query(`INSERT INTO clientes (apellido,nombre,email,genero,
               fecha_nac_dia,fecha_nac_mes,fecha_nac_anio,
               doc_pais,doc_pais_id,doc_tipo,doc_tipo_id,doc_numero,
               doc_venc_dia,doc_venc_mes,doc_venc_anio,
               nacionalidad,nacionalidad_id,
               fact_pais,fact_pais_id,fact_tipo,fact_tipo_id,fact_numero)
-              VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).run(
-              p.apellido,p.nombre,p.email,p.genero,
-              p.fechaNacDia,p.fechaNacMes,p.fechaNacAnio,
-              p.docPais,p.docPaisId,p.docTipo,p.docTipoId,p.docNumero,
-              p.docVencDia,p.docVencMes,p.docVencAnio,
-              p.nacionalidad,p.nacionalidadId,
-              p.factPais,p.factPaisId,p.factTipo,p.factTipoId,p.factNumero
-            );
-            p._clienteId = info.lastInsertRowid;
+              VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22)
+              RETURNING id`,
+              [p.apellido,p.nombre,p.email,p.genero,
+               p.fechaNacDia,p.fechaNacMes,p.fechaNacAnio,
+               p.docPais,p.docPaisId,p.docTipo,p.docTipoId,p.docNumero,
+               p.docVencDia,p.docVencMes,p.docVencAnio,
+               p.nacionalidad,p.nacionalidadId,
+               p.factPais,p.factPaisId,p.factTipo,p.factTipoId,p.factNumero]);
+            p._clienteId = ins.rows[0].id;
           }
         }
 
-        // Guardar reserva
-        const reservaInfo = db.prepare(`INSERT INTO reservas (
+        const resIns = await db.query(`INSERT INTO reservas (
           pnr,order_id,order_number,source,search_id,quotation_id,
-          tipo_viaje,origen,destino,fecha_salida,fecha_regreso,
+          tipo_viaje,origen,destino,fecha_salida,
           aerolinea,precio_usd,moneda,adultos,ninos,infantes,estado,
           itinerario_json,pasajeros_json,contacto_json)
-          VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).run(
-          data.recordLocator, data.orderId, data.orderNumber, data.source,
-          searchId, String(quotationId),
-          vueloInfo?.tipo, vueloInfo?.origen, vueloInfo?.destino,
-          vueloInfo?.salida, vueloInfo?.regreso,
-          vueloInfo?.aerolinea, vueloInfo?.precioUSD, vueloInfo?.moneda,
-          pasajeros.filter(p=>p.tipo==='ADT').length,
-          pasajeros.filter(p=>p.tipo==='CHD').length,
-          pasajeros.filter(p=>p.tipo==='INF').length,
-          'CREADA',
-          JSON.stringify(vueloInfo?.itinerario),
-          JSON.stringify(pasajeros),
-          JSON.stringify(contacto)
-        );
+          VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20)
+          RETURNING id`,
+          [data.recordLocator, data.orderId, data.orderNumber, data.source,
+           searchId, String(quotationId),
+           vueloInfo?.tipo, vueloInfo?.origen, vueloInfo?.destino, vueloInfo?.salida,
+           vueloInfo?.aerolinea, vueloInfo?.precioUSD, vueloInfo?.moneda,
+           pasajeros.filter(p=>p.tipo==='ADT').length,
+           pasajeros.filter(p=>p.tipo==='CHD').length,
+           pasajeros.filter(p=>p.tipo==='INF').length,
+           'CREADA',
+           JSON.stringify(vueloInfo?.itinerario),
+           JSON.stringify(pasajeros),
+           JSON.stringify(contacto)]);
 
-        // Vincular pasajeros
         for (const p of pasajeros) {
           if (p._clienteId) {
-            db.prepare('INSERT INTO reserva_pasajeros (reserva_id,cliente_id,tipo,apellido,nombre,email) VALUES (?,?,?,?,?,?)').run(
-              reservaInfo.lastInsertRowid, p._clienteId, p.tipo, p.apellido, p.nombre, p.email
-            );
+            await db.query('INSERT INTO reserva_pasajeros (reserva_id,cliente_id,tipo,apellido,nombre,email) VALUES ($1,$2,$3,$4,$5,$6)',
+              [resIns.rows[0].id, p._clienteId, p.tipo, p.apellido, p.nombre, p.email]);
           }
         }
+        console.log('[DB] Reserva guardada, PNR:', data.recordLocator);
       } catch(dbErr) {
         console.error('[DB] Error guardando:', dbErr.message);
       }
@@ -386,28 +381,33 @@ app.post('/crear-reserva', async (req, res) => {
 });
 
 // ─── CLIENTES ───
-app.get('/clientes/buscar', (req, res) => {
+app.get('/clientes/buscar', async (req, res) => {
   if (!db) return res.json([]);
-  const q = req.query.q || '';
-  const clientes = db.prepare(`
-    SELECT * FROM clientes 
-    WHERE apellido LIKE ? OR nombre LIKE ? OR doc_numero LIKE ? OR email LIKE ?
-    ORDER BY updated_at DESC LIMIT 10
-  `).all(`%${q}%`, `%${q}%`, `%${q}%`, `%${q}%`);
-  res.json(clientes);
+  const q = '%' + (req.query.q || '') + '%';
+  try {
+    const r = await db.query(
+      'SELECT * FROM clientes WHERE apellido ILIKE $1 OR nombre ILIKE $2 OR doc_numero ILIKE $3 OR email ILIKE $4 ORDER BY updated_at DESC LIMIT 10',
+      [q, q, q, q]
+    );
+    res.json(r.rows);
+  } catch(e) { res.json([]); }
 });
 
-app.get('/clientes', (req, res) => {
+app.get('/clientes', async (req, res) => {
   if (!db) return res.json([]);
-  const clientes = db.prepare('SELECT * FROM clientes ORDER BY apellido, nombre LIMIT 100').all();
-  res.json(clientes);
+  try {
+    const r = await db.query('SELECT * FROM clientes ORDER BY apellido, nombre LIMIT 100');
+    res.json(r.rows);
+  } catch(e) { res.json([]); }
 });
 
 // ─── RESERVAS GUARDADAS ───
-app.get('/reservas', (req, res) => {
+app.get('/reservas', async (req, res) => {
   if (!db) return res.json([]);
-  const reservas = db.prepare('SELECT * FROM reservas ORDER BY created_at DESC LIMIT 50').all();
-  res.json(reservas);
+  try {
+    const r = await db.query('SELECT * FROM reservas ORDER BY created_at DESC LIMIT 50');
+    res.json(r.rows);
+  } catch(e) { res.json([]); }
 });
 
 app.listen(PORT, () => console.log(`✅ Puerto ${PORT}`));
