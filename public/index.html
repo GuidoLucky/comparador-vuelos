@@ -115,6 +115,44 @@ header{background:var(--dark2);border-bottom:1px solid var(--border);padding:14p
 .spinner{width:36px;height:36px;border:3px solid var(--border);border-top-color:var(--gold);border-radius:50%;animation:spin 0.8s linear infinite;margin:0 auto;}
 @keyframes spin{to{transform:rotate(360deg);}}
 .no-results{text-align:center;padding:40px;background:var(--dark2);border:1px solid var(--border);border-radius:12px;color:var(--muted);}
+
+.btn-reservar{background:var(--gold);color:#000;border:none;border-radius:7px;font-family:'Sora',sans-serif;font-size:12px;font-weight:700;padding:8px 16px;cursor:pointer;margin-top:8px;width:100%;transition:all 0.2s;}
+.btn-reservar:hover{background:var(--gold-light);}
+
+/* MODAL */
+.modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,0.8);z-index:1000;display:flex;align-items:flex-start;justify-content:center;padding:20px;overflow-y:auto;}
+.modal{background:var(--dark2);border:1px solid var(--border);border-radius:16px;width:100%;max-width:720px;padding:28px;position:relative;margin:auto;}
+.modal-close{position:absolute;top:16px;right:16px;background:none;border:none;color:var(--muted);font-size:20px;cursor:pointer;}
+.modal-close:hover{color:var(--text);}
+.modal-title{font-size:18px;font-weight:700;margin-bottom:4px;}
+.modal-sub{font-size:12px;color:var(--muted);margin-bottom:20px;}
+.modal-section{margin-bottom:20px;padding-bottom:20px;border-bottom:1px solid var(--border);}
+.modal-section:last-child{border-bottom:none;margin-bottom:0;}
+.modal-section-title{font-size:11px;font-weight:700;color:var(--gold);text-transform:uppercase;letter-spacing:1.5px;margin-bottom:14px;}
+.form-row{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:10px;}
+.form-field{display:flex;flex-direction:column;gap:4px;flex:1;min-width:120px;}
+.form-field label{font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:1px;font-weight:600;}
+.form-field input,.form-field select{background:var(--dark3);border:1px solid var(--border);border-radius:7px;color:var(--text);font-family:'Sora',sans-serif;font-size:13px;padding:8px 10px;outline:none;width:100%;}
+.form-field input:focus,.form-field select:focus{border-color:var(--gold);}
+.form-field select option{background:var(--dark3);}
+.pax-tab-header{display:flex;gap:6px;margin-bottom:16px;flex-wrap:wrap;}
+.pax-tab{background:var(--dark3);border:1px solid var(--border);border-radius:7px;color:var(--muted);font-family:'Sora',sans-serif;font-size:12px;font-weight:600;padding:6px 14px;cursor:pointer;}
+.pax-tab.active{border-color:var(--gold);color:var(--gold);background:rgba(201,168,76,0.1);}
+.cliente-search{position:relative;}
+.cliente-dropdown{position:absolute;top:100%;left:0;right:0;background:var(--dark2);border:1px solid var(--gold);border-radius:8px;z-index:10;max-height:200px;overflow-y:auto;display:none;}
+.cliente-dropdown.show{display:block;}
+.cliente-item{padding:10px 12px;cursor:pointer;font-size:12px;border-bottom:1px solid var(--border);}
+.cliente-item:last-child{border-bottom:none;}
+.cliente-item:hover{background:rgba(201,168,76,0.1);}
+.cliente-item strong{color:var(--gold);}
+.cliente-item span{color:var(--muted);font-size:10px;margin-left:6px;}
+.btn-modal-submit{background:var(--gold);color:#000;border:none;border-radius:9px;font-family:'Sora',sans-serif;font-size:15px;font-weight:700;padding:12px 28px;cursor:pointer;width:100%;margin-top:8px;}
+.btn-modal-submit:hover{background:var(--gold-light);}
+.btn-modal-submit:disabled{opacity:0.5;cursor:not-allowed;}
+.reserva-ok{text-align:center;padding:30px 0;}
+.reserva-pnr{font-size:42px;font-weight:700;color:var(--gold);letter-spacing:4px;margin:10px 0;}
+.reserva-detail{font-size:13px;color:var(--muted);margin-top:6px;}
+.alert-diff{background:rgba(248,81,73,0.1);border:1px solid var(--red);border-radius:8px;padding:12px;margin-bottom:16px;font-size:13px;color:var(--red);}
 </style>
 </head>
 <body>
@@ -418,6 +456,7 @@ async function buscar(){
   try{
     const res=await fetch('/buscar-vuelos',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
     const data=await res.json();
+    if(data.searchId) searchIdActual=data.searchId;
     if(!data.ok){document.getElementById('mainContent').innerHTML=`<div class="estado"><div style="font-size:40px">⚠️</div><h3>Error</h3><p>${data.error}</p></div>`;return;}
     todosLosVuelos=data.vuelos||[];
     filtros={escalas:-1,maxPrecioUSD:null,aerolineas:[],ordenar:'precio'};
@@ -429,5 +468,378 @@ async function buscar(){
 }
 document.addEventListener('keydown',e=>{if(e.key==='Enter')buscar();});
 </script>
+
+<!-- MODAL DE RESERVA -->
+<div id="modalReserva" class="modal-overlay" style="display:none">
+  <div class="modal">
+    <button class="modal-close" onclick="cerrarModal()">✕</button>
+    <div id="modalContenido"></div>
+  </div>
+</div>
+
+<script>
+// ─── ESTADO RESERVA ───
+let searchIdActual = '';
+let vueloSeleccionado = null;
+let paisesData = [];
+let paxActivo = 0;
+let pasajerosForms = [];
+
+// Guardar searchId al buscar
+const _buscarOriginal = buscar;
+async function buscar() {
+  searchIdActual = '';
+  await _buscarOriginal();
+}
+
+// Override para capturar searchId
+const _fetchOriginal = window.fetch;
+// Capturamos searchId de la respuesta de buscar-vuelos
+const _buscarBtn = document.getElementById('btnBuscar');
+
+async function cargarPaises() {
+  if (paisesData.length) return paisesData;
+  const r = await fetch('/document-countries?documentFor=Passengers');
+  const d = await r.json();
+  paisesData = d.data || [];
+  return paisesData;
+}
+
+function getPaisOpts(selectedId) {
+  return paisesData.map(p => `<option value="${p.Id}" ${p.Id===selectedId?'selected':''}>${p.Name}</option>`).join('');
+}
+function getDocTipoOpts(paisId, selectedId) {
+  const pais = paisesData.find(p=>p.Id===paisId);
+  const tipos = pais?.DocumentTypes || [];
+  return tipos.map(t => `<option value="${t.Id}" data-code="${t.Code}" ${t.Id===selectedId?'selected':''}>${t.Name}</option>`).join('');
+}
+function getFactTipoOpts(paisId, selectedId) {
+  const pais = paisesData.find(p=>p.Id===paisId);
+  const tipos = pais?.AccountingDocumentTypes || pais?.DocumentTypes || [];
+  return tipos.map(t => `<option value="${t.Id}" data-code="${t.Code}" ${t.Id===selectedId?'selected':''}>${t.Name}</option>`).join('');
+}
+
+// País por defecto Argentina
+function getPaisDefaultId() {
+  const arg = paisesData.find(p=>p.Name==='Argentina');
+  return arg?.Id || '';
+}
+
+async function abrirReserva(quotationId, searchId, e) {
+  e.stopPropagation();
+  if (!searchId) { alert('Hacé una nueva búsqueda para reservar'); return; }
+  
+  // Encontrar el vuelo
+  vueloSeleccionado = todosLosVuelos.find(v=>v.id==quotationId);
+  if (!vueloSeleccionado) return;
+
+  document.getElementById('modalReserva').style.display = 'flex';
+  document.getElementById('modalContenido').innerHTML = '<div class="estado"><div class="spinner"></div><h3>Verificando disponibilidad...</h3></div>';
+
+  try {
+    // Check availability
+    const chk = await fetch('/check-availability', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({ searchId, quotationId: String(quotationId) })
+    }).then(r=>r.json());
+
+    if (!chk.ok) throw new Error(chk.error);
+
+    // Cargar países
+    await cargarPaises();
+
+    // Inicializar forms de pasajeros
+    const adultos = parseInt(document.getElementById('adultos').value);
+    const ninos = parseInt(document.getElementById('ninos').value);
+    const infantes = parseInt(document.getElementById('infantes').value);
+    pasajerosForms = [];
+    for(let i=0;i<adultos;i++) pasajerosForms.push({tipo:'ADT', idx:i});
+    for(let i=0;i<ninos;i++) pasajerosForms.push({tipo:'CHD', idx:i});
+    for(let i=0;i<infantes;i++) pasajerosForms.push({tipo:'INF', idx:i});
+    paxActivo = 0;
+
+    renderModalReserva(searchId, quotationId, chk.hasDifferences);
+  } catch(err) {
+    document.getElementById('modalContenido').innerHTML = `<div class="estado"><div style="font-size:40px">⚠️</div><h3>Error</h3><p>${err.message}</p></div>`;
+  }
+}
+
+function renderModalReserva(searchId, quotationId, hasDiff) {
+  const v = vueloSeleccionado;
+  const pax = pasajerosForms[paxActivo];
+  const tipoLabel = pax.tipo==='ADT'?'Adulto':pax.tipo==='CHD'?'Niño':'Infante';
+  const paxNum = pax.idx+1;
+  const paisDefId = getPaisDefaultId();
+
+  const tabs = pasajerosForms.map((p,i) => {
+    const lbl = p.tipo==='ADT'?`Adulto ${p.idx+1}`:p.tipo==='CHD'?`Niño ${p.idx+1}`:`Infante ${p.idx+1}`;
+    return `<button class="pax-tab ${i===paxActivo?'active':''}" onclick="cambiarPax(${i})">${lbl}</button>`;
+  }).join('');
+
+  document.getElementById('modalContenido').innerHTML = `
+    <div class="modal-title">✈ Confirmar Reserva</div>
+    <div class="modal-sub">${v.aerolinea} · ${v.itinerario.map(l=>l.origen+' → '+l.destino).join(' | ')} · USD ${v.precioUSD?.toFixed(2)}</div>
+    ${hasDiff?'<div class="alert-diff">⚠️ El precio del vuelo cambió. Verificá antes de confirmar.</div>':''}
+
+    <div class="modal-section">
+      <div class="modal-section-title">Pasajeros</div>
+      <div class="pax-tab-header">${tabs}</div>
+      <div id="paxForm"></div>
+    </div>
+
+    <div class="modal-section">
+      <div class="modal-section-title">Datos de contacto</div>
+      <div class="form-row">
+        <div class="form-field"><label>Apellido*</label><input id="c_apellido" placeholder="Apellido"></div>
+        <div class="form-field"><label>Nombre*</label><input id="c_nombre" placeholder="Nombre"></div>
+      </div>
+      <div class="form-row">
+        <div class="form-field"><label>Email*</label><input id="c_email" type="email" placeholder="email@ejemplo.com"></div>
+        <div class="form-field"><label>Teléfono 1*</label><input id="c_tel1" placeholder="+54 11 1234-5678"></div>
+        <div class="form-field"><label>Teléfono 2</label><input id="c_tel2" placeholder="Opcional"></div>
+      </div>
+    </div>
+
+    <button class="btn-modal-submit" id="btnConfirmar" onclick="confirmarReserva('${searchId}','${quotationId}')">Confirmar Reserva</button>
+  `;
+
+  renderPaxForm(paxActivo);
+}
+
+function renderPaxForm(idx) {
+  const pax = pasajerosForms[idx];
+  const paisDefId = getPaisDefaultId();
+  const saved = pax.data || {};
+  const docPaisId = saved.docPaisId || paisDefId;
+  const factPaisId = saved.factPaisId || paisDefId;
+
+  document.getElementById('paxForm').innerHTML = `
+    <div class="cliente-search" style="margin-bottom:14px">
+      <div class="form-field">
+        <label>Buscar cliente existente</label>
+        <input id="buscarCliente_${idx}" placeholder="Apellido, nombre o documento..." oninput="buscarCliente(${idx}, this.value)" autocomplete="off">
+      </div>
+      <div class="cliente-dropdown" id="dropdown_${idx}"></div>
+    </div>
+    <div class="form-row">
+      <div class="form-field" style="flex:2"><label>Apellido*</label><input id="p_apellido_${idx}" placeholder="APELLIDO" value="${saved.apellido||''}" oninput="guardarPaxField(${idx},'apellido',this.value)"></div>
+      <div class="form-field" style="flex:2"><label>Nombre*</label><input id="p_nombre_${idx}" placeholder="NOMBRE" value="${saved.nombre||''}" oninput="guardarPaxField(${idx},'nombre',this.value)"></div>
+      <div class="form-field" style="flex:1"><label>Género*</label>
+        <select id="p_genero_${idx}" onchange="guardarPaxField(${idx},'genero',this.value)">
+          <option value="">-</option>
+          <option value="0" ${saved.genero=='0'?'selected':''}>Masculino</option>
+          <option value="1" ${saved.genero=='1'?'selected':''}>Femenino</option>
+        </select>
+      </div>
+    </div>
+    <div class="form-row">
+      <div class="form-field"><label>Email</label><input id="p_email_${idx}" type="email" value="${saved.email||''}" placeholder="email@ejemplo.com" oninput="guardarPaxField(${idx},'email',this.value)"></div>
+      <div class="form-field"><label>Fecha nac. (D/M/A)*</label>
+        <div style="display:flex;gap:4px">
+          <input id="p_nacDia_${idx}" type="number" placeholder="DD" min="1" max="31" style="width:52px" value="${saved.fechaNacDia||''}" oninput="guardarPaxField(${idx},'fechaNacDia',this.value)">
+          <input id="p_nacMes_${idx}" type="number" placeholder="MM" min="1" max="12" style="width:52px" value="${saved.fechaNacMes||''}" oninput="guardarPaxField(${idx},'fechaNacMes',this.value)">
+          <input id="p_nacAnio_${idx}" type="number" placeholder="AAAA" min="1900" max="2026" style="width:72px" value="${saved.fechaNacAnio||''}" oninput="guardarPaxField(${idx},'fechaNacAnio',this.value)">
+        </div>
+      </div>
+    </div>
+    <div style="font-size:10px;color:var(--gold);text-transform:uppercase;letter-spacing:1px;font-weight:700;margin:10px 0 8px">Documento de viaje</div>
+    <div class="form-row">
+      <div class="form-field"><label>País doc.*</label>
+        <select id="p_docPais_${idx}" onchange="onDocPaisChange(${idx})">
+          <option value="">Seleccionar</option>
+          ${getPaisOpts(docPaisId)}
+        </select>
+      </div>
+      <div class="form-field"><label>Tipo doc.*</label>
+        <select id="p_docTipo_${idx}" onchange="guardarPaxField(${idx},'docTipoId',this.value);guardarPaxField(${idx},'docTipo',this.options[this.selectedIndex]?.dataset.code)">
+          <option value="">-</option>
+          ${getDocTipoOpts(docPaisId, saved.docTipoId||'')}
+        </select>
+      </div>
+      <div class="form-field"><label>Nro. documento*</label><input id="p_docNum_${idx}" value="${saved.docNumero||''}" placeholder="12345678" oninput="guardarPaxField(${idx},'docNumero',this.value)"></div>
+    </div>
+    <div class="form-row">
+      <div class="form-field"><label>Nacionalidad*</label>
+        <select id="p_nac_${idx}" onchange="guardarPaxField(${idx},'nacionalidadId',this.value)">
+          <option value="">Seleccionar</option>
+          ${getPaisOpts(saved.nacionalidadId||docPaisId)}
+        </select>
+      </div>
+      <div class="form-field"><label>Venc. doc. (D/M/A)*</label>
+        <div style="display:flex;gap:4px">
+          <input id="p_vencDia_${idx}" type="number" placeholder="DD" min="1" max="31" style="width:52px" value="${saved.docVencDia||''}" oninput="guardarPaxField(${idx},'docVencDia',this.value)">
+          <input id="p_vencMes_${idx}" type="number" placeholder="MM" min="1" max="12" style="width:52px" value="${saved.docVencMes||''}" oninput="guardarPaxField(${idx},'docVencMes',this.value)">
+          <input id="p_vencAnio_${idx}" type="number" placeholder="AAAA" min="2026" max="2055" style="width:72px" value="${saved.docVencAnio||''}" oninput="guardarPaxField(${idx},'docVencAnio',this.value)">
+        </div>
+      </div>
+    </div>
+    <div style="font-size:10px;color:var(--gold);text-transform:uppercase;letter-spacing:1px;font-weight:700;margin:10px 0 8px">Documento de facturación</div>
+    <div class="form-row">
+      <div class="form-field"><label>País fact.*</label>
+        <select id="p_factPais_${idx}" onchange="onFactPaisChange(${idx})">
+          <option value="">Seleccionar</option>
+          ${getPaisOpts(factPaisId)}
+        </select>
+      </div>
+      <div class="form-field"><label>Tipo fact.*</label>
+        <select id="p_factTipo_${idx}" onchange="guardarPaxField(${idx},'factTipoId',this.value);guardarPaxField(${idx},'factTipo',this.options[this.selectedIndex]?.dataset.code)">
+          <option value="">-</option>
+          ${getFactTipoOpts(factPaisId, saved.factTipoId||'')}
+        </select>
+      </div>
+      <div class="form-field"><label>Nro. fact.*</label><input id="p_factNum_${idx}" value="${saved.factNumero||''}" placeholder="20123456789" oninput="guardarPaxField(${idx},'factNumero',this.value)"></div>
+    </div>
+  `;
+
+  // Guardar valores iniciales
+  if (docPaisId) { guardarPaxField(idx,'docPaisId',docPaisId); guardarPaxField(idx,'docPais', paisesData.find(p=>p.Id===docPaisId)?.Name||''); }
+  if (factPaisId) { guardarPaxField(idx,'factPaisId',factPaisId); guardarPaxField(idx,'factPais', paisesData.find(p=>p.Id===factPaisId)?.Name||''); }
+}
+
+function guardarPaxField(idx, campo, valor) {
+  if (!pasajerosForms[idx].data) pasajerosForms[idx].data = {};
+  pasajerosForms[idx].data[campo] = valor;
+}
+
+function onDocPaisChange(idx) {
+  const sel = document.getElementById(`p_docPais_${idx}`);
+  const paisId = sel.value;
+  const paisNombre = sel.options[sel.selectedIndex]?.text || '';
+  guardarPaxField(idx,'docPaisId',paisId);
+  guardarPaxField(idx,'docPais',paisNombre);
+  // Actualizar tipos de doc
+  document.getElementById(`p_docTipo_${idx}`).innerHTML = '<option value="">-</option>' + getDocTipoOpts(paisId,'');
+  document.getElementById(`p_nac_${idx}`).innerHTML = '<option value="">Seleccionar</option>' + getPaisOpts(paisId);
+  guardarPaxField(idx,'nacionalidadId',paisId);
+}
+
+function onFactPaisChange(idx) {
+  const sel = document.getElementById(`p_factPais_${idx}`);
+  const paisId = sel.value;
+  const paisNombre = sel.options[sel.selectedIndex]?.text || '';
+  guardarPaxField(idx,'factPaisId',paisId);
+  guardarPaxField(idx,'factPais',paisNombre);
+  document.getElementById(`p_factTipo_${idx}`).innerHTML = '<option value="">-</option>' + getFactTipoOpts(paisId,'');
+}
+
+function cambiarPax(idx) {
+  // Guardar datos actuales del form antes de cambiar
+  const i = paxActivo;
+  const campos = ['apellido','nombre','genero','email','nacDia','nacMes','nacAnio','docNum','vencDia','vencMes','vencAnio','factNum'];
+  const mapeo = {apellido:'apellido',nombre:'nombre',genero:'genero',email:'email',nacDia:'fechaNacDia',nacMes:'fechaNacMes',nacAnio:'fechaNacAnio',docNum:'docNumero',vencDia:'docVencDia',vencMes:'docVencMes',vencAnio:'docVencAnio',factNum:'factNumero'};
+  for(const c of campos) {
+    const el = document.getElementById(`p_${c}_${i}`);
+    if(el) guardarPaxField(i, mapeo[c], el.value);
+  }
+  paxActivo = idx;
+  document.querySelectorAll('.pax-tab').forEach((t,ti)=>t.classList.toggle('active',ti===idx));
+  renderPaxForm(idx);
+}
+
+async function buscarCliente(idx, q) {
+  const dd = document.getElementById(`dropdown_${idx}`);
+  if (q.length < 2) { dd.classList.remove('show'); return; }
+  const clientes = await fetch(`/clientes/buscar?q=${encodeURIComponent(q)}`).then(r=>r.json());
+  if (!clientes.length) { dd.classList.remove('show'); return; }
+  dd.innerHTML = clientes.map(c => `
+    <div class="cliente-item" onclick="precargarCliente(${idx}, ${c.id})">
+      <strong>${c.apellido}, ${c.nombre}</strong>
+      <span>${c.doc_tipo} ${c.doc_numero}</span>
+      <span>${c.email||''}</span>
+    </div>
+  `).join('');
+  dd.classList.add('show');
+}
+
+async function precargarCliente(idx, clienteId) {
+  document.getElementById(`dropdown_${idx}`).classList.remove('show');
+  const clientes = await fetch('/clientes').then(r=>r.json());
+  const c = clientes.find(x=>x.id===clienteId);
+  if (!c) return;
+  
+  // Guardar todos los datos
+  if (!pasajerosForms[idx].data) pasajerosForms[idx].data = {};
+  Object.assign(pasajerosForms[idx].data, {
+    apellido: c.apellido, nombre: c.nombre, email: c.email||'',
+    genero: String(c.genero||'0'),
+    fechaNacDia: c.fecha_nac_dia, fechaNacMes: c.fecha_nac_mes, fechaNacAnio: c.fecha_nac_anio,
+    docPais: c.doc_pais, docPaisId: c.doc_pais_id,
+    docTipo: c.doc_tipo, docTipoId: c.doc_tipo_id, docNumero: c.doc_numero,
+    docVencDia: c.doc_venc_dia, docVencMes: c.doc_venc_mes, docVencAnio: c.doc_venc_anio,
+    nacionalidad: c.nacionalidad, nacionalidadId: c.nacionalidad_id,
+    factPais: c.fact_pais, factPaisId: c.fact_pais_id,
+    factTipo: c.fact_tipo, factTipoId: c.fact_tipo_id, factNumero: c.fact_numero
+  });
+  renderPaxForm(idx);
+  document.getElementById(`buscarCliente_${idx}`).value = `${c.apellido}, ${c.nombre}`;
+}
+
+async function confirmarReserva(searchId, quotationId) {
+  // Guardar datos del pax activo
+  cambiarPax(paxActivo);
+
+  // Validar
+  for(const pax of pasajerosForms) {
+    const d = pax.data || {};
+    if(!d.apellido||!d.nombre||!d.docNumero) {
+      alert(`Completá los datos del pasajero ${pax.tipo} ${pax.idx+1}`);
+      return;
+    }
+  }
+  const cApellido = document.getElementById('c_apellido').value;
+  const cNombre = document.getElementById('c_nombre').value;
+  const cEmail = document.getElementById('c_email').value;
+  const cTel1 = document.getElementById('c_tel1').value;
+  if(!cApellido||!cNombre||!cEmail||!cTel1) { alert('Completá los datos de contacto'); return; }
+
+  const btn = document.getElementById('btnConfirmar');
+  btn.disabled = true; btn.textContent = '⏳ Procesando...';
+
+  const pasajeros = pasajerosForms.map(p => ({ tipo: p.tipo, ...p.data }));
+  const contacto = { apellido: cApellido, nombre: cNombre, email: cEmail, telefono1: cTel1, telefono2: document.getElementById('c_tel2').value };
+  const v = vueloSeleccionado;
+  const vueloInfo = {
+    tipo: 'vuelo', origen: v.itinerario[0]?.origen, destino: v.itinerario[v.itinerario.length-1]?.destino,
+    salida: v.itinerario[0]?.salida, aerolinea: v.aerolinea,
+    precioUSD: v.precioUSD, moneda: 'USD', itinerario: v.itinerario
+  };
+
+  try {
+    const res = await fetch('/crear-reserva', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({ searchId, quotationId: String(quotationId), pasajeros, contacto, vueloInfo })
+    }).then(r=>r.json());
+
+    if (!res.ok) throw new Error(res.error);
+
+    document.getElementById('modalContenido').innerHTML = `
+      <div class="reserva-ok">
+        <div style="font-size:48px">✅</div>
+        <div style="font-size:13px;color:var(--muted);margin-top:12px">Reserva confirmada</div>
+        <div class="reserva-pnr">${res.pnr}</div>
+        <div class="reserva-detail">Nro. de orden: ${res.orderNumber}</div>
+        <div class="reserva-detail" style="margin-top:16px">${v.aerolinea} · ${v.itinerario.map(l=>l.origen+' → '+l.destino).join(' | ')}</div>
+        <div class="reserva-detail">USD ${v.precioUSD?.toFixed(2)}</div>
+        <button class="btn-modal-submit" style="margin-top:20px;max-width:200px;margin-left:auto;margin-right:auto" onclick="cerrarModal()">Cerrar</button>
+      </div>
+    `;
+  } catch(err) {
+    btn.disabled = false; btn.textContent = 'Confirmar Reserva';
+    alert('Error: ' + err.message);
+  }
+}
+
+function cerrarModal() {
+  document.getElementById('modalReserva').style.display = 'none';
+  vueloSeleccionado = null;
+  pasajerosForms = [];
+}
+
+// Cerrar al hacer click fuera
+document.getElementById('modalReserva').addEventListener('click', function(e) {
+  if(e.target === this) cerrarModal();
+});
+</script>
+
 </body>
 </html>
