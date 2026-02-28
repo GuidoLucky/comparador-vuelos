@@ -422,7 +422,7 @@ app.get('/detalle-vuelo', async (req, res) => {
   const { searchId, quotationId } = req.query;
   try {
     const token = await getToken();
-    const r = await fetch(`${API_BASE}/FlightItinerary/ItineraryDetailRemake?searchId=${searchId}&quotationId=${quotationId}`, {
+    const r = await fetch(`${API_BASE}/FlightSearch/ItineraryDetailRemake?searchId=${searchId}&quotationId=${quotationId}`, {
       headers: getHeaders(token)
     });
     const text = await r.text();
