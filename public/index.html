@@ -6,11 +6,7 @@
 <title>Lucky Tour — Comparador de Vuelos</title>
 <link href="https://fonts.googleapis.com/css2?family=Sora:wght@300;400;500;600;700&display=swap" rel="stylesheet">
 <style>
-:root {
-  --gold:#C9A84C;--gold-light:#E8CC7A;--dark:#0D1117;--dark2:#161B22;--dark3:#21262D;
-  --border:#30363D;--text:#E6EDF3;--muted:#8B949E;--green:#3FB950;--blue:#58A6FF;
-  --red:#F85149;--orange:#F0883E;
-}
+:root{--gold:#C9A84C;--gold-light:#E8CC7A;--dark:#0D1117;--dark2:#161B22;--dark3:#21262D;--border:#30363D;--text:#E6EDF3;--muted:#8B949E;--green:#3FB950;--blue:#58A6FF;--red:#F85149;--orange:#F0883E;}
 *{box-sizing:border-box;margin:0;padding:0;}
 body{font-family:'Sora',sans-serif;background:var(--dark);color:var(--text);min-height:100vh;}
 header{background:var(--dark2);border-bottom:1px solid var(--border);padding:14px 28px;display:flex;align-items:center;gap:12px;}
@@ -18,18 +14,41 @@ header{background:var(--dark2);border-bottom:1px solid var(--border);padding:14p
 .logo-text{font-size:17px;font-weight:700;}.logo-text span{color:var(--gold);}
 .logo-sub{font-size:10px;color:var(--muted);letter-spacing:2px;text-transform:uppercase;}
 .container{max-width:1200px;margin:0 auto;padding:24px 20px;}
+
+/* SEARCH CARD */
 .search-card{background:var(--dark2);border:1px solid var(--border);border-radius:14px;padding:22px 24px;margin-bottom:24px;}
-.search-label{font-size:11px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:1.5px;margin-bottom:16px;}
+
+/* TIPO TABS */
+.tipo-tabs{display:flex;gap:6px;margin-bottom:20px;}
+.tipo-tab{background:var(--dark3);border:1px solid var(--border);border-radius:8px;color:var(--muted);font-family:'Sora',sans-serif;font-size:12px;font-weight:600;padding:7px 16px;cursor:pointer;transition:all 0.15s;}
+.tipo-tab:hover{border-color:var(--gold);color:var(--text);}
+.tipo-tab.active{background:rgba(201,168,76,0.12);border-color:var(--gold);color:var(--gold);}
+
+/* FIELDS */
 .search-row{display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap;}
 .field{display:flex;flex-direction:column;gap:5px;}
 .field label{font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:1px;font-weight:600;}
 .field input,.field select{background:var(--dark3);border:1px solid var(--border);border-radius:8px;color:var(--text);font-family:'Sora',sans-serif;font-size:14px;padding:9px 11px;outline:none;transition:border-color 0.2s;}
 .field input:focus,.field select:focus{border-color:var(--gold);}
 .field select option{background:var(--dark3);}
-.f-sm{width:90px;}.f-md{width:148px;}.f-xs{width:72px;}.f-lg{width:130px;}
-.btn-buscar{background:var(--gold);color:#000;border:none;border-radius:9px;font-family:'Sora',sans-serif;font-size:14px;font-weight:700;padding:10px 24px;cursor:pointer;transition:all 0.2s;white-space:nowrap;align-self:flex-end;}
+.f-sm{width:90px;}.f-md{width:145px;}.f-xs{width:72px;}.f-lg{width:140px;}
+
+/* MULTIDESTINO */
+.tramo-row-multi{display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap;padding:12px;background:var(--dark3);border-radius:10px;margin-bottom:8px;position:relative;}
+.tramo-num{font-size:10px;font-weight:700;color:var(--gold);text-transform:uppercase;letter-spacing:1px;align-self:center;min-width:60px;}
+.btn-rm-tramo{position:absolute;top:8px;right:8px;background:none;border:none;color:var(--muted);cursor:pointer;font-size:16px;padding:2px 6px;border-radius:4px;}
+.btn-rm-tramo:hover{color:var(--red);}
+.btn-add-tramo{background:none;border:1px dashed var(--border);border-radius:8px;color:var(--muted);font-family:'Sora',sans-serif;font-size:12px;padding:8px 16px;cursor:pointer;width:100%;margin-top:4px;transition:all 0.15s;}
+.btn-add-tramo:hover{border-color:var(--gold);color:var(--gold);}
+
+/* PAX ROW */
+.pax-stops-row{display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap;margin-top:14px;padding-top:14px;border-top:1px solid var(--border);}
+
+.btn-buscar{background:var(--gold);color:#000;border:none;border-radius:9px;font-family:'Sora',sans-serif;font-size:14px;font-weight:700;padding:10px 26px;cursor:pointer;transition:all 0.2s;white-space:nowrap;align-self:flex-end;}
 .btn-buscar:hover{background:var(--gold-light);}
 .btn-buscar:disabled{opacity:0.5;cursor:not-allowed;}
+
+/* LAYOUT RESULTADOS */
 .results-layout{display:grid;grid-template-columns:230px 1fr;gap:20px;}
 @media(max-width:768px){.results-layout{grid-template-columns:1fr;}}
 .filtros-panel{background:var(--dark2);border:1px solid var(--border);border-radius:14px;padding:18px;height:fit-content;position:sticky;top:20px;}
@@ -45,6 +64,8 @@ header{background:var(--dark2);border-bottom:1px solid var(--border);padding:14p
 .range-labels{display:flex;justify-content:space-between;font-size:10px;color:var(--muted);margin-top:4px;}
 .btn-limpiar{background:none;border:1px solid var(--border);border-radius:7px;color:var(--muted);font-family:'Sora',sans-serif;font-size:11px;padding:6px 12px;cursor:pointer;width:100%;margin-top:4px;}
 .btn-limpiar:hover{border-color:var(--red);color:var(--red);}
+
+/* RESULTADOS */
 .results-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;}
 .results-count{font-size:13px;color:var(--muted);}
 .results-count strong{color:var(--gold);font-size:20px;margin-right:4px;}
@@ -80,11 +101,11 @@ header{background:var(--dark2);border-bottom:1px solid var(--border);padding:14p
 .precio-pax{font-size:10px;color:var(--muted);}
 .precio-expira{font-size:9px;color:var(--muted);margin-top:4px;}
 .precio-expira.urgente{color:var(--orange);}
-.equipaje-row{display:flex;gap:6px;margin-top:8px;flex-wrap:wrap;justify-content:flex-end;}
-.eq-tag{font-size:10px;border-radius:5px;padding:3px 8px;display:flex;align-items:center;gap:4px;}
-.eq-tag.incluido{background:rgba(63,185,80,0.12);border:1px solid rgba(63,185,80,0.3);color:var(--green);}
-.eq-tag.no-incluido{background:var(--dark3);border:1px solid var(--border);color:var(--muted);}
-.eq-tag.cargo{background:rgba(240,136,62,0.12);border:1px solid rgba(240,136,62,0.3);color:var(--orange);}
+.equipaje-row{display:flex;gap:5px;margin-top:8px;flex-wrap:wrap;justify-content:flex-end;}
+.eq-tag{font-size:10px;border-radius:5px;padding:3px 8px;display:flex;align-items:center;gap:3px;}
+.eq-tag.si{background:rgba(63,185,80,0.12);border:1px solid rgba(63,185,80,0.3);color:var(--green);}
+.eq-tag.no{background:var(--dark3);border:1px solid var(--border);color:var(--muted);}
+
 .estado{text-align:center;padding:60px 20px;color:var(--muted);}
 .estado h3{font-size:17px;color:var(--text);margin:12px 0 6px;}
 .spinner{width:36px;height:36px;border:3px solid var(--border);border-top-color:var(--gold);border-radius:50%;animation:spin 0.8s linear infinite;margin:0 auto;}
@@ -102,12 +123,31 @@ header{background:var(--dark2);border-bottom:1px solid var(--border);padding:14p
 </header>
 <div class="container">
   <div class="search-card">
-    <div class="search-label">🔍 Búsqueda</div>
-    <div class="search-row">
-      <div class="field f-sm"><label>Origen</label><input type="text" id="origen" placeholder="BUE" value="BUE" maxlength="3" style="text-transform:uppercase"></div>
-      <div class="field f-sm"><label>Destino</label><input type="text" id="destino" placeholder="MIA" maxlength="3" style="text-transform:uppercase"></div>
-      <div class="field f-md"><label>Ida</label><input type="date" id="salida"></div>
-      <div class="field f-md"><label>Vuelta</label><input type="date" id="regreso"></div>
+    <!-- TIPO TABS -->
+    <div class="tipo-tabs">
+      <button class="tipo-tab active" onclick="setTipo('roundtrip')">⇄ Ida y vuelta</button>
+      <button class="tipo-tab" onclick="setTipo('oneway')">→ Solo ida</button>
+      <button class="tipo-tab" onclick="setTipo('multidestino')">⊕ Multidestino</button>
+    </div>
+
+    <!-- ROUND TRIP / ONE WAY -->
+    <div id="form-simple">
+      <div class="search-row">
+        <div class="field f-sm"><label>Origen</label><input type="text" id="origen" placeholder="BUE" value="BUE" maxlength="3" oninput="this.value=this.value.toUpperCase()"></div>
+        <div class="field f-sm"><label>Destino</label><input type="text" id="destino" placeholder="MIA" maxlength="3" oninput="this.value=this.value.toUpperCase()"></div>
+        <div class="field f-md"><label>Ida</label><input type="date" id="salida"></div>
+        <div class="field f-md" id="field-regreso"><label>Vuelta</label><input type="date" id="regreso"></div>
+      </div>
+    </div>
+
+    <!-- MULTIDESTINO -->
+    <div id="form-multi" style="display:none">
+      <div id="tramos-container"></div>
+      <button class="btn-add-tramo" onclick="addTramo()">+ Agregar tramo</button>
+    </div>
+
+    <!-- PAX + STOPS + BUSCAR -->
+    <div class="pax-stops-row">
       <div class="field f-xs"><label>Adultos</label><select id="adultos"><option>1</option><option selected>2</option><option>3</option><option>4</option><option>5</option><option>6</option></select></div>
       <div class="field f-xs"><label>Niños</label><select id="ninos"><option selected>0</option><option>1</option><option>2</option><option>3</option></select></div>
       <div class="field f-xs"><label>Infantes</label><select id="infantes"><option selected>0</option><option>1</option><option>2</option></select></div>
@@ -122,20 +162,67 @@ header{background:var(--dark2);border-bottom:1px solid var(--border);padding:14p
       <button class="btn-buscar" id="btnBuscar" onclick="buscar()">⚡ Buscar</button>
     </div>
   </div>
+
   <div id="mainContent">
-    <div class="estado"><div style="font-size:48px">✈️</div><h3>Buscá tu vuelo</h3><p>Ingresá origen, destino y fechas</p></div>
+    <div class="estado"><div style="font-size:48px">✈️</div><h3>Buscá tu vuelo</h3><p>Elegí el tipo de viaje, completá los datos y buscá</p></div>
   </div>
 </div>
+
 <script>
+// Fechas default
 const hoy=new Date();
 const d1=new Date(hoy);d1.setMonth(d1.getMonth()+1);
 const d2=new Date(d1);d2.setDate(d2.getDate()+7);
 document.getElementById('salida').value=d1.toISOString().split('T')[0];
 document.getElementById('regreso').value=d2.toISOString().split('T')[0];
 
+let tipoActual='roundtrip';
 let todosLosVuelos=[];
 let filtros={escalas:-1,maxPrecio:null,aerolineas:[],ordenar:'precio'};
 
+// ─── TIPO DE VIAJE ───
+function setTipo(tipo){
+  tipoActual=tipo;
+  document.querySelectorAll('.tipo-tab').forEach((t,i)=>{
+    t.classList.toggle('active',['roundtrip','oneway','multidestino'][i]===tipo);
+  });
+  document.getElementById('form-simple').style.display=tipo==='multidestino'?'none':'block';
+  document.getElementById('form-multi').style.display=tipo==='multidestino'?'block':'none';
+  document.getElementById('field-regreso').style.display=tipo==='oneway'?'none':'flex';
+  if(tipo==='multidestino'&&document.getElementById('tramos-container').children.length===0){
+    addTramo();addTramo();
+  }
+}
+
+// ─── MULTIDESTINO ───
+let tramoCount=0;
+function addTramo(){
+  tramoCount++;
+  const n=tramoCount;
+  const prev=document.getElementById('tramos-container').lastElementChild;
+  const prevDest=prev?prev.querySelector('.t-dest')?.value:'';
+  const prevDate=prev?prev.querySelector('.t-fecha')?.value:'';
+  // siguiente fecha +3 días
+  let nextDate='';
+  if(prevDate){const d=new Date(prevDate);d.setDate(d.getDate()+3);nextDate=d.toISOString().split('T')[0];}
+  const div=document.createElement('div');
+  div.className='tramo-row-multi';
+  div.id=`tramo-${n}`;
+  div.innerHTML=`
+    <span class="tramo-num">Tramo ${n}</span>
+    <div class="field f-sm"><label>Origen</label><input type="text" class="t-orig" placeholder="BUE" value="${prevDest}" maxlength="3" oninput="this.value=this.value.toUpperCase()"></div>
+    <div class="field f-sm"><label>Destino</label><input type="text" class="t-dest" placeholder="MIA" maxlength="3" oninput="this.value=this.value.toUpperCase()"></div>
+    <div class="field f-md"><label>Fecha</label><input type="date" class="t-fecha" value="${nextDate}"></div>
+    ${n>2?`<button class="btn-rm-tramo" onclick="removeTramo(${n})">✕</button>`:''}
+  `;
+  document.getElementById('tramos-container').appendChild(div);
+}
+function removeTramo(n){
+  const el=document.getElementById(`tramo-${n}`);
+  if(el)el.remove();
+}
+
+// ─── FORMATO ───
 function fmt(iso){if(!iso)return'–';return new Date(iso).toLocaleTimeString('es-AR',{hour:'2-digit',minute:'2-digit',hour12:false});}
 function fmtFecha(iso){if(!iso)return'';return new Date(iso).toLocaleDateString('es-AR',{day:'2-digit',month:'short'});}
 function fmtExpira(iso){
@@ -147,23 +234,6 @@ function fmtExpira(iso){
 }
 function escClass(n){return n===0?'directo':n===1?'una':'dos';}
 function escLabel(n){return n===0?'Directo':n===1?'1 escala':`${n} escalas`;}
-
-function renderEquipaje(v) {
-  const tags = [];
-  // Maleta despachada
-  if (v.maleta && v.maleta !== 'Sin maleta incluida') {
-    tags.push(`<div class="eq-tag incluido">🧳 ${v.maleta}</div>`);
-  } else {
-    tags.push(`<div class="eq-tag no-incluido">🧳 Sin maleta</div>`);
-  }
-  // Carry on
-  if (v.handBag === 'Incluido') {
-    tags.push(`<div class="eq-tag incluido">👜 Carry on</div>`);
-  } else {
-    tags.push(`<div class="eq-tag no-incluido">👜 Sin carry on</div>`);
-  }
-  return `<div class="equipaje-row">${tags.join('')}</div>`;
-}
 
 function renderTramo(leg,label){
   if(!leg)return'';
@@ -179,7 +249,7 @@ function renderTramo(leg,label){
       </div>
       <div class="tramo-line">
         <div class="line-bar"><div class="line-dot"></div><div class="line-seg"></div><div class="line-plane">✈</div><div class="line-seg"></div><div class="line-dot"></div></div>
-        ${stops?`<div style="font-size:9px;color:var(--orange)">${stops}</div>`:''}
+        ${stops?`<div style="font-size:9px;color:var(--orange);margin-top:1px">${stops}</div>`:''}
         <div class="tramo-dur">${leg.duracion||''}</div>
       </div>
       <div class="airport-block" style="text-align:right">
@@ -193,10 +263,15 @@ function renderTramo(leg,label){
 }
 
 function renderVuelo(v){
-  const ida=v.itinerario?.[0],vuelta=v.itinerario?.[1];
   const expiraStr=fmtExpira(v.expira);
   const urgente=expiraStr.includes('m')&&!expiraStr.includes('h');
   const pax=parseInt(document.getElementById('adultos').value)+parseInt(document.getElementById('ninos').value);
+  const labels=['🛫 Ida','🛬 Vuelta','✈ Tramo 3','✈ Tramo 4','✈ Tramo 5'];
+  const tramosHTML=v.itinerario.map((leg,i)=>{
+    const html=renderTramo(leg,labels[i]||`✈ Tramo ${i+1}`);
+    return i>0?`<div class="tramo-divider"></div>${html}`:html;
+  }).join('');
+
   return`<div class="vuelo-card">
     <div class="vuelo-main">
       <div class="aero-col">
@@ -204,15 +279,15 @@ function renderVuelo(v){
         <div class="aero-name">${v.aerolineaDesc}</div>
         <div class="aero-source">${v.source}</div>
       </div>
-      <div>
-        ${renderTramo(ida,'🛫 Ida')}
-        ${vuelta?`<div class="tramo-divider"></div>${renderTramo(vuelta,'🛬 Vuelta')}`:''}
-      </div>
+      <div>${tramosHTML}</div>
       <div class="precio-col">
         <div class="precio-moneda">${v.moneda} Total</div>
         <div class="precio-amt">${v.precio?.toLocaleString('es-AR',{minimumFractionDigits:2})}</div>
         ${pax>1?`<div class="precio-pax">≈ ${(v.precio/pax).toLocaleString('es-AR',{minimumFractionDigits:0})} por pax</div>`:''}
-        ${renderEquipaje(v)}
+        <div class="equipaje-row">
+          <div class="eq-tag ${v.maletaIncluida?'si':'no'}">🧳 ${v.maleta}</div>
+          <div class="eq-tag ${v.handBag==='Incluido'?'si':'no'}">👜 ${v.handBag==='Incluido'?'Carry on':'Sin carry on'}</div>
+        </div>
         <div class="precio-expira ${urgente?'urgente':''}">${expiraStr}</div>
       </div>
     </div>
@@ -229,7 +304,7 @@ function aplicarFiltrosYRender(){
   else if(filtros.ordenar==='salida')vuelos.sort((a,b)=>new Date(a.itinerario[0]?.salida)-new Date(b.itinerario[0]?.salida));
 
   const cuentas={0:0,1:0,2:0};
-  todosLosVuelos.forEach(v=>{const k=Math.min(v.escalas,2);cuentas[k]++;});
+  todosLosVuelos.forEach(v=>{cuentas[Math.min(v.escalas,2)]++;});
   const aerosMap={};
   todosLosVuelos.forEach(v=>{aerosMap[v.aerolinea]=v.aerolineaDesc;});
   const precioMin=Math.min(...todosLosVuelos.map(v=>v.precio));
@@ -242,14 +317,14 @@ function aplicarFiltrosYRender(){
         <div class="filtros-title">Filtros</div>
         <div class="filtro-grupo">
           <div class="filtro-grupo-title">Escalas</div>
-          <button class="filtro-btn ${filtros.escalas===-1?'active':''}" onclick="setFiltroEscalas(-1)"><div class="filtro-dot" style="background:var(--blue)"></div>Todos<span class="filtro-count">${todosLosVuelos.length}</span></button>
-          <button class="filtro-btn ${filtros.escalas===0?'active':''}" onclick="setFiltroEscalas(0)"><div class="filtro-dot" style="background:var(--green)"></div>Directo<span class="filtro-count">${cuentas[0]}</span></button>
-          <button class="filtro-btn ${filtros.escalas===1?'active':''}" onclick="setFiltroEscalas(1)"><div class="filtro-dot" style="background:var(--orange)"></div>1 escala<span class="filtro-count">${cuentas[1]}</span></button>
-          <button class="filtro-btn ${filtros.escalas===2?'active':''}" onclick="setFiltroEscalas(2)"><div class="filtro-dot" style="background:var(--red)"></div>2+ escalas<span class="filtro-count">${cuentas[2]}</span></button>
+          <button class="filtro-btn ${filtros.escalas===-1?'active':''}" onclick="setFE(-1)"><div class="filtro-dot" style="background:var(--blue)"></div>Todos<span class="filtro-count">${todosLosVuelos.length}</span></button>
+          <button class="filtro-btn ${filtros.escalas===0?'active':''}" onclick="setFE(0)"><div class="filtro-dot" style="background:var(--green)"></div>Directo<span class="filtro-count">${cuentas[0]}</span></button>
+          <button class="filtro-btn ${filtros.escalas===1?'active':''}" onclick="setFE(1)"><div class="filtro-dot" style="background:var(--orange)"></div>1 escala<span class="filtro-count">${cuentas[1]}</span></button>
+          <button class="filtro-btn ${filtros.escalas===2?'active':''}" onclick="setFE(2)"><div class="filtro-dot" style="background:var(--red)"></div>2+ escalas<span class="filtro-count">${cuentas[2]}</span></button>
         </div>
         <div class="filtro-grupo">
           <div class="filtro-grupo-title">Precio máximo</div>
-          <input type="range" class="range-slider" min="${precioMin}" max="${precioMax}" value="${currentMax}" oninput="setFiltroPrecio(this.value)">
+          <input type="range" class="range-slider" min="${precioMin}" max="${precioMax}" value="${currentMax}" oninput="setFP(this.value)">
           <div class="range-labels"><span>USD ${Math.round(precioMin).toLocaleString()}</span><span style="color:var(--gold)">USD ${Math.round(currentMax).toLocaleString()}</span></div>
         </div>
         <div class="filtro-grupo">
@@ -260,7 +335,7 @@ function aplicarFiltrosYRender(){
       </div>
       <div>
         <div class="results-header">
-          <div class="results-count"><strong>${vuelos.length}</strong> opciones ${todosLosVuelos.length>vuelos.length?`(de ${todosLosVuelos.length})`:''}</div>
+          <div class="results-count"><strong>${vuelos.length}</strong> opciones${todosLosVuelos.length>vuelos.length?` (de ${todosLosVuelos.length})`:''}</div>
           <select class="sort-select" onchange="setOrden(this.value)">
             <option value="precio" ${filtros.ordenar==='precio'?'selected':''}>Precio ↑</option>
             <option value="duracion" ${filtros.ordenar==='duracion'?'selected':''}>Duración ↑</option>
@@ -272,32 +347,52 @@ function aplicarFiltrosYRender(){
     </div>`;
 }
 
-function setFiltroEscalas(n){filtros.escalas=n;aplicarFiltrosYRender();}
-function setFiltroPrecio(v){filtros.maxPrecio=parseFloat(v);aplicarFiltrosYRender();}
+function setFE(n){filtros.escalas=n;aplicarFiltrosYRender();}
+function setFP(v){filtros.maxPrecio=parseFloat(v);aplicarFiltrosYRender();}
 function toggleAero(code){filtros.aerolineas.includes(code)?filtros.aerolineas=filtros.aerolineas.filter(a=>a!==code):filtros.aerolineas.push(code);aplicarFiltrosYRender();}
 function setOrden(v){filtros.ordenar=v;aplicarFiltrosYRender();}
 function limpiarFiltros(){filtros={escalas:-1,maxPrecio:null,aerolineas:[],ordenar:'precio'};aplicarFiltrosYRender();}
 
 async function buscar(){
-  const origen=document.getElementById('origen').value.trim().toUpperCase();
-  const destino=document.getElementById('destino').value.trim().toUpperCase();
-  const salida=document.getElementById('salida').value;
-  const regreso=document.getElementById('regreso').value;
   const adultos=document.getElementById('adultos').value;
   const ninos=document.getElementById('ninos').value;
   const infantes=document.getElementById('infantes').value;
   const stops=document.getElementById('stops').value;
-  if(!origen||!destino||!salida||!regreso){alert('Completá todos los campos');return;}
-  document.getElementById('mainContent').innerHTML=`<div class="estado"><div class="spinner"></div><h3>Buscando vuelos...</h3><p>${origen} → ${destino}</p></div>`;
+
+  let body={tipo:tipoActual,adultos,ninos,infantes,stops:stops||undefined};
+
+  if(tipoActual==='multidestino'){
+    const tramosEls=document.getElementById('tramos-container').querySelectorAll('.tramo-row-multi');
+    const tramos=[];
+    for(const el of tramosEls){
+      const o=el.querySelector('.t-orig').value.trim().toUpperCase();
+      const d=el.querySelector('.t-dest').value.trim().toUpperCase();
+      const f=el.querySelector('.t-fecha').value;
+      if(!o||!d||!f){alert('Completá todos los tramos');return;}
+      tramos.push({origen:o,destino:d,salida:f});
+    }
+    if(tramos.length<2){alert('Agregá al menos 2 tramos');return;}
+    body.tramos=tramos;
+  } else {
+    const origen=document.getElementById('origen').value.trim().toUpperCase();
+    const destino=document.getElementById('destino').value.trim().toUpperCase();
+    const salida=document.getElementById('salida').value;
+    const regreso=document.getElementById('regreso').value;
+    if(!origen||!destino||!salida||(tipoActual==='roundtrip'&&!regreso)){alert('Completá todos los campos');return;}
+    body={...body,origen,destino,salida,regreso};
+  }
+
+  document.getElementById('mainContent').innerHTML=`<div class="estado"><div class="spinner"></div><h3>Buscando vuelos...</h3><p>Puede tardar hasta 30 segundos</p></div>`;
   const btn=document.getElementById('btnBuscar');
   btn.disabled=true;btn.textContent='⏳ Buscando...';
+
   try{
-    const res=await fetch('/buscar-vuelos',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({origen,destino,salida,regreso,adultos,ninos,infantes,stops:stops||undefined})});
+    const res=await fetch('/buscar-vuelos',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
     const data=await res.json();
     if(!data.ok){document.getElementById('mainContent').innerHTML=`<div class="estado"><div style="font-size:40px">⚠️</div><h3>Error</h3><p>${data.error}</p></div>`;return;}
     todosLosVuelos=data.vuelos||[];
     filtros={escalas:-1,maxPrecio:null,aerolineas:[],ordenar:'precio'};
-    if(!todosLosVuelos.length){document.getElementById('mainContent').innerHTML=`<div class="estado"><div style="font-size:40px">🔍</div><h3>Sin resultados</h3></div>`;return;}
+    if(!todosLosVuelos.length){document.getElementById('mainContent').innerHTML=`<div class="estado"><div style="font-size:40px">🔍</div><h3>Sin resultados</h3><p>Probá otras fechas o destinos</p></div>`;return;}
     aplicarFiltrosYRender();
   }catch(err){
     document.getElementById('mainContent').innerHTML=`<div class="estado"><div style="font-size:40px">⚠️</div><h3>Error de conexión</h3><p>${err.message}</p></div>`;
