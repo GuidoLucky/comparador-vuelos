@@ -119,13 +119,11 @@ app.post('/buscar-vuelos', async (req, res) => {
 
     const data = await searchRes.json();
     console.log(`[Vuelos] ${data.minifiedQuotations?.length || 0} resultados`)
-    // Debug: ver estructura de legs para entender escalas
-    const legsDebug = data.minifiedLegs || {};
-    const firstKeys = Object.keys(legsDebug).slice(0,3);
-    firstKeys.forEach(k => {
-      const l = legsDebug[k];
-      console.log(`[Leg ${k}] connecting=${JSON.stringify(l.connectingCityCodesList)} hasTech=${l.hasTechnicalStops} typeOfFlight=${l.typeOfFlight}`);
-    });;
+    // Debug equipaje
+    const q0 = data.minifiedQuotations?.[0];
+    console.log('[EQ] legsWithBaggageAllowance:', JSON.stringify(q0?.legsWithBaggageAllowance));
+    console.log('[EQ] alternatePrice:', JSON.stringify(q0?.alternatePrice || q0?.alternatePrices));
+    console.log('[EQ] grandTotal USD:', q0?.grandTotalSellingPriceAmount, q0?.grandTotalSellingPriceCurrency);;
 
     const vuelos = procesarVuelos(data, stopsFilter);
     res.json({ ok:true, vuelos, total: data.minifiedQuotations?.length || 0 });
