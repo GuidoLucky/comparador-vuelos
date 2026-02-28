@@ -79,7 +79,10 @@ app.post('/buscar-vuelos', async (req, res) => {
       method: 'POST', headers: getHeaders(token), body: JSON.stringify(payload)
     });
 
-    if (!searchRes.ok) throw new Error(`API error: ${searchRes.status}`);
+    if (!searchRes.ok) {
+      const errText = await searchRes.text();
+      throw new Error(`API error: ${searchRes.status} - ${errText.substring(0, 300)}`);
+    }
     const data = await searchRes.json();
     console.log(`[Vuelos] ${data.minifiedQuotations?.length || 0} resultados`);
 
