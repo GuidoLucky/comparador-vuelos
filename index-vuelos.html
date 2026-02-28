@@ -1,0 +1,492 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Lucky Tour — Comparador de Vuelos</title>
+<link href="https://fonts.googleapis.com/css2?family=Sora:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --gold: #C9A84C;
+    --gold-light: #E8CC7A;
+    --dark: #0D1117;
+    --dark2: #161B22;
+    --dark3: #21262D;
+    --border: #30363D;
+    --text: #E6EDF3;
+    --muted: #8B949E;
+    --green: #3FB950;
+    --blue: #58A6FF;
+    --red: #F85149;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: 'Sora', sans-serif; background: var(--dark); color: var(--text); min-height: 100vh; }
+
+  header {
+    background: var(--dark2);
+    border-bottom: 1px solid var(--border);
+    padding: 16px 32px;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+  .logo-icon {
+    width: 38px; height: 38px;
+    background: var(--gold);
+    border-radius: 10px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 20px;
+  }
+  .logo-text { font-size: 18px; font-weight: 600; }
+  .logo-text span { color: var(--gold); }
+  .logo-sub { font-size: 11px; color: var(--muted); letter-spacing: 2px; text-transform: uppercase; }
+
+  .container { max-width: 1100px; margin: 0 auto; padding: 32px 24px; }
+
+  .search-card {
+    background: var(--dark2);
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    padding: 28px;
+    margin-bottom: 32px;
+  }
+  .search-title { font-size: 13px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: 1.5px; margin-bottom: 20px; }
+
+  .search-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr 1fr 80px 80px 80px;
+    gap: 12px;
+    align-items: end;
+  }
+  @media (max-width: 900px) {
+    .search-grid { grid-template-columns: 1fr 1fr; }
+  }
+
+  .field label {
+    display: block;
+    font-size: 11px;
+    color: var(--muted);
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    margin-bottom: 6px;
+    font-weight: 500;
+  }
+  .field input, .field select {
+    width: 100%;
+    background: var(--dark3);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    color: var(--text);
+    font-family: 'Sora', sans-serif;
+    font-size: 14px;
+    padding: 10px 12px;
+    outline: none;
+    transition: border-color 0.2s;
+  }
+  .field input:focus, .field select:focus { border-color: var(--gold); }
+  .field input::placeholder { color: var(--muted); }
+  .field select option { background: var(--dark3); }
+
+  .btn-buscar {
+    grid-column: span 7;
+    background: var(--gold);
+    color: #000;
+    border: none;
+    border-radius: 10px;
+    font-family: 'Sora', sans-serif;
+    font-size: 14px;
+    font-weight: 700;
+    padding: 12px 28px;
+    cursor: pointer;
+    transition: background 0.2s, transform 0.1s;
+    letter-spacing: 0.5px;
+    margin-top: 4px;
+  }
+  .btn-buscar:hover { background: var(--gold-light); }
+  .btn-buscar:active { transform: scale(0.98); }
+  .btn-buscar:disabled { opacity: 0.5; cursor: not-allowed; }
+
+  .sources-bar {
+    display: flex;
+    gap: 8px;
+    margin-bottom: 24px;
+    flex-wrap: wrap;
+  }
+  .source-badge {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    background: var(--dark2);
+    border: 1px solid var(--border);
+    border-radius: 20px;
+    padding: 5px 12px;
+    font-size: 12px;
+    color: var(--muted);
+  }
+  .dot { width: 7px; height: 7px; border-radius: 50%; }
+  .dot-green { background: var(--green); }
+  .dot-gray { background: var(--muted); }
+
+  .estado { text-align: center; padding: 60px 20px; color: var(--muted); }
+  .estado-icon { font-size: 48px; margin-bottom: 16px; }
+  .estado h3 { font-size: 18px; color: var(--text); margin-bottom: 8px; }
+
+  .spinner {
+    width: 40px; height: 40px;
+    border: 3px solid var(--border);
+    border-top-color: var(--gold);
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+    margin: 0 auto 16px;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  .resultados-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 16px;
+  }
+  .resultados-count { font-size: 13px; color: var(--muted); }
+  .resultados-count strong { color: var(--gold); font-size: 18px; }
+
+  .vuelo-card {
+    background: var(--dark2);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 20px 24px;
+    margin-bottom: 10px;
+    display: grid;
+    grid-template-columns: 100px 1fr 1fr 160px;
+    gap: 16px;
+    align-items: center;
+    transition: border-color 0.2s;
+    cursor: pointer;
+  }
+  .vuelo-card:hover { border-color: var(--gold); }
+
+  .aerolinea-col { text-align: center; }
+  .aerolinea-code {
+    font-size: 22px;
+    font-weight: 700;
+    color: var(--gold);
+  }
+  .aerolinea-name { font-size: 11px; color: var(--muted); margin-top: 2px; }
+
+  .tramo {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    font-size: 13px;
+  }
+  .airport { font-weight: 600; font-size: 15px; }
+  .time { font-size: 11px; color: var(--muted); margin-top: 2px; }
+  .linea-tramo {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 2px;
+  }
+  .linea {
+    width: 100%;
+    height: 1px;
+    background: var(--border);
+    position: relative;
+  }
+  .linea::after {
+    content: '✈';
+    position: absolute;
+    top: -9px;
+    left: 50%;
+    transform: translateX(-50%);
+    font-size: 14px;
+    color: var(--muted);
+  }
+  .escalas-text { font-size: 10px; color: var(--muted); }
+  .escalas-text.directo { color: var(--green); }
+
+  .info-vuelo { font-size: 12px; color: var(--muted); }
+  .info-vuelo .tag {
+    display: inline-block;
+    background: var(--dark3);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 2px 7px;
+    font-size: 11px;
+    margin-top: 4px;
+    margin-right: 4px;
+  }
+
+  .precio-col { text-align: right; }
+  .precio-usd {
+    font-size: 24px;
+    font-weight: 700;
+    color: var(--text);
+  }
+  .precio-label { font-size: 10px; color: var(--muted); text-transform: uppercase; letter-spacing: 1px; }
+  .precio-expira { font-size: 10px; color: var(--muted); margin-top: 4px; }
+
+  .separador {
+    height: 1px;
+    background: var(--border);
+    margin: 8px 0;
+  }
+
+  .regreso-row {
+    grid-column: 2 / 4;
+    padding-top: 8px;
+  }
+
+  @media (max-width: 700px) {
+    .vuelo-card { grid-template-columns: 1fr; }
+    .precio-col { text-align: left; }
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="logo-icon">✈</div>
+  <div>
+    <div class="logo-text"><span>Lucky</span> Tour</div>
+    <div class="logo-sub">Comparador de Vuelos</div>
+  </div>
+</header>
+
+<div class="container">
+  <div class="search-card">
+    <div class="search-title">🔍 Nueva búsqueda</div>
+    <div class="search-grid">
+      <div class="field">
+        <label>Origen</label>
+        <input type="text" id="origen" placeholder="BUE" value="BUE" maxlength="3" style="text-transform:uppercase">
+      </div>
+      <div class="field">
+        <label>Destino</label>
+        <input type="text" id="destino" placeholder="MIA" maxlength="3" style="text-transform:uppercase">
+      </div>
+      <div class="field">
+        <label>Ida</label>
+        <input type="date" id="salida">
+      </div>
+      <div class="field">
+        <label>Vuelta</label>
+        <input type="date" id="regreso">
+      </div>
+      <div class="field">
+        <label>Adultos</label>
+        <select id="adultos">
+          <option value="1">1</option>
+          <option value="2" selected>2</option>
+          <option value="3">3</option>
+          <option value="4">4</option>
+          <option value="5">5</option>
+          <option value="6">6</option>
+        </select>
+      </div>
+      <div class="field">
+        <label>Niños</label>
+        <select id="ninos">
+          <option value="0" selected>0</option>
+          <option value="1">1</option>
+          <option value="2">2</option>
+          <option value="3">3</option>
+        </select>
+      </div>
+      <div class="field">
+        <label>Infantes</label>
+        <select id="infantes">
+          <option value="0" selected>0</option>
+          <option value="1">1</option>
+          <option value="2">2</option>
+        </select>
+      </div>
+      <button class="btn-buscar" onclick="buscar()">⚡ Buscar vuelos</button>
+    </div>
+  </div>
+
+  <div class="sources-bar">
+    <div class="source-badge"><div class="dot dot-green"></div> SCIWeb (Tucano) — Amadeus + NDC AA</div>
+  </div>
+
+  <div id="resultados">
+    <div class="estado">
+      <div class="estado-icon">✈️</div>
+      <h3>Buscá tu vuelo</h3>
+      <p>Ingresá origen, destino y fechas para comparar tarifas</p>
+    </div>
+  </div>
+</div>
+
+<script>
+// Fechas default
+const hoy = new Date();
+const enUnMes = new Date(hoy); enUnMes.setMonth(enUnMes.getMonth() + 1);
+const enUnMesYSemana = new Date(enUnMes); enUnMesYSemana.setDate(enUnMesYSemana.getDate() + 7);
+document.getElementById('salida').value = enUnMes.toISOString().split('T')[0];
+document.getElementById('regreso').value = enUnMesYSemana.toISOString().split('T')[0];
+
+function formatFecha(iso) {
+  if (!iso) return '–';
+  const d = new Date(iso);
+  return d.toLocaleString('es-AR', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' });
+}
+
+function formatDuracion(min) {
+  if (!min) return '';
+  const h = Math.floor(min / 60);
+  const m = min % 60;
+  return `${h}h ${m}m`;
+}
+
+function formatExpira(iso) {
+  if (!iso) return '';
+  const d = new Date(iso);
+  const now = new Date();
+  const diff = Math.floor((d - now) / 60000);
+  if (diff < 0) return 'Expirado';
+  if (diff < 60) return `Expira en ${diff}m`;
+  return `Expira en ${Math.floor(diff/60)}h ${diff%60}m`;
+}
+
+function renderTramo(leg, label) {
+  if (!leg) return '';
+  const escalasText = leg.escalas === 0
+    ? '<span class="escalas-text directo">Directo</span>'
+    : `<span class="escalas-text">${leg.escalas} escala${leg.escalas > 1 ? 's' : ''}</span>`;
+
+  return `
+    <div style="font-size:10px;color:var(--muted);margin-bottom:4px;text-transform:uppercase;letter-spacing:1px;">${label}</div>
+    <div class="tramo">
+      <div>
+        <div class="airport">${leg.origen || '–'}</div>
+        <div class="time">${formatFecha(leg.salida)}</div>
+      </div>
+      <div class="linea-tramo">
+        <div class="linea"></div>
+        ${escalasText}
+        ${leg.duracion ? `<span style="font-size:10px;color:var(--muted)">${formatDuracion(leg.duracion)}</span>` : ''}
+      </div>
+      <div style="text-align:right">
+        <div class="airport">${leg.destino || '–'}</div>
+        <div class="time">${formatFecha(leg.llegada)}</div>
+      </div>
+    </div>
+  `;
+}
+
+function renderVuelo(v) {
+  const ida = v.itinerario?.[0];
+  const vuelta = v.itinerario?.[1];
+
+  return `
+    <div class="vuelo-card">
+      <div class="aerolinea-col">
+        <div class="aerolinea-code">${v.aerolinea}</div>
+        <div class="aerolinea-name">${v.aerolineaDesc || ''}</div>
+      </div>
+      <div style="grid-column: span 2">
+        ${renderTramo(ida, 'Ida')}
+        ${vuelta ? `<div class="separador"></div>${renderTramo(vuelta, 'Vuelta')}` : ''}
+      </div>
+      <div class="precio-col">
+        <div class="precio-label">Total</div>
+        <div class="precio-usd">${v.moneda} ${v.precio?.toLocaleString('es-AR', {minimumFractionDigits: 2})}</div>
+        <div class="info-vuelo">
+          <span class="tag">🧳 ${v.maleta}</span>
+          <span class="tag">👜 ${v.handBag}</span>
+        </div>
+        <div class="precio-expira">${formatExpira(v.expira)}</div>
+      </div>
+    </div>
+  `;
+}
+
+async function buscar() {
+  const origen = document.getElementById('origen').value.trim().toUpperCase();
+  const destino = document.getElementById('destino').value.trim().toUpperCase();
+  const salida = document.getElementById('salida').value;
+  const regreso = document.getElementById('regreso').value;
+  const adultos = document.getElementById('adultos').value;
+  const ninos = document.getElementById('ninos').value;
+  const infantes = document.getElementById('infantes').value;
+
+  if (!origen || !destino || !salida || !regreso) {
+    alert('Completá todos los campos');
+    return;
+  }
+
+  document.getElementById('resultados').innerHTML = `
+    <div class="estado">
+      <div class="spinner"></div>
+      <h3>Buscando vuelos...</h3>
+      <p>${origen} → ${destino} · Puede tardar hasta 30 segundos</p>
+    </div>
+  `;
+
+  const btn = document.querySelector('.btn-buscar');
+  btn.disabled = true;
+  btn.textContent = '⏳ Buscando...';
+
+  try {
+    const res = await fetch('/buscar-vuelos', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ origen, destino, salida, regreso, adultos, ninos, infantes })
+    });
+    const data = await res.json();
+
+    if (!data.ok) {
+      document.getElementById('resultados').innerHTML = `
+        <div class="estado">
+          <div class="estado-icon">⚠️</div>
+          <h3>Error en la búsqueda</h3>
+          <p>${data.error}</p>
+        </div>
+      `;
+      return;
+    }
+
+    if (!data.vuelos?.length) {
+      document.getElementById('resultados').innerHTML = `
+        <div class="estado">
+          <div class="estado-icon">🔍</div>
+          <h3>Sin resultados</h3>
+          <p>No se encontraron vuelos para esa combinación</p>
+        </div>
+      `;
+      return;
+    }
+
+    let html = `
+      <div class="resultados-header">
+        <div class="resultados-count">
+          <strong>${data.vuelos.length}</strong> opciones encontradas
+          ${data.total > data.vuelos.length ? ` (mostrando las mejores de ${data.total})` : ''}
+        </div>
+        <div style="font-size:12px;color:var(--muted)">Ordenado por precio</div>
+      </div>
+    `;
+    html += data.vuelos.map(renderVuelo).join('');
+    document.getElementById('resultados').innerHTML = html;
+
+  } catch (err) {
+    document.getElementById('resultados').innerHTML = `
+      <div class="estado">
+        <div class="estado-icon">⚠️</div>
+        <h3>Error de conexión</h3>
+        <p>${err.message}</p>
+      </div>
+    `;
+  } finally {
+    btn.disabled = false;
+    btn.textContent = '⚡ Buscar vuelos';
+  }
+}
+
+// Enter para buscar
+document.addEventListener('keydown', e => { if (e.key === 'Enter') buscar(); });
+</script>
+</body>
+</html>
