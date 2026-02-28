@@ -198,6 +198,10 @@ header{background:var(--dark2);border-bottom:1px solid var(--border);padding:14p
   </div>
 </header>
 <div class="container">
+  <div class="nav-tabs">
+    <button class="nav-tab active" onclick="mostrarVista('buscar',this)">🔍 Buscar vuelos</button>
+    <button class="nav-tab" onclick="mostrarVista('reservas',this)">📋 Mis reservas</button>
+  </div>
   <div class="search-card">
     <div class="tipo-tabs">
       <button class="tipo-tab active" onclick="setTipo('roundtrip')">⇄ Ida y vuelta</button>
@@ -523,6 +527,39 @@ document.addEventListener('keydown',e=>{if(e.key==='Enter')buscar();});
     <option value="porcentaje">%</option>
     <option value="fijo">USD fijo</option>
   </select>
+  <input type="number" id="markupValor" value="0" min="0" step="0.5" oninput="guardarMarkup()" style="width:80px;">
+  <span id="markupInfo" style="font-size:12px;color:var(--muted);"></span>
+</div>
+
+<!-- VISTA RESERVAS -->
+<div id="vistaReservas" style="display:none;max-width:1100px;margin:0 auto;padding:20px 0;">
+  <h2 style="font-size:20px;font-weight:700;margin-bottom:6px;">📋 Mis Reservas</h2>
+  <p style="font-size:13px;color:var(--muted);margin-bottom:20px;">Todas las reservas creadas desde el comparador</p>
+  <div id="reservasTabla" style="overflow-x:auto;"></div>
+</div>
+
+<!-- MARKUP BAR -->
+<div id="markupBar" class="markup-bar" style="max-width:1100px;margin:0 auto 16px;display:none;">
+  <label>💰 Tu markup:</label>
+  <select id="markupTipo" onchange="guardarMarkup()">
+    <option value="porcentaje">%</option>
+    <option value="fijo">USD fijo</option>
+  </select>
+  <input type="number" id="markupValor" value="0" min="0" step="0.5" oninput="guardarMarkup()" style="width:80px;">
+  <span id="markupInfo" style="font-size:12px;color:var(--muted);"></span>
+</div>
+
+<!-- VISTA RESERVAS -->
+<div id="vistaReservas" style="display:none;max-width:1100px;margin:0 auto;padding:20px 0;">
+  <h2 style="font-size:20px;font-weight:700;margin-bottom:6px;">📋 Mis Reservas</h2>
+  <p style="font-size:13px;color:var(--muted);margin-bottom:20px;">Todas las reservas creadas desde el comparador</p>
+  <div id="reservasTabla" style="overflow-x:auto;"></div>
+</div>
+
+<!-- MARKUP BAR -->
+<div id="markupBar" class="markup-bar" style="max-width:1100px;margin:0 auto 16px;display:none;">
+  <label>💰 Tu markup:</label>
+  <select id="markupTipo" onchange="guardarMarkup()"><option value="porcentaje">%</option><option value="fijo">USD fijo</option></select>
   <input type="number" id="markupValor" value="0" min="0" step="0.5" oninput="guardarMarkup()" style="width:80px;">
   <span id="markupInfo" style="font-size:12px;color:var(--muted);"></span>
 </div>
@@ -918,6 +955,150 @@ function cerrarModal() {
 document.getElementById('modalReserva').addEventListener('click', function(e) {
   if(e.target === this) cerrarModal();
 });
+</script>
+<script>
+// ─── MARKUP ───
+let markupConfig = { tipo: 'porcentaje', valor: 0 };
+
+async function cargarMarkup() {
+  try {
+    const r = await fetch('/config-markup').then(r=>r.json());
+    markupConfig = r.markup;
+    document.getElementById('markupTipo').value = markupConfig.tipo;
+    document.getElementById('markupValor').value = markupConfig.valor;
+    actualizarInfoMarkup();
+  } catch(e) {}
+}
+
+function calcularPrecioVenta(precioBase) {
+  if (markupConfig.tipo === 'porcentaje') return precioBase * (1 + markupConfig.valor / 100);
+  return precioBase + markupConfig.valor;
+}
+
+function actualizarInfoMarkup() {
+  const el = document.getElementById('markupInfo');
+  if (!el) return;
+  el.textContent = markupConfig.valor > 0
+    ? (markupConfig.tipo === 'porcentaje' ? `+${markupConfig.valor}% sobre Tucano` : `+USD ${markupConfig.valor} fijo`)
+    : 'Sin markup aplicado';
+}
+
+async function guardarMarkup() {
+  markupConfig = { tipo: document.getElementById('markupTipo').value, valor: parseFloat(document.getElementById('markupValor').value) || 0 };
+  actualizarInfoMarkup();
+  await fetch('/config-markup', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ markup: markupConfig }) });
+  if (todosLosVuelos.length) aplicarFiltrosYRender();
+}
+
+// ─── DETALLE DE PRECIO ───
+let detalleCache = {};
+let detalleAbiertoId = null;
+
+async function verDetalle(quotationId, searchId, e) {
+  e.stopPropagation();
+  if (detalleAbiertoId === quotationId) {
+    const p = document.querySelector(`.detalle-panel[data-detalle="${quotationId}"]`);
+    if (p) { p.classList.remove('show'); p.innerHTML = ''; }
+    detalleAbiertoId = null;
+    return;
+  }
+  document.querySelectorAll('.detalle-panel.show').forEach(p => { p.classList.remove('show'); p.innerHTML = ''; });
+  const panel = document.querySelector(`.detalle-panel[data-detalle="${quotationId}"]`);
+  if (!panel) { console.error('No se encontró panel para', quotationId); return; }
+  panel.innerHTML = '<div style="text-align:center;padding:10px;color:var(--muted);font-size:12px">⏳ Cargando desglose...</div>';
+  panel.classList.add('show');
+  detalleAbiertoId = quotationId;
+  if (!searchId || searchId === 'undefined') { panel.innerHTML = '<div style="color:var(--red);font-size:12px;padding:8px">Hacé una nueva búsqueda para ver el desglose.</div>'; return; }
+  try {
+    let d = detalleCache[quotationId];
+    if (!d) { const r = await fetch(`/detalle-vuelo?searchId=${searchId}&quotationId=${quotationId}`); d = await r.json(); if (d.ok) detalleCache[quotationId] = d; }
+    if (!d.ok) throw new Error(d.error);
+    const bsp = tcUsdArs || 1425;
+    const precioVenta = calcularPrecioVenta(d.total);
+    const markupLabel = markupConfig.valor > 0 ? (markupConfig.tipo === 'porcentaje' ? `+${markupConfig.valor}%` : `+USD ${markupConfig.valor}`) : 'Sin markup';
+    const desgloseHTML = d.desglose.map(p => `
+      <div style="margin-bottom:8px;padding:8px;background:rgba(255,255,255,0.02);border-radius:6px;">
+        <div style="font-size:10px;color:var(--gold);font-weight:700;margin-bottom:5px">${p.tipo} × ${p.cantidad}</div>
+        <div class="detalle-row"><span class="detalle-label">Tarifa base</span><span class="detalle-valor">${d.moneda} ${p.tarifa.toFixed(2)}</span></div>
+        <div class="detalle-row"><span class="detalle-label">Impuestos</span><span class="detalle-valor">${d.moneda} ${p.impuestos.toFixed(2)}</span></div>
+        <div class="detalle-row"><span class="detalle-label">Fee Tucano</span><span class="detalle-valor">${d.moneda} ${p.fee.toFixed(2)}</span></div>
+        <div class="detalle-row total"><span>Total Tucano</span><span>${d.moneda} ${p.total.toFixed(2)}</span></div>
+      </div>`).join('');
+    const penHTML = [];
+    if (d.penalidades?.cambio) penHTML.push(`<span style="font-size:11px;color:var(--muted)">✏️ Cambio: ${d.penalidades.cambio.moneda} ${d.penalidades.cambio.monto}</span>`);
+    if (d.penalidades?.cancelacion) penHTML.push(`<span style="font-size:11px;color:var(--muted)">❌ Cancelación: ${d.penalidades.cancelacion.moneda} ${d.penalidades.cancelacion.monto}</span>`);
+    if (!penHTML.length) penHTML.push('<span style="font-size:11px;color:#28a745">✅ Sin penalidades</span>');
+    panel.innerHTML = `
+      <div style="font-size:10px;color:var(--gold);font-weight:700;text-transform:uppercase;letter-spacing:1px;margin-bottom:10px">📊 Desglose de precio</div>
+      ${desgloseHTML}
+      <div style="display:flex;gap:6px;flex-wrap:wrap;margin:8px 0">${penHTML.join('')}</div>
+      <div class="detalle-venta">
+        <div class="detalle-venta-label">Tu precio de venta (${markupLabel})</div>
+        <div class="detalle-venta-precio">USD ${precioVenta.toFixed(2)}</div>
+        <div style="font-size:11px;color:var(--muted);margin-top:2px">≈ ARS ${Math.round(precioVenta * bsp).toLocaleString('es-AR')}</div>
+      </div>`;
+  } catch(err) {
+    panel.innerHTML = `<div style="color:var(--red);font-size:12px;padding:8px">Error: ${err.message}</div>`;
+  }
+}
+
+// ─── NAVEGACIÓN ───
+function mostrarVista(vista, btn) {
+  document.querySelectorAll('.nav-tab').forEach(t => t.classList.remove('active'));
+  btn.classList.add('active');
+  const buscador = document.querySelector('.search-card');
+  const resultados = document.getElementById('resultados');
+  const filtrosCol = document.querySelector('.filtros-col');
+  const vistaReservas = document.getElementById('vistaReservas');
+  const markupBar = document.getElementById('markupBar');
+  if (vista === 'buscar') {
+    buscador.style.display = '';
+    if (resultados) resultados.style.display = '';
+    if (filtrosCol) filtrosCol.style.display = '';
+    vistaReservas.classList.remove('show');
+    if (todosLosVuelos.length) markupBar.style.display = 'flex';
+  } else {
+    buscador.style.display = 'none';
+    if (resultados) resultados.style.display = 'none';
+    if (filtrosCol) filtrosCol.style.display = 'none';
+    markupBar.style.display = 'none';
+    vistaReservas.classList.add('show');
+    cargarReservas();
+  }
+}
+
+async function cargarReservas() {
+  const cont = document.getElementById('reservasTabla');
+  cont.innerHTML = '<div class="estado"><div class="spinner"></div><p>Cargando reservas...</p></div>';
+  try {
+    const reservas = await fetch('/reservas').then(r=>r.json());
+    if (!reservas.length) { cont.innerHTML = '<div class="no-results">📋 No hay reservas todavía</div>'; return; }
+    const rows = reservas.map(r => {
+      const pasajeros = (() => { try { return JSON.parse(r.pasajeros_json||'[]'); } catch(e){ return []; } })();
+      const paxStr = pasajeros.map(p => `${p.apellido}, ${p.nombre}`).join(' · ') || '—';
+      const fecha = r.created_at ? new Date(r.created_at).toLocaleDateString('es-AR') : '—';
+      const estado = r.estado || 'CREADA';
+      const badgeClass = estado==='EMITIDA'?'badge-emitida':estado==='CANCELADA'?'badge-cancelada':'badge-creada';
+      const precio = r.precio_usd ? `USD ${parseFloat(r.precio_usd).toFixed(2)}` : '—';
+      const ruta = [r.origen, r.destino].filter(Boolean).join(' → ') || '—';
+      return `<tr>
+        <td><span class="pnr-code">${r.pnr||'—'}</span></td>
+        <td>${fecha}</td>
+        <td style="font-size:12px">${r.aerolinea||'—'} · ${ruta}</td>
+        <td style="font-size:11px;max-width:180px">${paxStr}</td>
+        <td>${precio}</td>
+        <td><span class="badge ${badgeClass}">${estado}</span></td>
+        <td><button onclick="verDetalleReserva(${r.id})" style="background:none;border:1px solid var(--border);color:var(--muted);border-radius:5px;padding:4px 10px;font-size:11px;cursor:pointer;font-family:'Sora',sans-serif">Ver</button></td>
+      </tr>`;
+    }).join('');
+    cont.innerHTML = `<table class="reservas-table"><thead><tr><th>PNR</th><th>Fecha</th><th>Vuelo</th><th>Pasajeros</th><th>Precio</th><th>Estado</th><th></th></tr></thead><tbody>${rows}</tbody></table>`;
+  } catch(e) { cont.innerHTML = `<div class="no-results">Error: ${e.message}</div>`; }
+}
+
+function verDetalleReserva(id) { alert('Detalle de reserva #' + id + ' — próximamente'); }
+
+cargarMarkup();
+
 </script>
 
 </body>
