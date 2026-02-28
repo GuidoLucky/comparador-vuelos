@@ -11,11 +11,19 @@ const API_BASE = 'https://api-gwc.glas.travel/api';
 const COMPANY_ID = '3036';
 const WHOLESALER_ID = '538';
 
+// DB
+let db;
+try {
+  db = require('./db');
+  console.log('[DB] SQLite conectado');
+} catch(e) {
+  console.warn('[DB] Sin SQLite:', e.message);
+}
+
 let tokenCache = { token: null, expiry: 0 };
 
 async function getToken() {
   if (tokenCache.token && Date.now() < tokenCache.expiry) return tokenCache.token;
-  console.log('[Auth] Obteniendo token...');
   const body = new URLSearchParams({ mode:'pass', username:SCIWEB_USER, password:SCIWEB_PASS, channel:'GWC', defaultWholesalerId:WHOLESALER_ID });
   const res = await fetch(`${API_BASE}/Account/token`, {
     method:'POST',
@@ -26,7 +34,6 @@ async function getToken() {
   const token = data.access_token || data.token || data.Token || data.AccessToken;
   if (!token) throw new Error('No se pudo obtener token: ' + JSON.stringify(data));
   tokenCache = { token, expiry: Date.now() + 50*60*1000 };
-  console.log('[Auth] Token OK');
   return token;
 }
 
@@ -40,15 +47,13 @@ function getHeaders(token) {
   };
 }
 
-app.get('/', (req, res) => res.sendFile(path.join(__dirname, 'public', 'index.html')));
-// Tipo de cambio BSP (Jazz Operador)
+// ─── TIPO DE CAMBIO BSP ───
 let tcCache = { bsp: null, expiry: 0 };
 app.get('/tipo-cambio', async (req, res) => {
   try {
     if (tcCache.bsp && Date.now() < tcCache.expiry) return res.json({ bsp: tcCache.bsp });
     const r = await fetch('https://jazzoperador.tur.ar/cotizacion-historica/');
     const html = await r.text();
-    // Parsear la tabla: buscar la primera fila con valor BSP válido
     const rows = html.match(/<tr[^>]*>[\s\S]*?<\/tr>/gi) || [];
     let bsp = null;
     for (const row of rows) {
@@ -59,102 +64,79 @@ app.get('/tipo-cambio', async (req, res) => {
         if (!isNaN(val) && val > 100) { bsp = val; break; }
       }
     }
-    if (!bsp) bsp = 1425; // fallback
-    tcCache = { bsp, expiry: Date.now() + 60 * 60 * 1000 }; // cache 1 hora
-    console.log('[BSP] Tipo de cambio BSP:', bsp);
+    if (!bsp) bsp = 1425;
+    tcCache = { bsp, expiry: Date.now() + 60*60*1000 };
+    console.log('[BSP]', bsp);
     res.json({ bsp });
   } catch(e) {
-    console.error('[BSP] Error:', e.message);
     res.json({ bsp: tcCache.bsp || 1425 });
   }
 });
 
-app.get('/health', (req, res) => res.json({ ok:true, configured:!!(SCIWEB_USER && SCIWEB_PASS) }));
+app.get('/health', (req, res) => res.json({ ok:true }));
 
+// ─── BÚSQUEDA DE VUELOS ───
 app.post('/buscar-vuelos', async (req, res) => {
   const { tipo, origen, destino, salida, regreso, adultos, ninos, infantes, stops, tramos, moneda } = req.body;
-  console.log(`[Vuelos] tipo=${tipo} ${origen||'multi'}→${destino||''}`);
   try {
     const token = await getToken();
-
-    let payload, endpoint, addSearchPayload;
-    const stopsVal = null; // Siempre null, filtramos del lado nuestro
     const stopsFilter = (stops !== undefined && stops !== '') ? parseInt(stops) : null;
     const currencyCode = moneda === 'ARS' ? null : 'USD';
 
+    let payload, endpoint, addSearchPayload;
+
     if (tipo === 'oneway') {
-      // ONE WAY - usa MultipleLegs con un solo tramo
       endpoint = `${API_BASE}/FlightSearch/OnewayRemake`;
       payload = {
         DepartCode: origen, ArrivalCode: destino,
         DepartDate: `${salida}T00:00:00`, DepartTime: null,
         Adults: parseInt(adultos), Childs: parseInt(ninos), Infants: parseInt(infantes),
-        CabinType: null, Stops: stopsVal, Airlines: [],
+        CabinType: null, Stops: null, Airlines: [],
         TypeOfFlightAllowedInItinerary: null, SortByGLASAlgorithm: "",
         AlternateCurrencyCode: currencyCode, CorporationCodeGlas: null, IncludeFiltersOptions: true
       };
       addSearchPayload = { SearchTravelType: 2, OneWayModel: payload, MultipleLegsModel: null, RoundTripModel: null };
-
     } else if (tipo === 'roundtrip') {
-      // ROUND TRIP
       endpoint = `${API_BASE}/FlightSearch/RoundTripRemake`;
       payload = {
         DepartCode: origen, ArrivalCode: destino,
         DepartDate: `${salida}T00:00:00`, ArrivalDate: `${regreso}T00:00:00`,
         ArrivalTime: null, DepartTime: null,
         Adults: parseInt(adultos), Childs: parseInt(ninos), Infants: parseInt(infantes),
-        CabinType: null, Stops: stopsVal, Airlines: [],
+        CabinType: null, Stops: null, Airlines: [],
         TypeOfFlightAllowedInItinerary: null, SortByGLASAlgorithm: "",
         AlternateCurrencyCode: currencyCode, CorporationCodeGlas: null, IncludeFiltersOptions: true
       };
       addSearchPayload = { SearchTravelType: 1, OneWayModel: null, MultipleLegsModel: null, RoundTripModel: payload };
-
     } else if (tipo === 'multidestino') {
-      // MULTIDESTINO
-      endpoint = `${API_BASE}/FlightSearch/OnewayRemake`;
+      endpoint = `${API_BASE}/FlightSearch/MultipleLegsRemake`;
       const legs = tramos.map((t, i) => ({
-        LegNumber: i + 1,
-        DepartCode: t.origen,
-        ArrivalCode: t.destino,
-        DepartDate: `${t.salida}T00:00:00`,
-        DepartTime: null,
-        CabinType: null,
-        Stops: stopsVal,
-        Airlines: []
+        LegNumber: i+1, DepartCode: t.origen, ArrivalCode: t.destino,
+        DepartDate: `${t.salida}T00:00:00`, DepartTime: null,
+        CabinType: null, Stops: null, Airlines: []
       }));
       payload = {
-        Legs: legs,
-        Adults: parseInt(adultos), Childs: parseInt(ninos), Infants: parseInt(infantes),
+        Legs: legs, Adults: parseInt(adultos), Childs: parseInt(ninos), Infants: parseInt(infantes),
         TypeOfFlightAllowedInItinerary: null, SortByGLASAlgorithm: "",
         AlternateCurrencyCode: currencyCode, CorporationCodeGlas: null, IncludeFiltersOptions: true
       };
       addSearchPayload = { SearchTravelType: 3, OneWayModel: null, MultipleLegsModel: payload, RoundTripModel: null };
     }
 
-    // AddSearch (historial)
     await fetch(`${API_BASE}/FlightSearchHistory/AddSearch`, {
-      method: 'POST', headers: getHeaders(token), body: JSON.stringify(addSearchPayload)
-    }).catch(() => {});
+      method:'POST', headers: getHeaders(token), body: JSON.stringify(addSearchPayload)
+    }).catch(()=>{});
 
-    // Búsqueda
     const searchRes = await fetch(endpoint, {
-      method: 'POST', headers: getHeaders(token), body: JSON.stringify(payload)
+      method:'POST', headers: getHeaders(token), body: JSON.stringify(payload)
     });
-
-    if (!searchRes.ok) {
-      const errText = await searchRes.text();
-      throw new Error(`API error: ${searchRes.status} - ${errText.substring(0, 300)}`);
-    }
-
+    if (!searchRes.ok) throw new Error(`API error: ${searchRes.status} - ${await searchRes.text().then(t=>t.substring(0,300))}`);
     const data = await searchRes.json();
-    console.log(`[Vuelos] ${data.minifiedQuotations?.length || 0} resultados`)
-
-;
+    console.log(`[Vuelos] ${data.minifiedQuotations?.length || 0} resultados`);
 
     const vuelos = procesarVuelos(data, stopsFilter);
-    res.json({ ok:true, vuelos, total: data.minifiedQuotations?.length || 0 });
-
-  } catch (err) {
+    res.json({ ok:true, vuelos, searchId: data.searchId || data.SearchId });
+  } catch(err) {
     console.error('[Vuelos] Error:', err.message);
     if (err.message.includes('401')) tokenCache = { token:null, expiry:0 };
     res.json({ ok:false, error: err.message });
@@ -172,66 +154,46 @@ function procesarVuelos(data, stopsFilter) {
       const itinerario = q.legs.map(legId => {
         const leg = legsMap[legId];
         if (!leg) return null;
+        const ciudadesEscala = (() => {
+          const c = leg.connectingCityCodesList;
+          if (!c) return [];
+          if (Array.isArray(c)) return c;
+          if (typeof c === 'string') return c.split(',').filter(Boolean);
+          return [];
+        })();
         return {
-          legId,
-          origen: leg.originAirportCode,
-          destino: leg.destinationAirportCode,
-          salida: leg.departure,
-          llegada: leg.arrival,
+          legId, origen: leg.originAirportCode, destino: leg.destinationAirportCode,
+          salida: leg.departure, llegada: leg.arrival,
           duracionMin: leg.elapsedFlightTimeInMinutes,
           duracion: leg.elapsedFlightTimeInMinutesFormatted,
-          escalas: (() => {
-            const c = leg.connectingCityCodesList;
-            if (!c) return 0;
-            if (Array.isArray(c)) return c.length;
-            if (typeof c === 'string') return c.split(',').filter(Boolean).length;
-            return 0;
-          })(),
-          ciudadesEscala: (() => {
-            const c = leg.connectingCityCodesList;
-            if (!c) return [];
-            if (Array.isArray(c)) return c;
-            if (typeof c === 'string') return c.split(',').filter(Boolean);
-            return [];
-          })(),
-          tripDays: leg.tripDays || 0,
+          escalas: ciudadesEscala.length,
+          ciudadesEscala, tripDays: leg.tripDays || 0,
         };
       }).filter(Boolean);
 
       const bagLeg = q.legsWithBaggageAllowance?.[0]?.baggageAllowance;
-      const maxEscalas = itinerario.length > 0 ? itinerario.reduce((max, l) => Math.max(max, l.escalas || 0), 0) : 0;
+      const maxEscalas = itinerario.reduce((max, l) => Math.max(max, l.escalas||0), 0);
 
-      // Mochila (handOn)
       const handOnList = bagLeg?.handOn || [];
-      const handOnIncluido = handOnList.some(b => b.chargeType === 0 && b.pieces > 0);
-      const handOnLabel = handOnList.length > 0 ? (handOnIncluido ? 'Incluida' : 'Con cargo') : 'No informado';
+      const handOnIncluido = handOnList.some(b => b.chargeType===0 && b.pieces>0);
+      const handOnLabel = handOnList.length>0 ? (handOnIncluido?'Incluida':'Con cargo') : 'No informado';
 
-      // Carry on (carryOn)
       const carryOnList = bagLeg?.carryOn || [];
-      const carryOnItem = carryOnList.find(b => b.chargeType === 0 && b.pieces > 0);
+      const carryOnItem = carryOnList.find(b => b.chargeType===0 && b.pieces>0);
       const carryOnIncluido = !!carryOnItem;
-      const carryOnLabel = carryOnItem
-        ? (`${carryOnItem.weight || ''}${carryOnItem.weightUnit || ''}`).trim() || 'Incluido'
-        : (carryOnList.length > 0 ? 'Con cargo' : 'No incluido');
+      const carryOnLabel = carryOnItem ? (`${carryOnItem.weight||''}${carryOnItem.weightUnit||''}`).trim()||'Incluido' : (carryOnList.length>0?'Con cargo':'No incluido');
 
-      // Maleta despachada (checked) - solo adultos
-      const checkedList = (bagLeg?.checked || []).filter(b => b.passengerType === 0);
-      const checkedIncluido = checkedList.some(b => b.chargeType === 0 && (b.pieces > 0 || (b.weight && b.weight !== '0')));
-      const checkedItem = checkedList.find(b => b.chargeType === 0 && (b.pieces > 0 || (b.weight && b.weight !== '0')));
-      const checkedLabel = checkedItem
-        ? (checkedItem.pieces > 0 ? `${checkedItem.pieces}x ${checkedItem.weight}${checkedItem.unit}` : `${checkedItem.weight}${checkedItem.unit}`)
-        : 'No incluida';
-
-      const precioUSD = q.grandTotalSellingPriceAmount || 0;
+      const checkedList = (bagLeg?.checked||[]).filter(b=>b.passengerType===0);
+      const checkedIncluido = checkedList.some(b=>b.chargeType===0&&(b.pieces>0||(b.weight&&b.weight!=='0')));
+      const checkedItem = checkedList.find(b=>b.chargeType===0&&(b.pieces>0||(b.weight&&b.weight!=='0')));
+      const checkedLabel = checkedItem ? (checkedItem.pieces>0?`${checkedItem.pieces}x ${checkedItem.weight}${checkedItem.unit}`:`${checkedItem.weight}${checkedItem.unit}`) : 'No incluida';
 
       return {
-        id: q.quotationId,
-        aerolinea: q.validatingCarrier,
+        id: q.quotationId, aerolinea: q.validatingCarrier,
         aerolineaDesc: airlinesMap[q.validatingCarrier] || q.sourceDescription || q.source,
-        precioUSD,
-        expira: q.offerExpirationTimeCTZ,
-        itinerario,
-        escalas: maxEscalas,
+        precioUSD: q.grandTotalSellingPriceAmount || 0,
+        monedaBase: q.grandTotalSellingPriceCurrency || 'USD',
+        expira: q.offerExpirationTimeCTZ, itinerario, escalas: maxEscalas,
         equipaje: {
           handOn: { label: handOnLabel, incluido: handOnIncluido },
           carryOn: { label: carryOnLabel, incluido: carryOnIncluido },
@@ -241,7 +203,211 @@ function procesarVuelos(data, stopsFilter) {
       };
     })
     .filter(v => stopsFilter === null || v.escalas <= stopsFilter)
-    .sort((a, b) => a.precio - b.precio);
+    .sort((a,b) => a.precioUSD - b.precioUSD);
 }
 
-app.listen(PORT, () => console.log(`✅ Servidor en puerto ${PORT}`));
+// ─── RESERVAS ───
+
+// Verificar disponibilidad
+app.post('/check-availability', async (req, res) => {
+  const { searchId, quotationId } = req.body;
+  try {
+    const token = await getToken();
+    const r = await fetch(`${API_BASE}/FlightSearch/CheckAvailabilityRemake`, {
+      method:'POST', headers: getHeaders(token),
+      body: JSON.stringify({ CompanyAssociationId: parseInt(COMPANY_ID), SearchId: searchId, QuotationId: String(quotationId) })
+    });
+    const data = await r.json();
+    res.json({ ok:true, ...data });
+  } catch(e) {
+    res.json({ ok:false, error: e.message });
+  }
+});
+
+// Traer países y tipos de documento
+app.get('/document-countries', async (req, res) => {
+  const { documentFor } = req.query;
+  try {
+    const token = await getToken();
+    const r = await fetch(`${API_BASE}/FlightBooking/GetDocumentCountries?documentFor=${documentFor}&includeDocumentTypes=True`, {
+      headers: getHeaders(token)
+    });
+    const data = await r.json();
+    res.json({ ok:true, data });
+  } catch(e) {
+    res.json({ ok:false, error: e.message });
+  }
+});
+
+// Crear reserva
+app.post('/crear-reserva', async (req, res) => {
+  const { searchId, quotationId, pasajeros, contacto, vueloInfo } = req.body;
+  try {
+    const token = await getToken();
+
+    const adults = pasajeros.filter(p=>p.tipo==='ADT').map((p,i) => ({
+      key: `ADT${i+1}`, indexUI: i+1, passengerType: 0,
+      FirstName: p.nombre.toUpperCase(), LastName: p.apellido.toUpperCase(),
+      Gender: parseInt(p.genero),
+      BirthdateDay: parseInt(p.fechaNacDia), BirthdateMonth: parseInt(p.fechaNacMes), BirthdateYear: parseInt(p.fechaNacAnio),
+      Email: p.email,
+      DocumentType: p.docTipoId, DocumentCountry: p.docPaisId, DocumentNumber: p.docNumero,
+      ExpirationdateDay: parseInt(p.docVencDia), ExpirationdateMonth: parseInt(p.docVencMes), ExpirationdateYear: parseInt(p.docVencAnio),
+      Nationality: p.nacionalidadId,
+      AccountingDocumentType: p.factTipoId, AccountingDocumentCountry: p.factPaisId, AccountingDocumentNumber: p.factNumero,
+      LoyaltyProgramAccounts: null
+    }));
+
+    const childs = pasajeros.filter(p=>p.tipo==='CHD').map((p,i) => ({
+      key: `CHD${i+1}`, indexUI: i+1, passengerType: 1,
+      FirstName: p.nombre.toUpperCase(), LastName: p.apellido.toUpperCase(),
+      Gender: parseInt(p.genero),
+      BirthdateDay: parseInt(p.fechaNacDia), BirthdateMonth: parseInt(p.fechaNacMes), BirthdateYear: parseInt(p.fechaNacAnio),
+      Email: p.email,
+      DocumentType: p.docTipoId, DocumentCountry: p.docPaisId, DocumentNumber: p.docNumero,
+      ExpirationdateDay: parseInt(p.docVencDia), ExpirationdateMonth: parseInt(p.docVencMes), ExpirationdateYear: parseInt(p.docVencAnio),
+      Nationality: p.nacionalidadId,
+      AccountingDocumentType: p.factTipoId, AccountingDocumentCountry: p.factPaisId, AccountingDocumentNumber: p.factNumero,
+      LoyaltyProgramAccounts: null
+    }));
+
+    const infants = pasajeros.filter(p=>p.tipo==='INF').map((p,i) => ({
+      key: `INF${i+1}`, indexUI: i+1, passengerType: 2,
+      FirstName: p.nombre.toUpperCase(), LastName: p.apellido.toUpperCase(),
+      Gender: parseInt(p.genero),
+      BirthdateDay: parseInt(p.fechaNacDia), BirthdateMonth: parseInt(p.fechaNacMes), BirthdateYear: parseInt(p.fechaNacAnio),
+      Email: p.email,
+      DocumentType: p.docTipoId, DocumentCountry: p.docPaisId, DocumentNumber: p.docNumero,
+      ExpirationdateDay: parseInt(p.docVencDia), ExpirationdateMonth: parseInt(p.docVencMes), ExpirationdateYear: parseInt(p.docVencAnio),
+      Nationality: p.nacionalidadId,
+      AccountingDocumentType: null, AccountingDocumentCountry: null, AccountingDocumentNumber: null,
+      LoyaltyProgramAccounts: null
+    }));
+
+    const bookPayload = {
+      SearchId: searchId, QuotationId: String(quotationId), SelectedUpsellId: null,
+      Adults: adults, Childs: childs, Infants: infants,
+      Contact: {
+        FirstName: contacto.nombre, LastName: contacto.apellido,
+        Email: contacto.email, Phone1: contacto.telefono1, Phone2: contacto.telefono2 || null
+      },
+      PaymentType: null, Cash: null, CreditCard: null, BankTransfer: null,
+      OnBehalfOfUserName: null
+    };
+
+    const r = await fetch(`${API_BASE}/FlightBooking/CreateReservationRemake`, {
+      method:'POST', headers: getHeaders(token), body: JSON.stringify(bookPayload)
+    });
+    if (!r.ok) throw new Error(`API ${r.status}: ${await r.text().then(t=>t.substring(0,300))}`);
+    const data = await r.json();
+    console.log('[Reserva] PNR:', data.recordLocator, 'Order:', data.orderNumber);
+
+    // Guardar en DB
+    if (db) {
+      try {
+        // Guardar/actualizar clientes
+        for (const p of pasajeros) {
+          const existing = db.prepare('SELECT id FROM clientes WHERE doc_numero=? AND doc_tipo=?').get(p.docNumero, p.docTipo);
+          if (existing) {
+            db.prepare(`UPDATE clientes SET apellido=?,nombre=?,email=?,genero=?,
+              fecha_nac_dia=?,fecha_nac_mes=?,fecha_nac_anio=?,
+              doc_pais=?,doc_pais_id=?,doc_tipo=?,doc_tipo_id=?,doc_numero=?,
+              doc_venc_dia=?,doc_venc_mes=?,doc_venc_anio=?,
+              nacionalidad=?,nacionalidad_id=?,
+              fact_pais=?,fact_pais_id=?,fact_tipo=?,fact_tipo_id=?,fact_numero=?,
+              updated_at=CURRENT_TIMESTAMP WHERE id=?`).run(
+              p.apellido,p.nombre,p.email,p.genero,
+              p.fechaNacDia,p.fechaNacMes,p.fechaNacAnio,
+              p.docPais,p.docPaisId,p.docTipo,p.docTipoId,p.docNumero,
+              p.docVencDia,p.docVencMes,p.docVencAnio,
+              p.nacionalidad,p.nacionalidadId,
+              p.factPais,p.factPaisId,p.factTipo,p.factTipoId,p.factNumero,
+              existing.id
+            );
+            p._clienteId = existing.id;
+          } else {
+            const info = db.prepare(`INSERT INTO clientes (apellido,nombre,email,genero,
+              fecha_nac_dia,fecha_nac_mes,fecha_nac_anio,
+              doc_pais,doc_pais_id,doc_tipo,doc_tipo_id,doc_numero,
+              doc_venc_dia,doc_venc_mes,doc_venc_anio,
+              nacionalidad,nacionalidad_id,
+              fact_pais,fact_pais_id,fact_tipo,fact_tipo_id,fact_numero)
+              VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).run(
+              p.apellido,p.nombre,p.email,p.genero,
+              p.fechaNacDia,p.fechaNacMes,p.fechaNacAnio,
+              p.docPais,p.docPaisId,p.docTipo,p.docTipoId,p.docNumero,
+              p.docVencDia,p.docVencMes,p.docVencAnio,
+              p.nacionalidad,p.nacionalidadId,
+              p.factPais,p.factPaisId,p.factTipo,p.factTipoId,p.factNumero
+            );
+            p._clienteId = info.lastInsertRowid;
+          }
+        }
+
+        // Guardar reserva
+        const reservaInfo = db.prepare(`INSERT INTO reservas (
+          pnr,order_id,order_number,source,search_id,quotation_id,
+          tipo_viaje,origen,destino,fecha_salida,fecha_regreso,
+          aerolinea,precio_usd,moneda,adultos,ninos,infantes,estado,
+          itinerario_json,pasajeros_json,contacto_json)
+          VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).run(
+          data.recordLocator, data.orderId, data.orderNumber, data.source,
+          searchId, String(quotationId),
+          vueloInfo?.tipo, vueloInfo?.origen, vueloInfo?.destino,
+          vueloInfo?.salida, vueloInfo?.regreso,
+          vueloInfo?.aerolinea, vueloInfo?.precioUSD, vueloInfo?.moneda,
+          pasajeros.filter(p=>p.tipo==='ADT').length,
+          pasajeros.filter(p=>p.tipo==='CHD').length,
+          pasajeros.filter(p=>p.tipo==='INF').length,
+          'CREADA',
+          JSON.stringify(vueloInfo?.itinerario),
+          JSON.stringify(pasajeros),
+          JSON.stringify(contacto)
+        );
+
+        // Vincular pasajeros
+        for (const p of pasajeros) {
+          if (p._clienteId) {
+            db.prepare('INSERT INTO reserva_pasajeros (reserva_id,cliente_id,tipo,apellido,nombre,email) VALUES (?,?,?,?,?,?)').run(
+              reservaInfo.lastInsertRowid, p._clienteId, p.tipo, p.apellido, p.nombre, p.email
+            );
+          }
+        }
+      } catch(dbErr) {
+        console.error('[DB] Error guardando:', dbErr.message);
+      }
+    }
+
+    res.json({ ok:true, pnr: data.recordLocator, orderNumber: data.orderNumber, orderId: data.orderId });
+  } catch(e) {
+    console.error('[Reserva] Error:', e.message);
+    res.json({ ok:false, error: e.message });
+  }
+});
+
+// ─── CLIENTES ───
+app.get('/clientes/buscar', (req, res) => {
+  if (!db) return res.json([]);
+  const q = req.query.q || '';
+  const clientes = db.prepare(`
+    SELECT * FROM clientes 
+    WHERE apellido LIKE ? OR nombre LIKE ? OR doc_numero LIKE ? OR email LIKE ?
+    ORDER BY updated_at DESC LIMIT 10
+  `).all(`%${q}%`, `%${q}%`, `%${q}%`, `%${q}%`);
+  res.json(clientes);
+});
+
+app.get('/clientes', (req, res) => {
+  if (!db) return res.json([]);
+  const clientes = db.prepare('SELECT * FROM clientes ORDER BY apellido, nombre LIMIT 100').all();
+  res.json(clientes);
+});
+
+// ─── RESERVAS GUARDADAS ───
+app.get('/reservas', (req, res) => {
+  if (!db) return res.json([]);
+  const reservas = db.prepare('SELECT * FROM reservas ORDER BY created_at DESC LIMIT 50').all();
+  res.json(reservas);
+});
+
+app.listen(PORT, () => console.log(`✅ Puerto ${PORT}`));
