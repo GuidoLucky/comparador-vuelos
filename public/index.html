@@ -311,7 +311,7 @@ function renderVuelo(v){
       </div>
       <div>${tramosHTML}</div>
       <div class="precio-col">
-        <div class="precio-moneda-label">${simboloMoneda()} Total</div>
+        <div class="precio-moneda-label">${v.monedaBase || simboloMoneda()} Total</div>
         <div class="precio-amt">${fmtPrecio(precio)}</div>
         <div class="precio-alt">${precioAlt}</div>
         ${pax>1?`<div class="precio-pax">≈ ${fmtPrecio(precio/pax)} por pax</div>`:''}
