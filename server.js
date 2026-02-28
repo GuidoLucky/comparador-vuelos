@@ -427,7 +427,10 @@ app.get('/detalle-vuelo', async (req, res) => {
     });
     const text = await r.text();
     let data = {};
-    try { data = JSON.parse(text); } catch(e) { throw new Error('Respuesta inválida'); }
+    try { data = JSON.parse(text); } catch(e) { 
+      console.error('[Detalle] Respuesta no-JSON:', text.substring(0,300));
+      throw new Error('Respuesta inválida: ' + text.substring(0,100)); 
+    }
     
     const q = data.quote;
     if (!q) throw new Error('Sin datos de cotización');
