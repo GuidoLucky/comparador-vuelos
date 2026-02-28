@@ -31,7 +31,7 @@ async function getToken() {
     body: body.toString()
   });
   const data = await res.json();
-  const token = data.access_token || data.token || data.Token;
+  const token = data.access_token || data.token || data.Token || data.AccessToken;
   if (!token) throw new Error('No se pudo obtener token: ' + JSON.stringify(data));
   tokenCache = { token, expiry: Date.now() + 50 * 60 * 1000 };
   console.log('[Auth] Token OK');
