@@ -989,6 +989,24 @@ async function guardarMarkup() {
 let detalleCache = {};
 let detalleAbiertoId = null;
 
+function mostrarVista(vista, btn) {
+  document.querySelectorAll('.nav-tab').forEach(function(t) { t.classList.remove('active'); });
+  btn.classList.add('active');
+  var searchCard = document.querySelector('.search-card');
+  var resultados = document.getElementById('resultados');
+  var vistaReservas = document.getElementById('vistaReservas');
+  if (vista === 'buscar') {
+    if (searchCard) searchCard.style.display = '';
+    if (resultados) resultados.style.display = '';
+    vistaReservas.style.display = 'none';
+  } else {
+    if (searchCard) searchCard.style.display = 'none';
+    if (resultados) resultados.style.display = 'none';
+    vistaReservas.style.display = 'block';
+    cargarReservas();
+  }
+}
+
 async function verDetalle(quotationId, searchId, e) {
   e.stopPropagation();
   if (detalleAbiertoId === quotationId) {
