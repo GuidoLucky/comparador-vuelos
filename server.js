@@ -226,7 +226,7 @@ app.get('/document-countries', async (req, res) => {
   const { documentFor } = req.query;
   try {
     const token = await getToken();
-    const r = await fetch(`${API_BASE}/FlightBooking/GetDocumentCountries?documentFor=${documentFor}&includeDocumentTypes=True`, {
+    const r = await fetch(`${API_BASE}/Documents/GetDocumentCountries?documentFor=${documentFor}&includeDocumentTypes=True`, {
       headers: getHeaders(token)
     });
     const text = await r.text();
