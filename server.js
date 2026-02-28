@@ -77,7 +77,7 @@ app.post('/buscar-vuelos', async (req, res) => {
         DepartDate: `${salida}T00:00:00`, DepartTime: null,
         Adults: parseInt(adultos), Childs: parseInt(ninos), Infants: parseInt(infantes),
         CabinType: null, Stops: stopsVal, Airlines: [],
-        TypeOfFlightAllowedInItinerary: null, SortByGLASAlgorithm: null,
+        TypeOfFlightAllowedInItinerary: null, SortByGLASAlgorithm: "",
         AlternateCurrencyCode: currencyCode, CorporationCodeGlas: null, IncludeFiltersOptions: true
       };
       addSearchPayload = { SearchTravelType: 2, OneWayModel: payload, MultipleLegsModel: null, RoundTripModel: null };
@@ -91,7 +91,7 @@ app.post('/buscar-vuelos', async (req, res) => {
         ArrivalTime: null, DepartTime: null,
         Adults: parseInt(adultos), Childs: parseInt(ninos), Infants: parseInt(infantes),
         CabinType: null, Stops: stopsVal, Airlines: [],
-        TypeOfFlightAllowedInItinerary: null, SortByGLASAlgorithm: null,
+        TypeOfFlightAllowedInItinerary: null, SortByGLASAlgorithm: "",
         AlternateCurrencyCode: currencyCode, CorporationCodeGlas: null, IncludeFiltersOptions: true
       };
       addSearchPayload = { SearchTravelType: 1, OneWayModel: null, MultipleLegsModel: null, RoundTripModel: payload };
@@ -112,7 +112,7 @@ app.post('/buscar-vuelos', async (req, res) => {
       payload = {
         Legs: legs,
         Adults: parseInt(adultos), Childs: parseInt(ninos), Infants: parseInt(infantes),
-        TypeOfFlightAllowedInItinerary: null, SortByGLASAlgorithm: null,
+        TypeOfFlightAllowedInItinerary: null, SortByGLASAlgorithm: "",
         AlternateCurrencyCode: currencyCode, CorporationCodeGlas: null, IncludeFiltersOptions: true
       };
       addSearchPayload = { SearchTravelType: 3, OneWayModel: null, MultipleLegsModel: payload, RoundTripModel: null };
