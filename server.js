@@ -207,14 +207,15 @@ app.post('/check-availability', async (req, res) => {
   const { searchId, quotationId } = req.body;
   try {
     const token = await getToken();
-    const r = await fetch(`${API_BASE}/FlightReservation/CheckAvailabilityRemake`, {
+    const r = await fetch(`${API_BASE}/FlightItinerary/CheckAvailabilityRemake`, {
       method:'POST', headers: getHeaders(token),
       body: JSON.stringify({ CompanyAssociationId: parseInt(COMPANY_ID), SearchId: searchId, QuotationId: String(quotationId) })
     });
     const text = await r.text();
     let data = {};
     try { data = JSON.parse(text); } catch(e) { console.warn('[CheckAvail] respuesta no-JSON:', text.substring(0,100)); }
-    res.json({ ok:true, hasDifferences: data.hasDifferences || false, ...data });
+    // Si no hay respuesta válida, igual permitir continuar
+    res.json({ ok:true, hasDifferences: data.hasDifferences || false });
   } catch(e) {
     console.error('[CheckAvail] Error:', e.message);
     res.json({ ok:false, error: e.message });
@@ -297,8 +298,13 @@ app.post('/crear-reserva', async (req, res) => {
     const r = await fetch(`${API_BASE}/FlightReservation/CreateReservationRemake`, {
       method:'POST', headers: getHeaders(token), body: JSON.stringify(bookPayload)
     });
-    if (!r.ok) throw new Error(`API ${r.status}: ${await r.text().then(t=>t.substring(0,300))}`);
-    const data = await r.json();
+    const rText = await r.text();
+    if (!r.ok) {
+      console.error('[Reserva] Error response:', rText.substring(0,500));
+      throw new Error(`API ${r.status}: ${rText.substring(0,300)}`);
+    }
+    const rTextOk = rText;
+    const data = JSON.parse(rTextOk);
     console.log('[Reserva] PNR:', data.recordLocator, 'Order:', data.orderNumber);
 
     // Guardar en DB
