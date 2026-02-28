@@ -59,7 +59,7 @@ app.get('/tipo-cambio', async (req, res) => {
 app.get('/health', (req, res) => res.json({ ok:true, configured:!!(SCIWEB_USER && SCIWEB_PASS) }));
 
 app.post('/buscar-vuelos', async (req, res) => {
-  const { tipo, origen, destino, salida, regreso, adultos, ninos, infantes, stops, tramos } = req.body;
+  const { tipo, origen, destino, salida, regreso, adultos, ninos, infantes, stops, tramos, moneda } = req.body;
   console.log(`[Vuelos] tipo=${tipo} ${origen||'multi'}→${destino||''}`);
   try {
     const token = await getToken();
@@ -67,6 +67,7 @@ app.post('/buscar-vuelos', async (req, res) => {
     let payload, endpoint, addSearchPayload;
     const stopsVal = null; // Siempre null, filtramos del lado nuestro
     const stopsFilter = (stops !== undefined && stops !== '') ? parseInt(stops) : null;
+    const currencyCode = moneda === 'ARS' ? null : 'USD';
 
     if (tipo === 'oneway') {
       // ONE WAY - usa MultipleLegs con un solo tramo
@@ -77,7 +78,7 @@ app.post('/buscar-vuelos', async (req, res) => {
         Adults: parseInt(adultos), Childs: parseInt(ninos), Infants: parseInt(infantes),
         CabinType: null, Stops: stopsVal, Airlines: [],
         TypeOfFlightAllowedInItinerary: null, SortByGLASAlgorithm: null,
-        AlternateCurrencyCode: 'USD', CorporationCodeGlas: null, IncludeFiltersOptions: true
+        AlternateCurrencyCode: currencyCode, CorporationCodeGlas: null, IncludeFiltersOptions: true
       };
       addSearchPayload = { SearchTravelType: 2, OneWayModel: payload, MultipleLegsModel: null, RoundTripModel: null };
 
@@ -91,7 +92,7 @@ app.post('/buscar-vuelos', async (req, res) => {
         Adults: parseInt(adultos), Childs: parseInt(ninos), Infants: parseInt(infantes),
         CabinType: null, Stops: stopsVal, Airlines: [],
         TypeOfFlightAllowedInItinerary: null, SortByGLASAlgorithm: null,
-        AlternateCurrencyCode: 'USD', CorporationCodeGlas: null, IncludeFiltersOptions: true
+        AlternateCurrencyCode: currencyCode, CorporationCodeGlas: null, IncludeFiltersOptions: true
       };
       addSearchPayload = { SearchTravelType: 1, OneWayModel: null, MultipleLegsModel: null, RoundTripModel: payload };
 
@@ -112,7 +113,7 @@ app.post('/buscar-vuelos', async (req, res) => {
         Legs: legs,
         Adults: parseInt(adultos), Childs: parseInt(ninos), Infants: parseInt(infantes),
         TypeOfFlightAllowedInItinerary: null, SortByGLASAlgorithm: null,
-        AlternateCurrencyCode: 'USD', CorporationCodeGlas: null, IncludeFiltersOptions: true
+        AlternateCurrencyCode: currencyCode, CorporationCodeGlas: null, IncludeFiltersOptions: true
       };
       addSearchPayload = { SearchTravelType: 3, OneWayModel: null, MultipleLegsModel: payload, RoundTripModel: null };
     }
@@ -134,9 +135,7 @@ app.post('/buscar-vuelos', async (req, res) => {
 
     const data = await searchRes.json();
     console.log(`[Vuelos] ${data.minifiedQuotations?.length || 0} resultados`)
-    const q0 = data.minifiedQuotations?.[0];
-    console.log('[PRECIO] grandTotal:', q0?.grandTotalSellingPriceAmount, q0?.grandTotalSellingPriceCurrency);
-    console.log('[PRECIO] alternatePrices:', JSON.stringify(q0?.alternatePrices || q0?.alternatePrice));
+
 ;
 
     const vuelos = procesarVuelos(data, stopsFilter);
