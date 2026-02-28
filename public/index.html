@@ -489,11 +489,15 @@ let pasajerosForms = [];
 // searchId se captura en la respuesta de /buscar-vuelos
 const _buscarBtn = document.getElementById('btnBuscar');
 
+let paisesFactData = [];
 async function cargarPaises() {
   if (paisesData.length) return paisesData;
-  const r = await fetch('/document-countries?documentFor=Passengers');
-  const d = await r.json();
-  paisesData = d.data || [];
+  const [r1, r2] = await Promise.all([
+    fetch('/document-countries?documentFor=Passengers').then(r=>r.json()),
+    fetch('/document-countries?documentFor=AccountingHolders').then(r=>r.json())
+  ]);
+  paisesData = r1.data || [];
+  paisesFactData = r2.data || [];
   return paisesData;
 }
 
@@ -506,8 +510,8 @@ function getDocTipoOpts(paisId, selectedId) {
   return tipos.map(t => `<option value="${t.id}" data-code="${t.code}" ${t.id===selectedId?'selected':''}>${t.name}</option>`).join('');
 }
 function getFactTipoOpts(paisId, selectedId) {
-  const pais = paisesData.find(p=>p.id===paisId);
-  const tipos = pais?.accountingDocumentTypes || pais?.documentTypes || [];
+  const pais = paisesFactData.find(p=>p.id===paisId) || paisesData.find(p=>p.id===paisId);
+  const tipos = pais?.documentTypes || [];
   return tipos.map(t => `<option value="${t.id}" data-code="${t.code}" ${t.id===selectedId?'selected':''}>${t.name}</option>`).join('');
 }
 
@@ -712,6 +716,7 @@ function onFactPaisChange(idx) {
   guardarPaxField(idx,'factPaisId',paisId);
   guardarPaxField(idx,'factPais',paisNombre);
   document.getElementById(`p_factTipo_${idx}`).innerHTML = '<option value="">-</option>' + getFactTipoOpts(paisId,'');
+  guardarPaxField(idx,'factTipoId','');
 }
 
 function cambiarPax(idx) {
