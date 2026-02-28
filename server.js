@@ -50,20 +50,28 @@ app.post('/buscar-vuelos', async (req, res) => {
     const token = await getToken();
 
     let payload, endpoint, addSearchPayload;
-    const stopsVal = (stops !== undefined && stops !== '') ? parseInt(stops) : null;
+    const stopsVal = null; // Siempre null, filtramos del lado nuestro
+    const stopsFilter = (stops !== undefined && stops !== '') ? parseInt(stops) : null;
 
     if (tipo === 'oneway') {
-      // ONE WAY
-      endpoint = `${API_BASE}/FlightSearch/OneWayRemake`;
+      // ONE WAY - usa MultipleLegs con un solo tramo
+      endpoint = `${API_BASE}/FlightSearch/MultipleLegsRemake`;
       payload = {
-        DepartCode: origen, ArrivalCode: destino,
-        DepartDate: `${salida}T00:00:00`, DepartTime: null,
+        Legs: [{
+          LegNumber: 1,
+          DepartCode: origen,
+          ArrivalCode: destino,
+          DepartDate: `${salida}T00:00:00`,
+          DepartTime: null,
+          CabinType: null,
+          Stops: stopsVal,
+          Airlines: []
+        }],
         Adults: parseInt(adultos), Childs: parseInt(ninos), Infants: parseInt(infantes),
-        CabinType: null, Stops: stopsVal, Airlines: [],
         TypeOfFlightAllowedInItinerary: 3, SortByGLASAlgorithm: null,
         AlternateCurrencyCode: 'USD', CorporationCodeGlas: null, IncludeFiltersOptions: true
       };
-      addSearchPayload = { SearchTravelType: 2, OneWayModel: payload, MultipleLegsModel: null, RoundTripModel: null };
+      addSearchPayload = { SearchTravelType: 2, OneWayModel: null, MultipleLegsModel: payload, RoundTripModel: null };
 
     } else if (tipo === 'roundtrip') {
       // ROUND TRIP
@@ -119,7 +127,7 @@ app.post('/buscar-vuelos', async (req, res) => {
     const data = await searchRes.json();
     console.log(`[Vuelos] ${data.minifiedQuotations?.length || 0} resultados`);
 
-    const vuelos = procesarVuelos(data);
+    const vuelos = procesarVuelos(data, stopsFilter);
     res.json({ ok:true, vuelos, total: data.minifiedQuotations?.length || 0 });
 
   } catch (err) {
@@ -129,7 +137,7 @@ app.post('/buscar-vuelos', async (req, res) => {
   }
 });
 
-function procesarVuelos(data) {
+function procesarVuelos(data, stopsFilter) {
   if (!data.minifiedQuotations) return [];
   const legsMap = data.minifiedLegs || {};
   const airlinesMap = data.minifiedAirlinesInformation || {};
@@ -184,6 +192,7 @@ function procesarVuelos(data) {
         source: q.source
       };
     })
+    .filter(v => stopsFilter === null || v.escalas <= stopsFilter)
     .sort((a, b) => a.precio - b.precio);
 }
 
