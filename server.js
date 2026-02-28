@@ -66,12 +66,17 @@ app.get('/debug-search', async (req, res) => {
     });
     const data = await searchRes.json();
     // Devolver estructura sin minifiedQuotations para ver legs y flights
+    // Buscar la primera quotation con legs expandidos
+    const q = data.minifiedQuotations?.[0];
+    // Los legs pueden estar en minifiedLegs como objeto indexado por ID
+    const legsObj = data.minifiedLegs;
     res.json({
-      minifiedLegsCount: data.minifiedLegs?.length,
-      firstMinifiedLeg: data.minifiedLegs?.[0],
-      secondMinifiedLeg: data.minifiedLegs?.[1],
-      airlinesInfo: data.minifiedAirlinesInformation,
-      filtersOptions: data.filtersOptions
+      minifiedLegsType: typeof legsObj,
+      minifiedLegsIsArray: Array.isArray(legsObj),
+      minifiedLegsKeys: legsObj ? Object.keys(legsObj).slice(0,5) : null,
+      firstLegById: legsObj ? legsObj["L_1"] || legsObj[Object.keys(legsObj)[0]] : null,
+      quotationLegs: q?.legs,
+      fullQuotation: q
     });
   } catch(e) { res.json({ error: e.message }); }
 });
