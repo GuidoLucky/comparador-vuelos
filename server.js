@@ -41,6 +41,21 @@ function getHeaders(token) {
 }
 
 app.get('/', (req, res) => res.sendFile(path.join(__dirname, 'public', 'index.html')));
+// Tipo de cambio USD -> ARS (dólar blue via bluelytics)
+let tcCache = { valor: null, expiry: 0 };
+app.get('/tipo-cambio', async (req, res) => {
+  try {
+    if (tcCache.valor && Date.now() < tcCache.expiry) return res.json({ usd_ars: tcCache.valor });
+    const r = await fetch('https://api.bluelytics.com.ar/v2/latest');
+    const d = await r.json();
+    const valor = d.blue?.value_sell || d.official?.value_sell || 1200;
+    tcCache = { valor, expiry: Date.now() + 30 * 60 * 1000 };
+    res.json({ usd_ars: valor });
+  } catch(e) {
+    res.json({ usd_ars: tcCache.valor || 1200 });
+  }
+});
+
 app.get('/health', (req, res) => res.json({ ok:true, configured:!!(SCIWEB_USER && SCIWEB_PASS) }));
 
 app.post('/buscar-vuelos', async (req, res) => {
@@ -62,7 +77,7 @@ app.post('/buscar-vuelos', async (req, res) => {
         Adults: parseInt(adultos), Childs: parseInt(ninos), Infants: parseInt(infantes),
         CabinType: null, Stops: stopsVal, Airlines: [],
         TypeOfFlightAllowedInItinerary: null, SortByGLASAlgorithm: null,
-        AlternateCurrencyCode: 'USD', CorporationCodeGlas: null, IncludeFiltersOptions: true
+        AlternateCurrencyCode: 'ARS', CorporationCodeGlas: null, IncludeFiltersOptions: true
       };
       addSearchPayload = { SearchTravelType: 2, OneWayModel: payload, MultipleLegsModel: null, RoundTripModel: null };
 
@@ -76,7 +91,7 @@ app.post('/buscar-vuelos', async (req, res) => {
         Adults: parseInt(adultos), Childs: parseInt(ninos), Infants: parseInt(infantes),
         CabinType: null, Stops: stopsVal, Airlines: [],
         TypeOfFlightAllowedInItinerary: null, SortByGLASAlgorithm: null,
-        AlternateCurrencyCode: 'USD', CorporationCodeGlas: null, IncludeFiltersOptions: true
+        AlternateCurrencyCode: 'ARS', CorporationCodeGlas: null, IncludeFiltersOptions: true
       };
       addSearchPayload = { SearchTravelType: 1, OneWayModel: null, MultipleLegsModel: null, RoundTripModel: payload };
 
@@ -97,7 +112,7 @@ app.post('/buscar-vuelos', async (req, res) => {
         Legs: legs,
         Adults: parseInt(adultos), Childs: parseInt(ninos), Infants: parseInt(infantes),
         TypeOfFlightAllowedInItinerary: null, SortByGLASAlgorithm: null,
-        AlternateCurrencyCode: 'USD', CorporationCodeGlas: null, IncludeFiltersOptions: true
+        AlternateCurrencyCode: 'ARS', CorporationCodeGlas: null, IncludeFiltersOptions: true
       };
       addSearchPayload = { SearchTravelType: 3, OneWayModel: null, MultipleLegsModel: payload, RoundTripModel: null };
     }
@@ -119,11 +134,10 @@ app.post('/buscar-vuelos', async (req, res) => {
 
     const data = await searchRes.json();
     console.log(`[Vuelos] ${data.minifiedQuotations?.length || 0} resultados`)
-    // Debug equipaje
     const q0 = data.minifiedQuotations?.[0];
-    console.log('[EQ] legsWithBaggageAllowance:', JSON.stringify(q0?.legsWithBaggageAllowance));
-    console.log('[EQ] alternatePrice:', JSON.stringify(q0?.alternatePrice || q0?.alternatePrices));
-    console.log('[EQ] grandTotal USD:', q0?.grandTotalSellingPriceAmount, q0?.grandTotalSellingPriceCurrency);;
+    console.log('[PRECIO] grandTotal:', q0?.grandTotalSellingPriceAmount, q0?.grandTotalSellingPriceCurrency);
+    console.log('[PRECIO] alternatePrices:', JSON.stringify(q0?.alternatePrices || q0?.alternatePrice));
+;
 
     const vuelos = procesarVuelos(data, stopsFilter);
     res.json({ ok:true, vuelos, total: data.minifiedQuotations?.length || 0 });
@@ -172,33 +186,50 @@ function procesarVuelos(data, stopsFilter) {
         };
       }).filter(Boolean);
 
-      const equipaje = q.legsWithBaggageAllowance?.[0]?.baggageAllowance;
-      const checkedBag = equipaje?.checked?.[0];
-      const carryOn = equipaje?.carryOn?.[0];
+      const bagLeg = q.legsWithBaggageAllowance?.[0]?.baggageAllowance;
       const maxEscalas = itinerario.length > 0 ? itinerario.reduce((max, l) => Math.max(max, l.escalas || 0), 0) : 0;
 
-      // Maleta despachada
-      let maletaLabel = 'Sin maleta';
-      let maletaIncluida = false;
-      if (checkedBag) {
-        const w = checkedBag.weight;
-        const p = checkedBag.pieces;
-        if (p > 0) { maletaLabel = `${p}x maleta`; maletaIncluida = true; }
-        else if (w && w !== '0') { maletaLabel = `${w}${checkedBag.unit || 'KG'}`; maletaIncluida = checkedBag.chargeType === 0; }
-      }
+      // Mochila (handOn)
+      const handOnList = bagLeg?.handOn || [];
+      const handOnIncluido = handOnList.some(b => b.chargeType === 0 && b.pieces > 0);
+      const handOnLabel = handOnList.length > 0 ? (handOnIncluido ? 'Incluida' : 'Con cargo') : 'No informado';
+
+      // Carry on (carryOn)
+      const carryOnList = bagLeg?.carryOn || [];
+      const carryOnItem = carryOnList.find(b => b.chargeType === 0 && b.pieces > 0);
+      const carryOnIncluido = !!carryOnItem;
+      const carryOnLabel = carryOnItem
+        ? (`${carryOnItem.weight || ''}${carryOnItem.weightUnit || ''}`).trim() || 'Incluido'
+        : (carryOnList.length > 0 ? 'Con cargo' : 'No incluido');
+
+      // Maleta despachada (checked) - solo adultos
+      const checkedList = (bagLeg?.checked || []).filter(b => b.passengerType === 0);
+      const checkedIncluido = checkedList.some(b => b.chargeType === 0 && (b.pieces > 0 || (b.weight && b.weight !== '0')));
+      const checkedItem = checkedList.find(b => b.chargeType === 0 && (b.pieces > 0 || (b.weight && b.weight !== '0')));
+      const checkedLabel = checkedItem
+        ? (checkedItem.pieces > 0 ? `${checkedItem.pieces}x ${checkedItem.weight}${checkedItem.unit}` : `${checkedItem.weight}${checkedItem.unit}`)
+        : 'No incluida';
+
+      // Precio: grandTotal es ARS, alternatePrice puede tener USD
+      const precioARS = q.grandTotalSellingPriceAmount;
+      const altPrices = q.alternatePrice || q.alternatePrices || [];
+      const altUSD = Array.isArray(altPrices) ? altPrices.find(p => p.currency === 'USD' || p.Currency === 'USD') : null;
+      const precioUSD = altUSD ? (altUSD.amount || altUSD.Amount || altUSD.totalAmount) : null;
 
       return {
         id: q.quotationId,
         aerolinea: q.validatingCarrier,
         aerolineaDesc: airlinesMap[q.validatingCarrier] || q.sourceDescription || q.source,
-        precio: q.grandTotalSellingPriceAmount,
-        moneda: q.grandTotalSellingPriceCurrency || 'USD',
+        precioARS,
+        precioUSD,
         expira: q.offerExpirationTimeCTZ,
         itinerario,
         escalas: maxEscalas,
-        maleta: maletaLabel,
-        maletaIncluida,
-        handBag: carryOn?.pieces > 0 ? 'Incluido' : 'No incluido',
+        equipaje: {
+          handOn: { label: handOnLabel, incluido: handOnIncluido },
+          carryOn: { label: carryOnLabel, incluido: carryOnIncluido },
+          checked: { label: checkedLabel, incluido: checkedIncluido }
+        },
         source: q.source
       };
     })
