@@ -416,3 +416,74 @@ app.get('/reservas', async (req, res) => {
 });
 
 app.listen(PORT, () => console.log(`✅ Puerto ${PORT}`));
+
+// ─── DETALLE DE VUELO (desglose de precio) ───
+app.get('/detalle-vuelo', async (req, res) => {
+  const { searchId, quotationId } = req.query;
+  try {
+    const token = await getToken();
+    const r = await fetch(`${API_BASE}/FlightItinerary/ItineraryDetailRemake?searchId=${searchId}&quotationId=${quotationId}`, {
+      headers: getHeaders(token)
+    });
+    const text = await r.text();
+    let data = {};
+    try { data = JSON.parse(text); } catch(e) { throw new Error('Respuesta inválida'); }
+    
+    const q = data.quote;
+    if (!q) throw new Error('Sin datos de cotización');
+
+    const amounts = q.amounts?.originalAmounts || {};
+    const rates = q.flightRates || [];
+    const penalties = q.penalties || [];
+
+    // Desglose por pasajero
+    const desglose = rates.map(r => ({
+      tipo: r.passengerTypeCode,
+      cantidad: r.passengerQuantity,
+      tarifa: r.fareAmount,
+      impuestos: r.taxAmount,
+      fee: r.feeAmount,
+      total: r.sellingPriceAmount,
+      detImpuestos: r.taxDetails || []
+    }));
+
+    // Penalidades
+    const cambio = penalties.find(p => p.type === 0 && p.applicability === 0 && p.enabled);
+    const cancelacion = penalties.find(p => p.type === 1 && p.applicability === 0 && p.enabled);
+
+    res.json({
+      ok: true,
+      tarifa: amounts.fareAmount || 0,
+      impuestos: amounts.taxAmount || 0,
+      fee: amounts.feeAmount || 0,
+      total: amounts.sellingPriceAmount || 0,
+      moneda: amounts.fareCurrency || 'USD',
+      desglose,
+      penalidades: {
+        cambio: cambio ? { monto: cambio.amount, moneda: cambio.currency } : null,
+        cancelacion: cancelacion ? { monto: cancelacion.amount, moneda: cancelacion.currency } : null
+      },
+      reglas: q.rulesInformation?.filter(r => ['F','C'].includes(r.type)) || []
+    });
+  } catch(e) {
+    console.error('[Detalle] Error:', e.message);
+    res.json({ ok: false, error: e.message });
+  }
+});
+
+// ─── CONFIGURACIÓN DE MARKUP ───
+app.get('/config-markup', async (req, res) => {
+  try {
+    const r = await db.query('SELECT valor FROM config WHERE clave=$1', ['markup']);
+    res.json({ markup: r.rows[0]?.valor ? JSON.parse(r.rows[0].valor) : { tipo: 'porcentaje', valor: 0 } });
+  } catch(e) { res.json({ markup: { tipo: 'porcentaje', valor: 0 } }); }
+});
+
+app.post('/config-markup', async (req, res) => {
+  const { markup } = req.body;
+  try {
+    await db.query(`INSERT INTO config (clave, valor) VALUES ($1, $2)
+      ON CONFLICT (clave) DO UPDATE SET valor=$2`, ['markup', JSON.stringify(markup)]);
+    res.json({ ok: true });
+  } catch(e) { res.json({ ok: false, error: e.message }); }
+});
