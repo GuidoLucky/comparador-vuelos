@@ -497,6 +497,12 @@ const PDFDocument = require('pdfkit');
 const fsModule = require('fs');
 const pathModule = require('path');
 
+// ─── FUENTE UNICODE (DejaVu Sans soporta ✈ → ■) ───
+const FONT_REGULAR = '/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf';
+const FONT_BOLD    = '/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf';
+const HAS_UNICODE_FONT = fsModule.existsSync(FONT_REGULAR) && fsModule.existsSync(FONT_BOLD);
+console.log('[PDF] Fuente Unicode disponible:', HAS_UNICODE_FONT);
+
 // Tablas de cálculo Lucky Tour
 const FEE_TABLE = [
   [0, 599, 25], [600, 999, 30], [1000, 1499, 35],
@@ -533,35 +539,61 @@ function etiquetaPrecio(precio, tipo, cantidad, totalPax, multiTipos) {
   return cantidad > 1 ? `USD ${precio.toLocaleString('en')} cada ${tipo}` : `USD ${precio.toLocaleString('en')} ${tipo}`;
 }
 
-function generarPDFBuffer(opciones, vendedor) {
+function generarPDFBuffer(opciones, vendedor, nombreCliente) {
   return new Promise((resolve, reject) => {
     const NAVY = '#1B3A5C';
     const contacto = CONTACTOS[vendedor] || CONTACTOS.guido;
-    const logoPath = pathModule.join(__dirname, 'logo_transparent.png');
+    const logoPath = pathModule.join(__dirname, 'public', 'logo_transparent.png');
+    const logoPathAlt = pathModule.join(__dirname, 'logo_transparent.png');
+    const logoFinal = fsModule.existsSync(logoPath) ? logoPath : (fsModule.existsSync(logoPathAlt) ? logoPathAlt : null);
+
     const doc = new PDFDocument({ size: 'A4', margin: 40, bufferPages: true });
     const chunks = [];
     doc.on('data', c => chunks.push(c));
     doc.on('end', () => resolve(Buffer.concat(chunks)));
     doc.on('error', reject);
 
+    // Registrar fuentes Unicode si están disponibles
+    const BOLD = HAS_UNICODE_FONT ? 'UCBold' : 'Helvetica-Bold';
+    const REGULAR = HAS_UNICODE_FONT ? 'UCRegular' : 'Helvetica';
+    if (HAS_UNICODE_FONT) {
+      doc.registerFont('UCRegular', FONT_REGULAR);
+      doc.registerFont('UCBold', FONT_BOLD);
+    }
+
+    // Caracteres: si no hay fuente Unicode, usar fallbacks ASCII
+    const SYM_PLANE  = HAS_UNICODE_FONT ? '\u2708' : '>>';       // ✈ o >>
+    const SYM_ARROW  = HAS_UNICODE_FONT ? ' \u2192 ' : ' > ';    // → o >
+    const SYM_SQUARE = HAS_UNICODE_FONT ? '\u25A0' : '#';         // ■ o #
+    const SYM_DOT    = HAS_UNICODE_FONT ? ' \u00B7 ' : ' - ';    // · o -
+
     const esMultiple = opciones.length > 1;
     const W = 515; // ancho útil
-    const BOTTOM_MARGIN = 80;
 
     function dibujarCabecera() {
-      // Fecha
-      doc.fontSize(9).fillColor('#666666').text(new Date().toLocaleDateString('es-AR'), { align: 'right' });
-      // Logo
-      if (fsModule.existsSync(logoPath)) {
-        doc.image(logoPath, (W / 2) - 55 + 40, doc.y, { width: 110 });
+      // Fecha arriba a la derecha
+      doc.fontSize(9).fillColor('#666666').font(REGULAR)
+         .text(new Date().toLocaleDateString('es-AR'), { align: 'right' });
+
+      // Logo centrado
+      if (logoFinal) {
+        doc.image(logoFinal, (W / 2) - 55 + 40, doc.y, { width: 110 });
         doc.moveDown(5.5);
       } else {
         doc.moveDown(1);
       }
-      // Título
-      doc.fontSize(18).fillColor(NAVY).font('Helvetica-Bold').text('Cotización', { align: 'center' });
+
+      // Título "Cotización"
+      doc.fontSize(18).fillColor(NAVY).font(BOLD).text('Cotizaci\u00f3n', { align: 'center' });
+
+      // Nombre del cliente (si existe)
+      if (nombreCliente) {
+        doc.fontSize(10).fillColor('#333333').font(REGULAR).text(nombreCliente, { align: 'center' });
+      }
+
       doc.moveDown(0.3);
-      // Línea
+
+      // Línea separadora navy
       doc.moveTo(40, doc.y).lineTo(40 + W, doc.y).lineWidth(2).strokeColor(NAVY).stroke();
       doc.moveDown(0.8);
     }
@@ -572,9 +604,11 @@ function generarPDFBuffer(opciones, vendedor) {
         doc.switchToPage(pages.start + i);
         const y = doc.page.height - 60;
         doc.moveTo(40, y).lineTo(40 + W, y).lineWidth(1.5).strokeColor(NAVY).stroke();
-        doc.fontSize(9).font('Helvetica-Bold').fillColor(NAVY).text('Contacto:', 40, y + 8);
-        doc.font('Helvetica-Bold').text(contacto.nombre, 105, y + 8);
-        doc.fontSize(9).font('Helvetica').fillColor('#333333').text(contacto.mail, 40, y + 22);
+        doc.fontSize(9).font(BOLD).fillColor(NAVY)
+           .text('Contacto:', 40, y + 8, { continued: true })
+           .text('   ' + contacto.nombre);
+        doc.fontSize(9).font(REGULAR).fillColor('#333333')
+           .text(contacto.mail, 40, y + 22);
         doc.text(contacto.tel, 40, y + 34);
       }
     }
@@ -588,41 +622,55 @@ function generarPDFBuffer(opciones, vendedor) {
       }
       const op = opciones[i];
 
-      // Badge OPCIÓN N
+      // Badge OPCIÓN N (solo si hay múltiples opciones)
       if (esMultiple) {
-        doc.rect(40, doc.y, W, 22).fill(NAVY);
-        doc.fontSize(10).font('Helvetica-Bold').fillColor('white')
-           .text(`  OPCIÓN ${i + 1}`, 46, doc.y - 17);
-        doc.moveDown(1.2);
+        const badgeY = doc.y;
+        doc.rect(40, badgeY, W, 22).fill(NAVY);
+        doc.fontSize(10).font(BOLD).fillColor('white')
+           .text(`  OPCI\u00d3N ${i + 1}`, 46, badgeY + 5, { lineBreak: false });
+        doc.y = badgeY + 28;
+        doc.moveDown(0.3);
       }
 
-      // Itinerario
-      const tituloItin = op.aerolinea ? `✈  ITINERARIO - ${op.aerolinea}` : '✈  ITINERARIO';
-      doc.fontSize(9).font('Helvetica-Bold').fillColor(NAVY).text(tituloItin);
+      // ── ITINERARIO ──
+      const tituloItin = op.aerolinea
+        ? `${SYM_PLANE}  ITINERARIO - ${op.aerolinea}`
+        : `${SYM_PLANE}  ITINERARIO`;
+      doc.fontSize(9).font(BOLD).fillColor(NAVY).text(tituloItin);
       doc.moveDown(0.4);
 
       for (const v of op.vuelos) {
-        doc.fontSize(10).font('Helvetica-Bold').fillColor('#000000')
-           .text(`${v.fecha}   ${v.origen} → ${v.destino}   ${v.salida} → ${v.llegada}`);
+        // Línea principal: fecha  origen → destino   salida → llegada
+        const lineaVuelo = `${v.fecha}   ${v.origen}${SYM_ARROW}${v.destino}   ${v.salida}${SYM_ARROW}${v.llegada}`;
+        doc.fontSize(10).font(BOLD).fillColor('#000000').text(lineaVuelo);
+
+        // Detalle: número de vuelo · clase/brand
         if (v.numero_vuelo) {
-          doc.fontSize(8).font('Helvetica').fillColor('#555555').text(v.numero_vuelo);
+          const detalleLine = v.brand
+            ? `${v.numero_vuelo}${SYM_DOT}${v.brand}`
+            : v.numero_vuelo;
+          doc.fontSize(8).font(REGULAR).fillColor('#555555').text(detalleLine);
         }
         doc.moveDown(0.2);
       }
-      doc.fontSize(8).font('Helvetica').fillColor('#555555').text(op.detalle_vuelo);
+
+      // Clase general
+      doc.fontSize(8).font(REGULAR).fillColor('#555555').text(op.detalle_vuelo);
       doc.moveDown(0.6);
 
-      // Precios
+      // ── PRECIOS ──
       const totalPax = op.pasajeros.reduce((s, p) => s + p.cantidad, 0);
       const multiTipos = op.pasajeros.length > 1;
-      const tituloPrecios = totalPax === 1 ? '💰  PRECIO' : '💰  PRECIOS';
-      doc.fontSize(9).font('Helvetica-Bold').fillColor(NAVY).text(tituloPrecios);
+      const tituloPrecios = totalPax === 1
+        ? `${SYM_SQUARE} PRECIO`
+        : `${SYM_SQUARE} PRECIOS`;
+      doc.fontSize(9).font(BOLD).fillColor(NAVY).text(tituloPrecios);
       doc.moveDown(0.4);
 
       for (const pax of op.pasajeros) {
         const precio = calcularPrecio(pax.neto, pax.tipo_tarifa, pax.comision_over);
         const linea = etiquetaPrecio(precio, pax.tipo, pax.cantidad, totalPax, multiTipos);
-        doc.fontSize(10).font('Helvetica-Bold').fillColor(NAVY).text(linea);
+        doc.fontSize(10).font(BOLD).fillColor(NAVY).text(linea);
         doc.moveDown(0.3);
       }
     }
@@ -634,7 +682,7 @@ function generarPDFBuffer(opciones, vendedor) {
 }
 
 app.post('/generar-cotizacion', async (req, res) => {
-  const { opciones, vendedor } = req.body;
+  const { opciones, vendedor, nombreCliente } = req.body;
   try {
     const token = await getToken();
 
@@ -658,22 +706,43 @@ app.post('/generar-cotizacion', async (req, res) => {
 
       const trip = q.trip || [];
       const vuelos = [];
+      const cabinMap = { 0: 'Primera', 1: 'Economica', 2: 'Business', 3: 'Premium Economy' };
+
       for (const tramo of trip) {
-        for (const flight of (tramo.legFlights || [])) {
+        const flights = tramo.legFlights || [];
+        for (let fi = 0; fi < flights.length; fi++) {
+          const flight = flights[fi];
           const dep = new Date(flight.departure || tramo.departure);
           const arr = new Date(flight.arrival || tramo.arrival);
+
+          // Para vuelos con escala, usar origen/destino de cada segmento
+          let origenNombre, origenCode, destinoNombre, destinoCode;
+          if (flights.length === 1) {
+            // Vuelo directo: usar datos del tramo
+            origenNombre = tramo.cityNameFrom;
+            origenCode = tramo.airportCodeFrom;
+            destinoNombre = tramo.cityNameTo;
+            destinoCode = tramo.airportCodeTo;
+          } else {
+            // Con escala: usar datos de cada vuelo individual
+            origenNombre = flight.departureCityName || flight.departureCity || (fi === 0 ? tramo.cityNameFrom : '');
+            origenCode = flight.departureAirportCode || flight.departureAirport || (fi === 0 ? tramo.airportCodeFrom : '');
+            destinoNombre = flight.arrivalCityName || flight.arrivalCity || (fi === flights.length - 1 ? tramo.cityNameTo : '');
+            destinoCode = flight.arrivalAirportCode || flight.arrivalAirport || (fi === flights.length - 1 ? tramo.airportCodeTo : '');
+          }
+
           vuelos.push({
             fecha: `${String(dep.getDate()).padStart(2,'0')}/${String(dep.getMonth()+1).padStart(2,'0')}`,
-            origen: `${tramo.cityNameFrom} (${tramo.airportCodeFrom})`,
-            destino: `${tramo.cityNameTo} (${tramo.airportCodeTo})`,
+            origen: `${origenNombre} (${origenCode})`,
+            destino: `${destinoNombre} (${destinoCode})`,
             salida: `${String(dep.getHours()).padStart(2,'0')}.${String(dep.getMinutes()).padStart(2,'0')}`,
             llegada: `${String(arr.getHours()).padStart(2,'0')}.${String(arr.getMinutes()).padStart(2,'0')}`,
-            numero_vuelo: `${flight.airlineCode} ${flight.flightNumber}`
+            numero_vuelo: `${flight.airlineCode} ${flight.flightNumber}`,
+            brand: flight.brandName || ''
           });
         }
       }
 
-      const cabinMap = { 0: 'Primera', 1: 'Economica', 2: 'Business', 3: 'Premium Economy' };
       const cabin = cabinMap[trip[0]?.legFlights?.[0]?.cabinType] || 'Economica';
       const brand = trip[0]?.legFlights?.[0]?.brandName || '';
       const detalle = brand ? `${cabin} - ${brand}` : cabin;
@@ -684,7 +753,7 @@ app.post('/generar-cotizacion', async (req, res) => {
       };
     }));
 
-    const pdfBuffer = await generarPDFBuffer(opcionesCompletas, vendedor || 'guido');
+    const pdfBuffer = await generarPDFBuffer(opcionesCompletas, vendedor || 'guido', nombreCliente || '');
     res.set({ 'Content-Type': 'application/pdf', 'Content-Disposition': 'attachment; filename="cotizacion_lucky_tour.pdf"' });
     res.send(pdfBuffer);
   } catch(e) {
