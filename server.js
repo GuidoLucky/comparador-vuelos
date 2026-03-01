@@ -14,6 +14,19 @@ const WHOLESALER_ID = '538';
 // DB
 const db = require('./db');
 
+// Migración: agregar columnas faltantes
+if (db) {
+  (async () => {
+    try {
+      await db.query(`ALTER TABLE reservas ADD COLUMN IF NOT EXISTS notas TEXT`);
+      await db.query(`ALTER TABLE reservas ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT NOW()`);
+      await db.query(`ALTER TABLE reservas ADD COLUMN IF NOT EXISTS vendedor TEXT`);
+      await db.query(`ALTER TABLE reservas ADD COLUMN IF NOT EXISTS precio_venta_usd NUMERIC`);
+      console.log('[DB] Migración OK');
+    } catch(e) { console.warn('[DB] Migración:', e.message); }
+  })();
+}
+
 let tokenCache = { token: null, expiry: 0 };
 
 async function getToken() {
@@ -410,9 +423,63 @@ app.get('/clientes', async (req, res) => {
 app.get('/reservas', async (req, res) => {
   if (!db) return res.json([]);
   try {
-    const r = await db.query('SELECT * FROM reservas ORDER BY created_at DESC LIMIT 50');
+    const { estado, q, limit } = req.query;
+    let sql = 'SELECT * FROM reservas';
+    const params = [];
+    const where = [];
+    if (estado && estado !== 'TODAS') {
+      params.push(estado);
+      where.push(`estado=$${params.length}`);
+    }
+    if (q) {
+      params.push('%' + q + '%');
+      const idx = params.length;
+      where.push(`(pnr ILIKE $${idx} OR origen ILIKE $${idx} OR destino ILIKE $${idx} OR aerolinea ILIKE $${idx} OR order_number ILIKE $${idx})`);
+    }
+    if (where.length) sql += ' WHERE ' + where.join(' AND ');
+    sql += ' ORDER BY created_at DESC LIMIT ' + (parseInt(limit) || 100);
+    const r = await db.query(sql, params);
     res.json(r.rows);
-  } catch(e) { res.json([]); }
+  } catch(e) { console.error('[Reservas]', e.message); res.json([]); }
+});
+
+// Detalle de una reserva con pasajeros
+app.get('/reservas/:id', async (req, res) => {
+  if (!db) return res.json({ ok: false });
+  try {
+    const r = await db.query('SELECT * FROM reservas WHERE id=$1', [req.params.id]);
+    if (!r.rows.length) return res.json({ ok: false, error: 'No encontrada' });
+    const reserva = r.rows[0];
+    const pax = await db.query(
+      `SELECT rp.*, c.doc_numero, c.doc_tipo, c.fecha_nac_dia, c.fecha_nac_mes, c.fecha_nac_anio, c.genero
+       FROM reserva_pasajeros rp LEFT JOIN clientes c ON rp.cliente_id=c.id WHERE rp.reserva_id=$1`,
+      [req.params.id]
+    );
+    reserva.pasajeros_detalle = pax.rows;
+    res.json({ ok: true, reserva });
+  } catch(e) { res.json({ ok: false, error: e.message }); }
+});
+
+// Actualizar estado de reserva
+app.put('/reservas/:id/estado', async (req, res) => {
+  if (!db) return res.json({ ok: false });
+  try {
+    const { estado } = req.body;
+    const estados = ['CREADA', 'EMITIDA', 'COMPLETADA', 'CANCELADA'];
+    if (!estados.includes(estado)) return res.json({ ok: false, error: 'Estado inválido' });
+    await db.query('UPDATE reservas SET estado=$1, updated_at=NOW() WHERE id=$2', [estado, req.params.id]);
+    res.json({ ok: true });
+  } catch(e) { res.json({ ok: false, error: e.message }); }
+});
+
+// Notas de reserva
+app.put('/reservas/:id/notas', async (req, res) => {
+  if (!db) return res.json({ ok: false });
+  try {
+    const { notas } = req.body;
+    await db.query('UPDATE reservas SET notas=$1, updated_at=NOW() WHERE id=$2', [notas, req.params.id]);
+    res.json({ ok: true });
+  } catch(e) { res.json({ ok: false, error: e.message }); }
 });
 
 app.listen(PORT, () => console.log(`✅ Puerto ${PORT}`));
@@ -621,30 +688,32 @@ function generarPDFBuffer(opciones, vendedor, nombreCliente) {
     }
 
     function dibujarFooter() {
-      const pages = doc.bufferedPageRange();
-      for (let i = 0; i < pages.count; i++) {
-        doc.switchToPage(pages.start + i);
-        const pageH = doc.page.height;
-        const y = pageH - 70;
+      // No hacer nada aquí - el footer se dibuja en dibujarFooterEnPagina()
+    }
 
-        // Línea navy
-        doc.save();
-        doc.moveTo(PAGE_LEFT, y).lineTo(PAGE_LEFT + W, y)
-           .lineWidth(1.5).strokeColor(NAVY).stroke();
+    function dibujarFooterEnPagina() {
+      // Guardar posición actual del cursor
+      const savedY = doc.y;
+      const pageH = doc.page.height;
+      const y = pageH - 70;
 
-        // "Contacto:   Nombre"
-        doc.fontSize(9).font(BOLD).fillColor(NAVY);
-        doc.text('Contacto:', PAGE_LEFT, y + 8, { lineBreak: false, width: 60 });
-        doc.text(contacto.nombre, PAGE_LEFT + 65, y + 8, { lineBreak: false });
+      // Línea navy
+      doc.moveTo(PAGE_LEFT, y).lineTo(PAGE_LEFT + W, y)
+         .lineWidth(1.5).strokeColor(NAVY).stroke();
 
-        // Mail
-        doc.fontSize(9).font(REGULAR).fillColor('#333333');
-        doc.text(contacto.mail, PAGE_LEFT, y + 22, { lineBreak: false });
+      // "Contacto:   Nombre" en bold navy
+      doc.fontSize(9).font(BOLD).fillColor(NAVY);
+      doc.text('Contacto:    ' + contacto.nombre, PAGE_LEFT, y + 8, { lineBreak: false });
 
-        // Teléfono
-        doc.text(contacto.tel, PAGE_LEFT, y + 34, { lineBreak: false });
-        doc.restore();
-      }
+      // Mail
+      doc.fontSize(9).font(REGULAR).fillColor('#333333');
+      doc.text(contacto.mail, PAGE_LEFT, y + 22, { lineBreak: false });
+
+      // Teléfono
+      doc.text(contacto.tel, PAGE_LEFT, y + 34, { lineBreak: false });
+
+      // Restaurar posición del cursor
+      doc.y = savedY;
     }
 
     dibujarCabecera();
