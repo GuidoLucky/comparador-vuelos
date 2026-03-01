@@ -268,18 +268,20 @@ app.post('/crear-reserva', async (req, res) => {
     function sv(v) { return (v && v !== 'undefined') ? v : null; }
     function buildPax(p, i, tipo) {
       const typeNum = tipo==='ADT'?0:tipo==='CHD'?1:2;
+      // SCIWeb usa CNN para children, no CHD
+      const keyPrefix = tipo==='CHD' ? 'CNN' : tipo;
       return {
-        key: `${tipo}${i+1}`, indexUI: i+1, passengerType: typeNum,
+        key: `${keyPrefix}${i+1}`, indexUI: i+1, passengerType: typeNum,
         FirstName: p.nombre.toUpperCase(), LastName: p.apellido.toUpperCase(),
         Gender: parseInt(p.genero),
         BirthdateDay: parseInt(p.fechaNacDia), BirthdateMonth: parseInt(p.fechaNacMes), BirthdateYear: parseInt(p.fechaNacAnio),
-        Email: p.email,
+        Email: p.email || null,
         DocumentType: p.docTipoId, DocumentCountry: p.docPaisId, DocumentNumber: p.docNumero,
         ExpirationdateDay: parseInt(p.docVencDia), ExpirationdateMonth: parseInt(p.docVencMes), ExpirationdateYear: parseInt(p.docVencAnio),
         Nationality: p.nacionalidadId,
-        AccountingDocumentType: tipo!=='INF' ? p.factTipoId : null,
-        AccountingDocumentCountry: tipo!=='INF' ? p.factPaisId : null,
-        AccountingDocumentNumber: tipo!=='INF' ? p.factNumero : null,
+        AccountingDocumentType: sv(p.factTipoId) || null,
+        AccountingDocumentCountry: sv(p.factPaisId) || null,
+        AccountingDocumentNumber: sv(p.factNumero) || null,
         LoyaltyProgramAccounts: null,
         documentTypes: p.docTipos || [],
         accountingDocumentTypes: p.factTipos || []
