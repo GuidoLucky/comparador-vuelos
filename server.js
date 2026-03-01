@@ -775,7 +775,7 @@ app.post('/reservas/:id/guardar-tarifa', async (req, res) => {
     if (!r.rows.length) return res.json({ ok: false, error: 'Reserva no encontrada' });
     const reserva = r.rows[0];
 
-    const { pricingId, segmentIds, overrideVC } = req.body;
+    const { pricingId, segmentIds, overrideVC, netoTotal, moneda } = req.body;
     if (!pricingId) return res.json({ ok: false, error: 'Sin PricingId - cotizá primero' });
 
     const token = await getToken();
@@ -802,7 +802,13 @@ app.post('/reservas/:id/guardar-tarifa', async (req, res) => {
       return res.json({ ok: false, error: `API respondió ${resp.status}: ${text.substring(0, 200)}` });
     }
 
-    res.json({ ok: true, mensaje: 'Tarifa guardada exitosamente' });
+    // Actualizar precio en DB local
+    if (netoTotal) {
+      await db.query('UPDATE reservas SET precio_total=$1, updated_at=NOW() WHERE id=$2', [netoTotal, req.params.id]);
+      console.log('[SavePricing] DB actualizada con neto:', netoTotal);
+    }
+
+    res.json({ ok: true, mensaje: 'Tarifa guardada exitosamente. Precio actualizado.' });
   } catch(e) {
     console.error('[SavePricing] Error:', e.message);
     res.json({ ok: false, error: e.message });
