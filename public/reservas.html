@@ -499,7 +499,7 @@ async function ejecutarRecotizar() {
       
       // Botón guardar tarifa
       if (data.pricingId) {
-        window._lastPricing = { pricingId: data.pricingId, segmentIds: data.segmentIds };
+        window._lastPricing = { pricingId: data.pricingId, segmentIds: data.segmentIds, netoTotal: grandNeto, moneda: mon };
         html += `<button class="btn btn-success" style="margin-top:10px;width:100%" 
           onclick="guardarTarifa()">
           💾 Guardar tarifa en reserva
@@ -523,16 +523,18 @@ async function ejecutarRecotizar() {
 
 async function guardarTarifa() {
   if (!reservaActual || !window._lastPricing) return;
-  if (!confirm('¿Guardar esta tarifa en la reserva?')) return;
+  if (!confirm('¿Guardar esta tarifa en la reserva?\nEsta será la tarifa usada para emitir.')) return;
   try {
-    const { pricingId, segmentIds } = window._lastPricing;
+    const { pricingId, segmentIds, netoTotal, moneda } = window._lastPricing;
     const res = await fetch('/reservas/' + reservaActual.id + '/guardar-tarifa', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ pricingId, segmentIds })
+      body: JSON.stringify({ pricingId, segmentIds, netoTotal, moneda })
     });
     const data = await res.json();
     if (!data.ok) throw new Error(data.error);
     alert('✅ ' + data.mensaje);
+    cerrarModal();
+    cargarReservas();
   } catch(e) {
     alert('Error: ' + e.message);
   }
