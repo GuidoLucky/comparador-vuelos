@@ -815,6 +815,152 @@ app.post('/reservas/:id/guardar-tarifa', async (req, res) => {
   }
 });
 
+// ─── GENERAR PDF DE RESERVA ───
+app.post('/reservas/:id/pdf', async (req, res) => {
+  if (!db) return res.json({ ok: false, error: 'Sin DB' });
+  try {
+    const r = await db.query(`
+      SELECT r.*, 
+        json_agg(json_build_object(
+          'nombre', c.apellido || ', ' || c.nombre,
+          'tipo', rp.tipo_pasajero,
+          'doc_tipo', c.doc_tipo,
+          'doc_numero', c.doc_numero
+        )) as pasajeros_info
+      FROM reservas r
+      LEFT JOIN reserva_pasajeros rp ON rp.reserva_id = r.id
+      LEFT JOIN clientes c ON c.id = rp.cliente_id
+      WHERE r.id = $1
+      GROUP BY r.id
+    `, [req.params.id]);
+    if (!r.rows.length) return res.json({ ok: false, error: 'Reserva no encontrada' });
+    const reserva = r.rows[0];
+
+    // Intentar obtener datos frescos de la API
+    let vuelos = [], airports = {}, aerolinea = reserva.aerolinea || '';
+    let fareInfo = null;
+
+    if (reserva.order_id) {
+      try {
+        const token = await getToken();
+        const hdrs = getHeaders(token);
+        const rrResp = await fetch(`${API_BASE}/FlightReservation/RetrieveReservation`, {
+          method: 'POST', headers: hdrs,
+          body: JSON.stringify({ OrderId: reserva.order_id })
+        });
+        if (rrResp.ok) {
+          const rrData = JSON.parse(await rrResp.text());
+          vuelos = rrData.flightsInformation || [];
+          airports = rrData.airportsInformation || {};
+          if (vuelos.length && vuelos[0].airlineName) {
+            aerolinea = vuelos[0].airlineName;
+          }
+          // Extraer info de tarifas para calcular precio de venta
+          // NETO para Lucky Tour = total tarifa (base+imp) + fee Tucano
+          fareInfo = (rrData.storedFaresInformation || []).map(f => {
+            const totalTarifa = f.fareValues?.totalAmount || 0;
+            const feeTucano = (f.feeValues || []).reduce((s, fee) => s + (fee.amount || 0), 0);
+            const netoLucky = totalTarifa + feeTucano; // lo que Lucky paga a Tucano
+            return {
+              neto: netoLucky,
+              tipo_tarifa: f.fareType || 'PNEG',
+              comision_over: ((f.commissionRule?.obtained?.amount || 0) + (f.overCommissionRule?.amount || 0)),
+              passengerType: f.passengerType,
+              compiledPassenger: f.compiledPassenger
+            };
+          });
+        }
+      } catch(e) {
+        console.log('[PDF] Error API, usando datos locales:', e.message);
+      }
+    }
+
+    // Si no tenemos vuelos de la API, usar datos locales
+    if (!vuelos.length && reserva.itinerario) {
+      try {
+        const itin = JSON.parse(reserva.itinerario);
+        vuelos = (itin.segments || itin || []).map(s => ({
+          departureAirportCode: s.departureAirportCode || s.origin || '',
+          arrivalAirportCode: s.arrivalAirportCode || s.destination || '',
+          departureDate: s.departureDate || s.departureDateTime || '',
+          arrivalDate: s.arrivalDate || s.arrivalDateTime || '',
+          flightNumber: s.flightNumber || `${s.marketingAirlineCode || ''} ${s.flightNumber || ''}`,
+          airlineName: s.airlineName || aerolinea
+        }));
+      } catch(e) {}
+    }
+
+    // Pasajeros
+    const pasajeros = (reserva.pasajeros_info || []).filter(p => p.nombre).map(p => ({
+      nombre: p.nombre,
+      tipo: p.tipo || 'ADT',
+      documento: p.doc_tipo && p.doc_numero ? `${p.doc_tipo} ${p.doc_numero}` : ''
+    }));
+
+    // Precio: usar fareInfo de API o datos locales
+    const { vendedor: reqVendedor, precioVenta } = req.body || {};
+    let precioData = {};
+
+    if (fareInfo && fareInfo.length) {
+      // Agrupar tarifas por tipo de pasajero
+      const typeMap = { 0: 'adulto', 1: 'menor', 2: 'infante' };
+      const grouped = {};
+      for (const f of fareInfo) {
+        const tipo = typeMap[f.passengerType] || 'adulto';
+        if (!grouped[tipo]) {
+          grouped[tipo] = { tipo, cantidad: 0, neto: f.neto, tipo_tarifa: f.tipo_tarifa, comision_over: f.comision_over };
+        }
+        grouped[tipo].cantidad++;
+      }
+      precioData = { pasajeros: Object.values(grouped) };
+    } else if (precioVenta) {
+      precioData = { venta: precioVenta };
+    } else if (reserva.precio_usd) {
+      // Calcular con fee por defecto (PNEG)
+      precioData = { 
+        pasajeros: [{
+          tipo: 'adulto',
+          cantidad: pasajeros.length || 1,
+          neto: reserva.precio_usd / (pasajeros.length || 1),
+          tipo_tarifa: 'PNEG',
+          comision_over: 0
+        }]
+      };
+    }
+
+    // Armar JSON para el script Python
+    const pdfData = {
+      pnr: reserva.pnr,
+      aerolinea,
+      pasajeros,
+      vuelos,
+      airports,
+      precio: precioData,
+      vendedor: reqVendedor || reserva.vendedor || 'guido'
+    };
+
+    const fs = require('fs');
+    const tmpJson = `/tmp/reserva_${reserva.id}.json`;
+    const tmpPdf = `/tmp/reserva_${reserva.pnr}.pdf`;
+    fs.writeFileSync(tmpJson, JSON.stringify(pdfData, null, 2));
+
+    const { execSync } = require('child_process');
+    execSync(`python3 /app/generar_reserva_pdf.py ${tmpJson} ${tmpPdf}`, { timeout: 15000 });
+
+    // Enviar PDF
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `inline; filename="Reserva_${reserva.pnr}.pdf"`);
+    const pdfBuffer = fs.readFileSync(tmpPdf);
+    res.send(pdfBuffer);
+
+    // Cleanup
+    try { fs.unlinkSync(tmpJson); fs.unlinkSync(tmpPdf); } catch(e) {}
+  } catch(e) {
+    console.error('[PDF] Error:', e.message);
+    res.status(500).json({ ok: false, error: e.message });
+  }
+});
+
 app.listen(PORT, () => console.log(`✅ Puerto ${PORT}`));
 
 // ─── DETALLE DE VUELO (desglose de precio) ───
