@@ -260,16 +260,33 @@ async function verDetalle(id) {
     try {
       const itin = typeof r.itinerario_json === 'string' ? JSON.parse(r.itinerario_json) : r.itinerario_json;
       if (Array.isArray(itin)) {
-        itinHtml = itin.map(s => `
+        itinHtml = itin.map(s => {
+          // Formatear fechas ISO a formato corto
+          function fmtDt(d) {
+            if (!d) return '';
+            try {
+              if (d.includes('T')) {
+                const dt = new Date(d);
+                return dt.toLocaleDateString('es-AR',{day:'2-digit',month:'short'}) + ' ' + dt.toLocaleTimeString('es-AR',{hour:'2-digit',minute:'2-digit'});
+              }
+              return d;
+            } catch(e) { return d; }
+          }
+          const salida = s.salida || s.departureDateTime || '';
+          const llegada = s.llegada || s.arrivalDateTime || '';
+          const fecha = s.fecha || (salida.includes('T') ? new Date(salida).toLocaleDateString('es-AR',{day:'2-digit',month:'short'}) : '');
+          const horaSalida = salida.includes('T') ? new Date(salida).toLocaleTimeString('es-AR',{hour:'2-digit',minute:'2-digit'}) : salida;
+          const horaLlegada = llegada.includes('T') ? new Date(llegada).toLocaleTimeString('es-AR',{hour:'2-digit',minute:'2-digit'}) : llegada;
+          return `
           <div class="itin-segment">
-            <div class="itin-date">${s.fecha || ''}</div>
+            <div class="itin-date">${fecha}</div>
             <div class="itin-route">
-              <div class="cities">${s.origen || ''} → ${s.destino || ''}</div>
-              <div class="flight-num">${s.numero_vuelo || ''}</div>
+              <div class="cities">${s.origen || s.departureAirport || ''} → ${s.destino || s.arrivalAirport || ''}</div>
+              <div class="flight-num">${s.numero_vuelo || s.flightNumber || ''}</div>
             </div>
-            <div class="itin-times">${s.salida || ''} → ${s.llegada || ''}</div>
+            <div class="itin-times">${horaSalida} → ${horaLlegada}</div>
           </div>
-        `).join('');
+        `}).join('');
       }
     } catch(e) {}
     
@@ -339,7 +356,8 @@ async function verDetalle(id) {
     `;
     
     // Actions
-    let actionsHtml = `<button class="btn btn-outline" onclick="guardarNotas()">💾 Guardar notas</button>`;
+    let actionsHtml = `<button class="btn btn-primary" onclick="verificarEstado()">🔍 Verificar estado</button>`;
+    actionsHtml += `<button class="btn btn-outline" onclick="guardarNotas()">💾 Guardar notas</button>`;
     if (r.estado === 'CREADA') {
       actionsHtml += `<button class="btn btn-success" onclick="cambiarEstado('EMITIDA')">✅ Marcar como Emitida</button>`;
       actionsHtml += `<button class="btn btn-danger" onclick="cambiarEstado('CANCELADA')">❌ Cancelar</button>`;
@@ -351,6 +369,45 @@ async function verDetalle(id) {
     
   } catch(e) {
     document.getElementById('modalBody').innerHTML = '<div class="empty">Error: ' + e.message + '</div>';
+  }
+}
+
+async function verificarEstado() {
+  if (!reservaActual) return;
+  const btn = document.querySelector('.actions-bar .btn-primary');
+  if (btn) { btn.textContent = '⏳ Consultando API...'; btn.disabled = true; }
+  try {
+    const res = await fetch('/reservas/' + reservaActual.id + '/verificar', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }
+    });
+    const data = await res.json();
+    if (!data.ok) throw new Error(data.error);
+    
+    let msg = '';
+    if (data.estadoActualizado) {
+      msg = `Estado actualizado: ${data.estadoAnterior} → ${data.estadoAPI}`;
+    } else if (data.estadoAPI === 'NO_DETERMINADO') {
+      msg = 'No se pudo determinar el estado desde la API.\nEstado local: ' + reservaActual.estado;
+      if (data.apiResponse) msg += '\nCampos encontrados: ' + data.apiResponse.join(', ');
+    } else {
+      msg = `Estado confirmado: ${data.estadoAPI} (sin cambios)`;
+    }
+    if (data.tickets && data.tickets.length) {
+      msg += '\n\nTickets: ' + data.tickets.join(', ');
+    }
+    if (data.timeLimit) {
+      msg += '\nLímite emisión: ' + data.timeLimit;
+    }
+    alert(msg);
+    
+    if (data.estadoActualizado) {
+      cerrarModal();
+      cargarReservas();
+    }
+  } catch(e) {
+    alert('Error al verificar: ' + e.message);
+  } finally {
+    if (btn) { btn.textContent = '🔍 Verificar estado'; btn.disabled = false; }
   }
 }
 
