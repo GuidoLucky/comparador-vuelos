@@ -266,6 +266,18 @@ app.post('/crear-reserva', async (req, res) => {
 
     const ARG_ID = '3144952d-b7f4-4ddf-9ed8-8021bfc67c4b';
     function sv(v) { return (v && v !== 'undefined') ? v : null; }
+    
+    // Sanitizar pasajeros — asegurar campos mínimos
+    for (const p of pasajeros) {
+      if (!p.apellido) p.apellido = '';
+      if (!p.nombre) p.nombre = '';
+      if (!p.genero && p.genero !== 0 && p.genero !== '0') p.genero = '0';
+      if (!p.fechaNacDia) p.fechaNacDia = '1';
+      if (!p.fechaNacMes) p.fechaNacMes = '1';
+      if (!p.fechaNacAnio) p.fechaNacAnio = '2025';
+      if (!sv(p.nacionalidadId)) p.nacionalidadId = ARG_ID;
+    }
+    
     function buildPax(p, i, tipo) {
       const typeNum = tipo==='ADT'?0:tipo==='CHD'?1:2;
       // SCIWeb usa CNN para children, no CHD
@@ -278,7 +290,7 @@ app.post('/crear-reserva', async (req, res) => {
         Email: p.email || null,
         DocumentType: p.docTipoId, DocumentCountry: p.docPaisId, DocumentNumber: p.docNumero,
         ExpirationdateDay: parseInt(p.docVencDia), ExpirationdateMonth: parseInt(p.docVencMes), ExpirationdateYear: parseInt(p.docVencAnio),
-        Nationality: p.nacionalidadId,
+        Nationality: sv(p.nacionalidadId) || ARG_ID,
         AccountingDocumentType: sv(p.factTipoId) || null,
         AccountingDocumentCountry: sv(p.factPaisId) || null,
         AccountingDocumentNumber: sv(p.factNumero) || null,
@@ -857,22 +869,33 @@ app.post('/reservas/:id/pdf', async (req, res) => {
           if (vuelos.length && vuelos[0].airlineName) aerolinea = vuelos[0].airlineName;
           // Puede haber múltiples storedFares (vieja + nueva). Usar la ÚLTIMA (más reciente)
           const storedFares = rrData.storedFaresInformation || [];
-          console.log('[PDF] storedFares count:', storedFares.length, 'fares:', storedFares.map(f => ({
-            neto: f.fareValues?.totalAmount, fee: (f.feeValues||[]).reduce((s,x)=>s+(x.amount||0),0), type: f.fareType
-          })));
+          console.log('[PDF] storedFares count:', storedFares.length);
+          storedFares.forEach((f, idx) => {
+            const total = f.fareValues?.totalAmount || 0;
+            const fee = (f.feeValues||[]).reduce((s,x)=>s+(x.amount||0),0);
+            console.log(`[PDF] fare[${idx}]: total=${total}, fee=${fee}, neto=${total+fee}, type=${f.fareType}, numberInPNR=${f.numberInPNR}`);
+          });
           
-          // Tomar solo la última tarifa guardada (la más reciente)
-          const latestFares = storedFares.length > 0 ? [storedFares[storedFares.length - 1]] : [];
-          fareInfo = latestFares.map(f => {
+          // Tomar la tarifa con numberInPNR más alto, o la última
+          const latestFare = storedFares.length > 0 
+            ? storedFares.reduce((best, f) => {
+                const bestNum = parseInt(best.numberInPNR) || 0;
+                const fNum = parseInt(f.numberInPNR) || 0;
+                return fNum >= bestNum ? f : best;
+              })
+            : null;
+          
+          fareInfo = latestFare ? [latestFare].map(f => {
             const totalTarifa = f.fareValues?.totalAmount || 0;
             const feeTucano = (f.feeValues || []).reduce((s, fee) => s + (fee.amount || 0), 0);
+            console.log(`[PDF] Usando fare: total=${totalTarifa}, fee=${feeTucano}, neto=${totalTarifa+feeTucano}, numberInPNR=${f.numberInPNR}`);
             return {
               neto: totalTarifa + feeTucano,
               tipo_tarifa: f.fareType || 'PNEG',
               comision_over: ((f.commissionRule?.obtained?.amount || 0) + (f.overCommissionRule?.amount || 0)),
               passengerDiscountType: f.passengerDiscountType || 'ADT'
             };
-          });
+          }) : [];
         }
       } catch(e) {
         console.log('[PDF] Error API, usando datos locales:', e.message);
