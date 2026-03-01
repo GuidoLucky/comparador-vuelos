@@ -506,9 +506,10 @@ app.post('/reservas/:id/verificar', async (req, res) => {
       body: JSON.stringify({ OrderId: reserva.order_id })
     });
     const text = await resp.text();
+    console.log(`[Verificar] orderId=${reserva.order_id}, pnr=${reserva.pnr}, HTTP ${resp.status}`);
+    console.log(`[Verificar] Response:`, text.substring(0, 500));
     if (!resp.ok) {
-      console.error('[Verificar] HTTP', resp.status, text.substring(0, 300));
-      return res.json({ ok: false, error: `API respondió ${resp.status}` });
+      return res.json({ ok: false, error: `API respondió ${resp.status}: ${text.substring(0, 200)}`, orderId: reserva.order_id });
     }
 
     let data;
