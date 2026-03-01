@@ -795,6 +795,16 @@ function renderPaxForm(idx) {
   // Guardar valores iniciales
   if (docPaisId) { guardarPaxField(idx,'docPaisId',docPaisId); guardarPaxField(idx,'docPais', paisesData.find(p=>p.id===docPaisId)?.Name||''); }
   if (factPaisId) { guardarPaxField(idx,'factPaisId',factPaisId); guardarPaxField(idx,'factPais', paisesData.find(p=>p.id===factPaisId)?.name||''); }
+  // Guardar nacionalidad default si no tiene
+  const nacId = saved.nacionalidadId || docPaisId;
+  if (nacId && nacId !== 'undefined') guardarPaxField(idx,'nacionalidadId', nacId);
+  // Guardar docTipo y factTipo defaults si ya están seteados
+  setTimeout(() => {
+    const dtEl = document.getElementById(`p_docTipo_${idx}`);
+    if (dtEl && dtEl.value && !saved.docTipoId) { guardarPaxField(idx,'docTipoId',dtEl.value); guardarPaxField(idx,'docTipo',dtEl.options[dtEl.selectedIndex]?.dataset?.code||''); }
+    const ftEl = document.getElementById(`p_factTipo_${idx}`);
+    if (ftEl && ftEl.value && !saved.factTipoId) { guardarPaxField(idx,'factTipoId',ftEl.value); guardarPaxField(idx,'factTipo',ftEl.options[ftEl.selectedIndex]?.dataset?.code||''); }
+  }, 50);
 }
 
 function guardarPaxField(idx, campo, valor) {
@@ -835,6 +845,18 @@ function cambiarPax(idx) {
     const el = document.getElementById(`p_${c}_${i}`);
     if(el) guardarPaxField(i, mapeo[c], el.value);
   }
+  // Guardar selects del tab actual
+  const argId = paisesData.find(p=>p.name==='Argentina')?.id || '';
+  ['docPais','docTipo','nac','factPais','factTipo'].forEach(campo => {
+    const el = document.getElementById(`p_${campo}_${i}`);
+    if(!el) return;
+    const val = el.value;
+    if(campo==='docPais') { guardarPaxField(i,'docPaisId', val||argId); }
+    else if(campo==='docTipo') { guardarPaxField(i,'docTipoId',val); guardarPaxField(i,'docTipo',el.options[el.selectedIndex]?.dataset?.code||''); }
+    else if(campo==='nac') { guardarPaxField(i,'nacionalidadId', val||argId); }
+    else if(campo==='factPais') { guardarPaxField(i,'factPaisId', val||argId); }
+    else if(campo==='factTipo') { guardarPaxField(i,'factTipoId',val); guardarPaxField(i,'factTipo',el.options[el.selectedIndex]?.dataset?.code||''); }
+  });
   paxActivo = idx;
   document.querySelectorAll('.pax-tab').forEach((t,ti)=>t.classList.toggle('active',ti===idx));
   renderPaxForm(idx);
@@ -907,8 +929,22 @@ async function confirmarReserva(searchId, quotationId) {
   // Validar
   for(const pax of pasajerosForms) {
     const d = pax.data || {};
-    if(!d.apellido||!d.nombre||!d.docNumero) {
-      alert(`Completá los datos del pasajero ${pax.tipo} ${pax.idx+1}`);
+    const tipoLabel = pax.tipo==='ADT'?'Adulto':pax.tipo==='CHD'?'Niño':'Infante';
+    const num = pax.idx+1;
+    if(!d.apellido||!d.nombre) {
+      alert(`Completá apellido y nombre del ${tipoLabel} ${num}`);
+      return;
+    }
+    if(!d.docNumero) {
+      alert(`Completá el documento del ${tipoLabel} ${num}`);
+      return;
+    }
+    if(!d.fechaNacDia||!d.fechaNacMes||!d.fechaNacAnio) {
+      alert(`Completá la fecha de nacimiento del ${tipoLabel} ${num}`);
+      return;
+    }
+    if(!d.genero && d.genero!=='0') {
+      alert(`Seleccioná el género del ${tipoLabel} ${num}`);
       return;
     }
   }
