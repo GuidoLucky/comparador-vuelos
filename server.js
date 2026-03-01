@@ -715,10 +715,11 @@ app.post('/reservas/:id/recotizar', async (req, res) => {
     const fares = prData.storedFares || prData.fares || prData.pricingOptions || prData.quotations || [];
     if (Array.isArray(fares)) {
       for (const fare of fares) {
+        console.log('[Recotizar] Fare keys:', Object.keys(fare).join(','), 'passengerType:', fare.passengerType, 'compiledPassenger:', fare.compiledPassenger);
         const fv = fare.fareValues || fare;
         tarifas.push({
           pasajero: fare.compiledPassenger || fare.passenger || '',
-          tipo: fare.passengerType === 0 ? 'ADT' : fare.passengerType === 1 ? 'CHD' : fare.passengerType === 2 ? 'INF' : `T${fare.passengerType}`,
+          tipo: fare.passengerTypeCode || typeMap[fare.passengerType] || fare.typeCode || (fare.passengerType === 0 ? 'ADT' : fare.passengerType === 1 ? 'CHD' : fare.passengerType === 2 ? 'INF' : 'ADT'),
           tipoTarifa: fare.fareType || prData.fareType || '',
           tarifaBase: fv.baseFareAmount || fv.fareAmount || 0,
           monedaBase: fv.baseFareCurrency || fv.fareCurrency || 'USD',
@@ -734,6 +735,8 @@ app.post('/reservas/:id/recotizar', async (req, res) => {
 
     // Extraer PricingId para SavePricing
     const pricingId = prData.pricingId || prData.PricingId || prData.id || null;
+    console.log('[Recotizar] PricingId:', pricingId, 'Keys:', Object.keys(prData).join(','));
+    if (!pricingId) console.log('[Recotizar] Full response keys search:', JSON.stringify(prData).substring(0, 500));
     const segRefIdsForSave = segments.map((s, i) => String(i + 1));
 
     res.json({
