@@ -711,15 +711,14 @@ app.post('/reservas/:id/recotizar', async (req, res) => {
     }
 
     // Extraer precios de la respuesta
-    // La respuesta puede tener storedFares o pricing info
     const tarifas = [];
-    const fares = prData.storedFares || prData.fares || prData.pricingOptions || [];
+    const fares = prData.storedFares || prData.fares || prData.pricingOptions || prData.quotations || [];
     if (Array.isArray(fares)) {
       for (const fare of fares) {
         const fv = fare.fareValues || fare;
         tarifas.push({
           pasajero: fare.compiledPassenger || fare.passenger || '',
-          tipo: fare.passengerType === 0 ? 'ADT' : fare.passengerType === 1 ? 'CHD' : 'INF',
+          tipo: fare.passengerType === 0 ? 'ADT' : fare.passengerType === 1 ? 'CHD' : fare.passengerType === 2 ? 'INF' : `T${fare.passengerType}`,
           tipoTarifa: fare.fareType || prData.fareType || '',
           tarifaBase: fv.baseFareAmount || fv.fareAmount || 0,
           monedaBase: fv.baseFareCurrency || fv.fareCurrency || 'USD',
@@ -733,15 +732,64 @@ app.post('/reservas/:id/recotizar', async (req, res) => {
       }
     }
 
+    // Extraer PricingId para SavePricing
+    const pricingId = prData.pricingId || prData.PricingId || prData.id || null;
+    const segRefIdsForSave = segments.map((s, i) => String(i + 1));
+
     res.json({
       ok: true,
       pnr: rrData.recordLocator,
       tarifas,
+      pricingId,
+      orderId: reserva.order_id,
+      segmentIds: segRefIdsForSave,
       rawKeys: Object.keys(prData),
       rawPreview: JSON.stringify(prData).substring(0, 800)
     });
   } catch(e) {
     console.error('[Recotizar] Error:', e.message);
+    res.json({ ok: false, error: e.message });
+  }
+});
+
+// ─── GUARDAR TARIFA (SavePricing) ───
+app.post('/reservas/:id/guardar-tarifa', async (req, res) => {
+  if (!db) return res.json({ ok: false, error: 'Sin DB' });
+  try {
+    const r = await db.query('SELECT * FROM reservas WHERE id=$1', [req.params.id]);
+    if (!r.rows.length) return res.json({ ok: false, error: 'Reserva no encontrada' });
+    const reserva = r.rows[0];
+
+    const { pricingId, segmentIds, overrideVC } = req.body;
+    if (!pricingId) return res.json({ ok: false, error: 'Sin PricingId - cotizá primero' });
+
+    const token = await getToken();
+    const hdrs = getHeaders(token);
+
+    const savePayload = {
+      OrderId: reserva.order_id,
+      PricingId: pricingId,
+      FaresNumberInPNR: ["0"],
+      OverrideVC: overrideVC || null,
+      SegmentsReferenceIds: segmentIds || ["1", "2"]
+    };
+
+    console.log('[SavePricing] Payload:', JSON.stringify(savePayload));
+
+    const resp = await fetch(`${API_BASE}/FlightReservationPricing/SavePricing`, {
+      method: 'POST', headers: hdrs,
+      body: JSON.stringify(savePayload)
+    });
+    const text = await resp.text();
+    console.log('[SavePricing] HTTP', resp.status, 'Response:', text.substring(0, 500));
+
+    if (!resp.ok) {
+      return res.json({ ok: false, error: `API respondió ${resp.status}: ${text.substring(0, 200)}` });
+    }
+
+    res.json({ ok: true, mensaje: 'Tarifa guardada exitosamente' });
+  } catch(e) {
+    console.error('[SavePricing] Error:', e.message);
     res.json({ ok: false, error: e.message });
   }
 });
