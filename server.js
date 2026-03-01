@@ -609,6 +609,135 @@ app.post('/reservas/:id/verificar', async (req, res) => {
   }
 });
 
+// ─── RECOTIZAR RESERVA (RetrievePricing) ───
+app.post('/reservas/:id/recotizar', async (req, res) => {
+  if (!db) return res.json({ ok: false, error: 'Sin DB' });
+  try {
+    const r = await db.query('SELECT * FROM reservas WHERE id=$1', [req.params.id]);
+    if (!r.rows.length) return res.json({ ok: false, error: 'Reserva no encontrada' });
+    const reserva = r.rows[0];
+    if (!reserva.order_id) return res.json({ ok: false, error: 'Sin orderId' });
+
+    const token = await getToken();
+    const hdrs = getHeaders(token);
+
+    // Calificadores opcionales del frontend
+    const { moneda, fareType, nationality, overrideCarrier } = req.body || {};
+
+    // Paso 1: RetrieveReservation para obtener datos actuales
+    const rrResp = await fetch(`${API_BASE}/FlightReservation/RetrieveReservation`, {
+      method: 'POST', headers: hdrs,
+      body: JSON.stringify({ OrderId: reserva.order_id })
+    });
+    if (!rrResp.ok) return res.json({ ok: false, error: 'No se pudo cargar la reserva' });
+    const rrData = JSON.parse(await rrResp.text());
+
+    const flights = rrData.flightsInformation || [];
+    const passengers = rrData.passengersInformation || [];
+    if (!flights.length) return res.json({ ok: false, error: 'Sin vuelos en la reserva' });
+
+    // Construir segmentos
+    const segments = flights.map((f, i) => ({
+      ReferenceId: String(i + 1),
+      NumberInPNR: f.numberInPNR || null,
+      MarketingCarrier: f.marketingAirlineCode || f.airlineCode,
+      OperatingCarrier: f.operatingAirlineCode || f.airlineCode,
+      Departure: f.departureAirportCode,
+      Arrival: f.arrivalAirportCode,
+      DepartureDate: f.departureDate,
+      ArrivalDate: f.arrivalDate,
+      FlightNumber: (f.flightNumber || '').replace(/^[A-Z]{2}\s*/, ''),
+      BookingClass: f.bookingClass || '',
+      BrandId: '',
+      Grp: null
+    }));
+
+    // Construir pasajeros con referenceId del PNR
+    const typeMap = { 0: 'ADT', 1: 'CHD', 2: 'INF' };
+    const paxWithType = passengers.map(p => ({
+      ReferenceId: p.referenceId || p.reference,
+      Type: typeMap[p.type] || p.typeCode || 'ADT',
+      DiscountType: typeMap[p.type] || p.typeCode || 'ADT'
+    }));
+    const paxRefIds = paxWithType.map(p => p.ReferenceId);
+    const segRefIds = segments.map(s => s.ReferenceId);
+
+    // Payload para RetrievePricing
+    const pricingPayload = {
+      OrderId: reserva.order_id,
+      OrderRecord: null,
+      Source: rrData.source || 0,
+      StrategyType: 0,
+      FareType: fareType || 0,
+      Currency: moneda || null,
+      Nationality: nationality || null,
+      OverrideValidatingCarrier: overrideCarrier || null,
+      Office: null,
+      ACCodes: null,
+      CorporateCodeGlas: null,
+      ExcemptTaxes: '',
+      AdditionalData: {},
+      PassengerReferenceIds: paxRefIds,
+      PassengersWithType: paxWithType,
+      SegmentReferenceIds: segRefIds,
+      Segments: segments
+    };
+
+    console.log('[Recotizar] Payload:', JSON.stringify(pricingPayload).substring(0, 500));
+
+    // Paso 2: RetrievePricing
+    const prResp = await fetch(`${API_BASE}/FlightTicketing/RetrievePricing`, {
+      method: 'POST', headers: hdrs,
+      body: JSON.stringify(pricingPayload)
+    });
+    const prText = await prResp.text();
+    console.log('[Recotizar] HTTP', prResp.status, 'Response:', prText.substring(0, 500));
+
+    if (!prResp.ok) {
+      return res.json({ ok: false, error: `API respondió ${prResp.status}: ${prText.substring(0, 200)}` });
+    }
+
+    let prData;
+    try { prData = JSON.parse(prText); } catch(e) {
+      return res.json({ ok: false, error: 'Respuesta inválida' });
+    }
+
+    // Extraer precios de la respuesta
+    // La respuesta puede tener storedFares o pricing info
+    const tarifas = [];
+    const fares = prData.storedFares || prData.fares || prData.pricingOptions || [];
+    if (Array.isArray(fares)) {
+      for (const fare of fares) {
+        const fv = fare.fareValues || fare;
+        tarifas.push({
+          pasajero: fare.compiledPassenger || fare.passenger || '',
+          tipo: fare.passengerType === 0 ? 'ADT' : fare.passengerType === 1 ? 'CHD' : 'INF',
+          tipoTarifa: fare.fareType || prData.fareType || '',
+          tarifaBase: fv.baseFareAmount || fv.fareAmount || 0,
+          monedaBase: fv.baseFareCurrency || fv.fareCurrency || 'USD',
+          impuestos: fv.totalTaxAmount || fv.taxAmount || 0,
+          monedaImpuestos: fv.totalTaxCurrency || 'USD',
+          total: fv.totalAmount || fv.total || 0,
+          monedaTotal: fv.totalCurrency || 'USD',
+          fee: (fare.feeValues || []).reduce((s, f) => s + (f.amount || 0), 0),
+          monedaFee: (fare.feeValues || [])[0]?.currency || 'USD'
+        });
+      }
+    }
+
+    res.json({
+      ok: true,
+      pnr: rrData.recordLocator,
+      tarifas,
+      rawKeys: Object.keys(prData),
+      rawPreview: JSON.stringify(prData).substring(0, 800)
+    });
+  } catch(e) {
+    console.error('[Recotizar] Error:', e.message);
+    res.json({ ok: false, error: e.message });
+  }
+});
+
 app.listen(PORT, () => console.log(`✅ Puerto ${PORT}`));
 
 // ─── DETALLE DE VUELO (desglose de precio) ───
