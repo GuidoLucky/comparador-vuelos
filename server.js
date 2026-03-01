@@ -4,6 +4,11 @@ const app = express();
 app.use(express.json());
 app.use(express.static('public'));
 
+// Ruta explícita para reservas.html (fallback si static no lo encuentra)
+app.get('/reservas.html', (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'reservas.html'));
+});
+
 const PORT = process.env.PORT || 3000;
 const SCIWEB_USER = process.env.SCIWEB_USER;
 const SCIWEB_PASS = process.env.SCIWEB_PASS;
