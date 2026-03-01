@@ -370,6 +370,7 @@ async function verDetalle(id) {
     // Actions
     let actionsHtml = `<button class="btn btn-primary" onclick="verificarEstado()">🔍 Verificar estado</button>`;
     actionsHtml += `<button class="btn btn-outline" onclick="guardarNotas()">💾 Guardar notas</button>`;
+    actionsHtml += `<button class="btn btn-outline" onclick="mostrarPdfOpts()">📄 Generar PDF</button>`;
     if (r.estado === 'CREADA') {
       actionsHtml += `<button class="btn btn-success" onclick="mostrarRecotizar()">💲 Recotizar</button>`;
       actionsHtml += `<button class="btn btn-success" onclick="cambiarEstado('EMITIDA')">✅ Marcar como Emitida</button>`;
@@ -382,6 +383,62 @@ async function verDetalle(id) {
     
   } catch(e) {
     document.getElementById('modalBody').innerHTML = '<div class="empty">Error: ' + e.message + '</div>';
+  }
+}
+
+function mostrarPdfOpts() {
+  const existing = document.getElementById('pdfPanel');
+  if (existing) { existing.remove(); return; }
+  
+  const panel = document.createElement('div');
+  panel.id = 'pdfPanel';
+  panel.className = 'recotizar-panel';
+  panel.innerHTML = `
+    <h4>📄 Generar PDF de reserva</h4>
+    <div class="recotizar-opts">
+      <div>
+        <label>Vendedor</label>
+        <select id="pdfVendedor">
+          <option value="guido">Guido Finkelstein</option>
+          <option value="julieta">Julieta Zubeldia</option>
+          <option value="ruthy">Ruthy Tuchsznajder</option>
+        </select>
+      </div>
+      <div>
+        <label>&nbsp;</label>
+        <button class="btn btn-primary" onclick="generarPdf()" id="btnPdf" style="width:100%">📄 Generar y descargar</button>
+      </div>
+    </div>
+    <p style="font-size:11px;color:#999">El PDF incluye PNR, pasajeros, itinerario y precio de venta (con markup)</p>
+  `;
+  document.getElementById('modalBody').appendChild(panel);
+}
+
+async function generarPdf() {
+  if (!reservaActual) return;
+  const btn = document.getElementById('btnPdf');
+  btn.textContent = '⏳ Generando...'; btn.disabled = true;
+  try {
+    const vendedor = document.getElementById('pdfVendedor').value;
+    const res = await fetch('/reservas/' + reservaActual.id + '/pdf', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ vendedor })
+    });
+    if (!res.ok) {
+      const err = await res.json();
+      throw new Error(err.error || 'Error generando PDF');
+    }
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `Reserva_${reservaActual.pnr}.pdf`;
+    a.click();
+    URL.revokeObjectURL(url);
+  } catch(e) {
+    alert('Error: ' + e.message);
+  } finally {
+    btn.textContent = '📄 Generar y descargar'; btn.disabled = false;
   }
 }
 
