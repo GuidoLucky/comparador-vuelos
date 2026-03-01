@@ -420,6 +420,13 @@ function mostrarRecotizar() {
         <label>Nacionalidad</label>
         <input type="text" id="recotNationality" placeholder="Ej: ARG" maxlength="3" />
       </div>
+      <div>
+        <label>Fare Family / Brand</label>
+        <input type="text" id="recotBrand" placeholder="Ej: BRANDID1" />
+      </div>
+      <div>
+        <label>&nbsp;</label>
+      </div>
     </div>
     <button class="btn btn-primary" onclick="ejecutarRecotizar()" id="btnRecotizar">📊 Obtener tarifa actual</button>
     <div id="recotizarResult" class="recotizar-result"></div>
@@ -438,7 +445,8 @@ async function ejecutarRecotizar() {
     moneda: document.getElementById('recotMoneda').value || null,
     fareType: parseInt(document.getElementById('recotFareType').value) || 0,
     overrideCarrier: document.getElementById('recotCarrier').value || null,
-    nationality: document.getElementById('recotNationality').value || null
+    nationality: document.getElementById('recotNationality').value || null,
+    brandId: document.getElementById('recotBrand').value || null
   };
   
   try {
