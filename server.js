@@ -853,7 +853,15 @@ app.post('/reservas/:id/pdf', async (req, res) => {
           vuelos = rrData.flightsInformation || [];
           airportsInfo = rrData.airportsInformation || {};
           if (vuelos.length && vuelos[0].airlineName) aerolinea = vuelos[0].airlineName;
-          fareInfo = (rrData.storedFaresInformation || []).map(f => {
+          // Puede haber múltiples storedFares (vieja + nueva). Usar la ÚLTIMA (más reciente)
+          const storedFares = rrData.storedFaresInformation || [];
+          console.log('[PDF] storedFares count:', storedFares.length, 'fares:', storedFares.map(f => ({
+            neto: f.fareValues?.totalAmount, fee: (f.feeValues||[]).reduce((s,x)=>s+(x.amount||0),0), type: f.fareType
+          })));
+          
+          // Tomar solo la última tarifa guardada (la más reciente)
+          const latestFares = storedFares.length > 0 ? [storedFares[storedFares.length - 1]] : [];
+          fareInfo = latestFares.map(f => {
             const totalTarifa = f.fareValues?.totalAmount || 0;
             const feeTucano = (f.feeValues || []).reduce((s, fee) => s + (fee.amount || 0), 0);
             return {
