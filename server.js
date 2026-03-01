@@ -804,7 +804,7 @@ app.post('/reservas/:id/guardar-tarifa', async (req, res) => {
 
     // Actualizar precio en DB local
     if (netoTotal) {
-      await db.query('UPDATE reservas SET precio_usd=$1, precio_venta_usd=$1, updated_at=NOW() WHERE id=$2', [netoTotal, req.params.id]);
+      await db.query('UPDATE reservas SET precio_usd=$1, precio_venta_usd=$2, updated_at=NOW() WHERE id=$3', [netoTotal, netoTotal, req.params.id]);
       console.log('[SavePricing] DB actualizada con neto:', netoTotal);
     }
 
