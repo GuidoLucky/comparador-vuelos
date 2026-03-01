@@ -494,101 +494,60 @@ app.post('/reservas/:id/verificar', async (req, res) => {
     const r = await db.query('SELECT * FROM reservas WHERE id=$1', [req.params.id]);
     if (!r.rows.length) return res.json({ ok: false, error: 'Reserva no encontrada' });
     const reserva = r.rows[0];
-
     const token = await getToken();
+    const hdrs = getHeaders(token);
 
-    // Intentar obtener el estado del pedido desde la API
-    let apiEstado = null;
-    let apiData = null;
-    let ticketNumbers = [];
-    let timeLimit = null;
+    const resultados = [];
 
-    // Método 1: GetOrderDetail por orderId
-    if (reserva.order_id) {
+    // Probar múltiples endpoints para encontrar el correcto
+    const endpoints = [
+      { nombre: 'GetOrder', url: `${API_BASE}/Order/GetOrder?orderId=${reserva.order_id}` },
+      { nombre: 'GetOrderDetail', url: `${API_BASE}/Order/GetOrderDetail?orderId=${reserva.order_id}` },
+      { nombre: 'GetOrderByNumber', url: `${API_BASE}/Order/GetOrderByNumber?orderNumber=${reserva.order_number}` },
+      { nombre: 'GetReservation', url: `${API_BASE}/FlightReservation/GetReservation?recordLocator=${reserva.pnr}` },
+      { nombre: 'GetByLocator', url: `${API_BASE}/FlightReservation/GetReservationByLocator?recordLocator=${reserva.pnr}` },
+      { nombre: 'GetBooking', url: `${API_BASE}/FlightReservation/GetBooking?recordLocator=${reserva.pnr}` },
+      { nombre: 'OrderDetail', url: `${API_BASE}/Order/${reserva.order_id}` },
+      { nombre: 'OrderSearch', url: `${API_BASE}/Order/Search?recordLocator=${reserva.pnr}` },
+      { nombre: 'GetOrdersList', url: `${API_BASE}/Order/GetOrders?recordLocator=${reserva.pnr}` },
+      { nombre: 'ReservationDetail', url: `${API_BASE}/FlightReservation/Detail?orderId=${reserva.order_id}` },
+    ];
+
+    for (const ep of endpoints) {
       try {
-        const resp = await fetch(`${API_BASE}/Order/GetOrderDetail?orderId=${reserva.order_id}`, {
-          headers: getHeaders(token)
-        });
+        const resp = await fetch(ep.url, { headers: hdrs });
         const text = await resp.text();
-        try { apiData = JSON.parse(text); } catch(e) {}
-      } catch(e) { console.warn('[Verificar] GetOrderDetail error:', e.message); }
-    }
-
-    // Método 2: buscar por PNR si no encontró
-    if (!apiData && reserva.pnr) {
-      try {
-        const resp = await fetch(`${API_BASE}/FlightReservation/GetReservationByLocator?recordLocator=${reserva.pnr}`, {
-          headers: getHeaders(token)
-        });
-        const text = await resp.text();
-        try { apiData = JSON.parse(text); } catch(e) {}
-      } catch(e) { console.warn('[Verificar] GetByLocator error:', e.message); }
-    }
-
-    // Método 3: buscar por orderNumber
-    if (!apiData && reserva.order_number) {
-      try {
-        const resp = await fetch(`${API_BASE}/Order/GetOrderByNumber?orderNumber=${reserva.order_number}`, {
-          headers: getHeaders(token)
-        });
-        const text = await resp.text();
-        try { apiData = JSON.parse(text); } catch(e) {}
-      } catch(e) { console.warn('[Verificar] GetByNumber error:', e.message); }
-    }
-
-    console.log('[Verificar] API response keys:', apiData ? Object.keys(apiData) : 'null');
-    if (apiData) {
-      console.log('[Verificar] API data (parcial):', JSON.stringify(apiData).substring(0, 500));
-    }
-
-    // Interpretar estado de la API
-    // Los campos comunes: status, orderStatus, reservationStatus, state
-    const statusField = apiData?.status || apiData?.orderStatus || apiData?.reservationStatus 
-      || apiData?.state || apiData?.bookingStatus || apiData?.Status;
-    
-    // Buscar tickets emitidos
-    if (apiData?.tickets?.length) ticketNumbers = apiData.tickets.map(t => t.ticketNumber || t.number).filter(Boolean);
-    if (apiData?.ticketNumbers?.length) ticketNumbers = apiData.ticketNumbers;
-    if (apiData?.etickets?.length) ticketNumbers = apiData.etickets.map(t => t.number || t).filter(Boolean);
-
-    // Time limit (fecha límite para emitir)
-    timeLimit = apiData?.timeLimit || apiData?.ticketingTimeLimit || apiData?.lastTicketingDate || null;
-
-    // Mapear estado de API a nuestros estados
-    if (statusField) {
-      const s = String(statusField).toUpperCase();
-      if (s.includes('CANCEL') || s.includes('VOID') || s === 'CANCELLED' || s === 'XX') {
-        apiEstado = 'CANCELADA';
-      } else if (s.includes('TICKET') || s.includes('ISSUED') || s.includes('EMIT') || s === 'TK') {
-        apiEstado = 'EMITIDA';
-      } else if (s.includes('CONFIRM') || s.includes('HOLD') || s.includes('RESERV') || s === 'HK' || s === 'OK') {
-        apiEstado = 'CREADA';
-      } else if (s.includes('COMPLET') || s.includes('FLOWN') || s.includes('USED')) {
-        apiEstado = 'COMPLETADA';
+        const status = resp.status;
+        let preview = text.substring(0, 300);
+        let keys = null;
+        try {
+          const json = JSON.parse(text);
+          keys = Object.keys(json);
+          // Si tiene datos útiles, guardar más info
+          if (keys.length > 0 && status === 200) {
+            preview = JSON.stringify(json).substring(0, 500);
+          }
+        } catch(e) {}
+        resultados.push({ nombre: ep.nombre, status, keys, preview: preview.substring(0, 200) });
+        console.log(`[Verificar] ${ep.nombre}: HTTP ${status}, keys: ${keys ? keys.join(',') : 'no-json'}, preview: ${preview.substring(0, 200)}`);
+      } catch(e) {
+        resultados.push({ nombre: ep.nombre, status: 'ERROR', error: e.message });
+        console.log(`[Verificar] ${ep.nombre}: ERROR ${e.message}`);
       }
     }
 
-    // Si encontramos tickets, está emitida
-    if (ticketNumbers.length > 0 && apiEstado !== 'CANCELADA') {
-      apiEstado = 'EMITIDA';
-    }
-
-    // Actualizar en DB si cambió el estado
-    let estadoActualizado = false;
-    if (apiEstado && apiEstado !== reserva.estado) {
-      await db.query('UPDATE reservas SET estado=$1, updated_at=NOW() WHERE id=$2', [apiEstado, req.params.id]);
-      estadoActualizado = true;
-    }
+    // Buscar el primer resultado exitoso con datos útiles
+    const exitoso = resultados.find(r => r.status === 200 && r.keys && r.keys.length > 2);
 
     res.json({
       ok: true,
-      estadoAPI: apiEstado || 'NO_DETERMINADO',
-      estadoAnterior: reserva.estado,
-      estadoActualizado,
-      tickets: ticketNumbers,
-      timeLimit,
-      rawStatus: statusField || null,
-      apiResponse: apiData ? Object.keys(apiData) : null
+      estadoAPI: 'EXPLORANDO',
+      estadoLocal: reserva.estado,
+      pnr: reserva.pnr,
+      orderId: reserva.order_id,
+      orderNumber: reserva.order_number,
+      resultados,
+      exitoso: exitoso ? exitoso.nombre : null
     });
   } catch(e) {
     console.error('[Verificar] Error:', e.message);
