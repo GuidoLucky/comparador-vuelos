@@ -792,12 +792,14 @@ function renderPaxForm(idx) {
     </div>
   `;
 
-  // Guardar valores iniciales
-  if (docPaisId) { guardarPaxField(idx,'docPaisId',docPaisId); guardarPaxField(idx,'docPais', paisesData.find(p=>p.id===docPaisId)?.Name||''); }
-  if (factPaisId) { guardarPaxField(idx,'factPaisId',factPaisId); guardarPaxField(idx,'factPais', paisesData.find(p=>p.id===factPaisId)?.name||''); }
+  // Guardar valores iniciales - siempre asegurar que existan
+  guardarPaxField(idx,'docPaisId', docPaisId || argId);
+  guardarPaxField(idx,'docPais', paisesData.find(p=>p.id===(docPaisId||argId))?.name || 'Argentina');
+  guardarPaxField(idx,'factPaisId', factPaisId || argId);
+  guardarPaxField(idx,'factPais', paisesData.find(p=>p.id===(factPaisId||argId))?.name || 'Argentina');
   // Guardar nacionalidad default si no tiene
-  const nacId = saved.nacionalidadId || docPaisId;
-  if (nacId && nacId !== 'undefined') guardarPaxField(idx,'nacionalidadId', nacId);
+  const nacId = saved.nacionalidadId || docPaisId || argId;
+  if (nacId) guardarPaxField(idx,'nacionalidadId', nacId);
   // Guardar docTipo y factTipo defaults si ya están seteados
   setTimeout(() => {
     const dtEl = document.getElementById(`p_docTipo_${idx}`);
@@ -809,6 +811,8 @@ function renderPaxForm(idx) {
 
 function guardarPaxField(idx, campo, valor) {
   if (!pasajerosForms[idx].data) pasajerosForms[idx].data = {};
+  // Never store "undefined" string
+  if (valor === 'undefined' || valor === undefined) valor = null;
   pasajerosForms[idx].data[campo] = valor;
 }
 
@@ -957,7 +961,15 @@ async function confirmarReserva(searchId, quotationId) {
   const btn = document.getElementById('btnConfirmar');
   btn.disabled = true; btn.textContent = '⏳ Procesando...';
 
-  const pasajeros = pasajerosForms.map(p => ({ tipo: p.tipo, ...p.data }));
+  const pasajeros = pasajerosForms.map(p => {
+    const d = { tipo: p.tipo, ...p.data };
+    // Sanitizar IDs que puedan ser undefined
+    const fallbackArgId = argId || '3144952d-b7f4-4ddf-9ed8-8021bfc67c4b';
+    if (!d.docPaisId || d.docPaisId === 'undefined') d.docPaisId = fallbackArgId;
+    if (!d.factPaisId || d.factPaisId === 'undefined') d.factPaisId = fallbackArgId;
+    if (!d.nacionalidadId || d.nacionalidadId === 'undefined') d.nacionalidadId = fallbackArgId;
+    return d;
+  });
   const contacto = { apellido: cApellido, nombre: cNombre, email: cEmail, telefono1: cTel1, telefono2: document.getElementById('c_tel2').value };
   const v = vueloSeleccionado;
   const vueloInfo = {
