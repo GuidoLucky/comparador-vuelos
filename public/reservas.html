@@ -410,6 +410,11 @@ async function verificarEstado() {
       data.vuelos.forEach(v => msg += `   ${v.vuelo} ${v.ruta} [${v.status}]\n`);
     }
     
+    // Mensaje adicional
+    if (data.mensaje) {
+      msg += `\nℹ️ ${data.mensaje}\n`;
+    }
+    
     alert(msg);
     
     if (data.estadoActualizado) {
