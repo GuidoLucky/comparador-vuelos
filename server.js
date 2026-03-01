@@ -671,15 +671,12 @@ app.post('/reservas/:id/recotizar', async (req, res) => {
     }));
 
     // Construir pasajeros con referenceId del PNR
-    // INF a veces da error de pricing - excluirlos del request
     const typeMap = { 0: 'ADT', 1: 'CNN', 2: 'INF' };
-    const paxWithType = passengers
-      .filter(p => (p.type !== 2)) // Excluir infantes del pricing
-      .map(p => ({
-        ReferenceId: p.referenceId || p.reference,
-        Type: typeMap[p.type] || p.typeCode || 'ADT',
-        DiscountType: typeMap[p.type] || p.typeCode || 'ADT'
-      }));
+    const paxWithType = passengers.map(p => ({
+      ReferenceId: p.referenceId || p.reference,
+      Type: typeMap[p.type] || p.typeCode || 'ADT',
+      DiscountType: typeMap[p.type] || p.typeCode || 'ADT'
+    }));
     const paxRefIds = paxWithType.map(p => p.ReferenceId);
     const segRefIds = segments.map(s => s.ReferenceId);
 
@@ -706,23 +703,37 @@ app.post('/reservas/:id/recotizar', async (req, res) => {
 
     console.log('[Recotizar] Payload:', JSON.stringify(pricingPayload).substring(0, 500));
 
-    // Intentar ambos endpoints
-    let prResp, prText;
-    for (const ep of [
-      `${API_BASE}/FlightReservationPricing/RetrievePricing`,
-      `${API_BASE}/FlightReservationPricing/RetrievePricingByText`
-    ]) {
-      console.log(`[Recotizar] Intentando ${ep}`);
-      prResp = await fetch(ep, {
-        method: 'POST', headers: hdrs,
-        body: JSON.stringify(pricingPayload)
-      });
-      prText = await prResp.text();
-      console.log(`[Recotizar] HTTP ${prResp.status}, body: ${prText.substring(0, 300)}`);
-      if (prResp.ok && prText.length > 5) break;
+    // Intentar pricing — si falla con INF, reintentar sin ellos
+    let prResp, prText, prSuccess = false;
+    const hasInfants = paxWithType.some(p => p.Type === 'INF');
+    
+    for (const excludeInf of [false, ...(hasInfants ? [true] : [])]) {
+      const currentPax = excludeInf 
+        ? paxWithType.filter(p => p.Type !== 'INF')
+        : paxWithType;
+      const currentRefIds = currentPax.map(p => p.ReferenceId);
+      
+      const currentPayload = { ...pricingPayload, PassengerReferenceIds: currentRefIds, PassengersWithType: currentPax };
+      
+      if (excludeInf) console.log('[Recotizar] Reintentando SIN infantes');
+      
+      for (const ep of [
+        `${API_BASE}/FlightReservationPricing/RetrievePricing`,
+        `${API_BASE}/FlightReservationPricing/RetrievePricingByText`
+      ]) {
+        console.log(`[Recotizar] Intentando ${ep}`);
+        prResp = await fetch(ep, {
+          method: 'POST', headers: hdrs,
+          body: JSON.stringify(currentPayload)
+        });
+        prText = await prResp.text();
+        console.log(`[Recotizar] HTTP ${prResp.status}, body: ${prText.substring(0, 300)}`);
+        if (prResp.ok && prText.length > 5) { prSuccess = true; break; }
+      }
+      if (prSuccess) break;
     }
 
-    if (!prResp.ok || prText.length < 5) {
+    if (!prSuccess) {
       return res.json({ ok: false, error: `Ningún endpoint respondió. Último: HTTP ${prResp.status}. Response: ${prText.substring(0, 200)}` });
     }
 
@@ -894,24 +905,32 @@ app.post('/reservas/:id/pdf', async (req, res) => {
             if (latestGroup.length > 0) latestFares = latestGroup;
           }
           
+          // passengersInformation tiene el tipo de cada pasajero
+          const paxInfo = rrData.passengersInformation || [];
+          const pTypeMap = { 0: 'ADT', 1: 'CHD', 2: 'INF' };
+          console.log(`[PDF] passengersInfo: count=${paxInfo.length}, types=[${paxInfo.map(p => `${p.type}=${pTypeMap[p.type]}`).join(',')}]`);
+          
           fareInfo = latestFares.map((f, idx) => {
             const totalTarifa = f.fareValues?.totalAmount || 0;
             const feeTucano = (f.feeValues || []).reduce((s, fee) => s + (fee.amount || 0), 0);
-            // Try multiple possible field names for passenger type
-            const paxType = f.passengerDiscountType || f.passengerType || f.paxType || f.discountType || f.type || f.paxCode;
-            // If still undefined, try to match by index with passengersInformation
-            let resolvedType = paxType;
-            if (!resolvedType && rrData.passengersInformation && rrData.passengersInformation[idx]) {
-              const pInfo = rrData.passengersInformation[idx];
-              const pTypeMap = { 0: 'ADT', 1: 'CHD', 2: 'INF' };
-              resolvedType = pTypeMap[pInfo.type] || pInfo.typeCode || 'ADT';
+            // Mapear tipo de pasajero: 1) passengersInformation, 2) DB counts fallback
+            let paxType = 'ADT';
+            if (paxInfo[idx]) {
+              paxType = pTypeMap[paxInfo[idx].type] || paxInfo[idx].typeCode || 'ADT';
+            } else if (reserva) {
+              // Fallback: usar counts de la DB
+              const adtCount = reserva.adultos || 0;
+              const chdCount = reserva.ninos || 0;
+              if (idx < adtCount) paxType = 'ADT';
+              else if (idx < adtCount + chdCount) paxType = 'CHD';
+              else paxType = 'INF';
             }
-            console.log(`[PDF] Usando fare[${idx}]: paxType=${paxType}, resolved=${resolvedType}, total=${totalTarifa}, fee=${feeTucano}, neto=${totalTarifa+feeTucano}`);
+            console.log(`[PDF] fare[${idx}]: paxType=${paxType}, total=${totalTarifa}, fee=${feeTucano}, neto=${totalTarifa+feeTucano}`);
             return {
               neto: totalTarifa + feeTucano,
               tipo_tarifa: f.fareType || 'PNEG',
-              comision_over: ((f.commissionRule?.obtained?.amount || 0) + (f.overCommissionRule?.amount || 0)),
-              passengerDiscountType: resolvedType || 'ADT'
+              comision_over: ((f.commissionRule?.obtained?.valueApplied || f.commissionRule?.obtained?.amount || 0) + (f.overCommissionRule?.valueApplied || f.overCommissionRule?.amount || 0)),
+              passengerDiscountType: paxType
             };
           });
         }
