@@ -716,6 +716,7 @@ app.post('/reservas/:id/recotizar', async (req, res) => {
     if (Array.isArray(fares)) {
       for (const fare of fares) {
         console.log('[Recotizar] Fare keys:', Object.keys(fare).join(','), 'passengerDiscountType:', fare.passengerDiscountType);
+        console.log('[Recotizar] Commission:', JSON.stringify(fare.commissionRule), 'OverComm:', JSON.stringify(fare.overCommissionRule), 'Selling:', JSON.stringify(fare.sellingFareValues), 'Fees:', JSON.stringify(fare.feeValues));
         const fv = fare.fareValues || fare;
         tarifas.push({
           pasajero: fare.compiledPassenger || fare.compiledPassengerList?.[0] || '',
@@ -724,12 +725,22 @@ app.post('/reservas/:id/recotizar', async (req, res) => {
           validadora: fare.validatingCarrier || '',
           tarifaBase: fv.baseFareAmount || fv.fareAmount || 0,
           monedaBase: fv.baseFareCurrency || fv.fareCurrency || 'USD',
+          equivalente: fv.equivalentFareAmount || null,
+          monedaEquivalente: fv.equivalentFareCurrency || null,
           impuestos: fv.totalTaxAmount || fv.taxAmount || 0,
           monedaImpuestos: fv.totalTaxCurrency || 'USD',
           total: fv.totalAmount || fv.total || 0,
           monedaTotal: fv.totalCurrency || 'USD',
+          glasTotal: fv.totalGLASAmount || fv.totalAmount || 0,
+          monedaGlas: fv.totalGLASCurrency || fv.totalCurrency || 'USD',
           fee: (fare.feeValues || []).reduce((s, f) => s + (f.amount || 0), 0),
-          monedaFee: (fare.feeValues || [])[0]?.currency || 'USD'
+          monedaFee: (fare.feeValues || [])[0]?.currency || 'USD',
+          feeDetail: (fare.feeValues || []).map(f => ({ amount: f.amount, currency: f.currency, rule: f.ruleId })),
+          comisionObtenida: fare.commissionRule?.obtained || null,
+          comisionCedida: fare.commissionRule?.ceded || null,
+          overComision: fare.overCommissionRule || null,
+          sellingAmount: fare.sellingFareValues?.sellingPriceAmount || 0,
+          sellingCurrency: fare.sellingFareValues?.sellingPriceCurrency || ''
         });
       }
     }
