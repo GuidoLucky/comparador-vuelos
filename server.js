@@ -487,6 +487,115 @@ app.put('/reservas/:id/notas', async (req, res) => {
   } catch(e) { res.json({ ok: false, error: e.message }); }
 });
 
+// ─── VERIFICAR ESTADO EN TIEMPO REAL (API Tucano) ───
+app.post('/reservas/:id/verificar', async (req, res) => {
+  if (!db) return res.json({ ok: false, error: 'Sin DB' });
+  try {
+    const r = await db.query('SELECT * FROM reservas WHERE id=$1', [req.params.id]);
+    if (!r.rows.length) return res.json({ ok: false, error: 'Reserva no encontrada' });
+    const reserva = r.rows[0];
+
+    const token = await getToken();
+
+    // Intentar obtener el estado del pedido desde la API
+    let apiEstado = null;
+    let apiData = null;
+    let ticketNumbers = [];
+    let timeLimit = null;
+
+    // Método 1: GetOrderDetail por orderId
+    if (reserva.order_id) {
+      try {
+        const resp = await fetch(`${API_BASE}/Order/GetOrderDetail?orderId=${reserva.order_id}`, {
+          headers: getHeaders(token)
+        });
+        const text = await resp.text();
+        try { apiData = JSON.parse(text); } catch(e) {}
+      } catch(e) { console.warn('[Verificar] GetOrderDetail error:', e.message); }
+    }
+
+    // Método 2: buscar por PNR si no encontró
+    if (!apiData && reserva.pnr) {
+      try {
+        const resp = await fetch(`${API_BASE}/FlightReservation/GetReservationByLocator?recordLocator=${reserva.pnr}`, {
+          headers: getHeaders(token)
+        });
+        const text = await resp.text();
+        try { apiData = JSON.parse(text); } catch(e) {}
+      } catch(e) { console.warn('[Verificar] GetByLocator error:', e.message); }
+    }
+
+    // Método 3: buscar por orderNumber
+    if (!apiData && reserva.order_number) {
+      try {
+        const resp = await fetch(`${API_BASE}/Order/GetOrderByNumber?orderNumber=${reserva.order_number}`, {
+          headers: getHeaders(token)
+        });
+        const text = await resp.text();
+        try { apiData = JSON.parse(text); } catch(e) {}
+      } catch(e) { console.warn('[Verificar] GetByNumber error:', e.message); }
+    }
+
+    console.log('[Verificar] API response keys:', apiData ? Object.keys(apiData) : 'null');
+    if (apiData) {
+      console.log('[Verificar] API data (parcial):', JSON.stringify(apiData).substring(0, 500));
+    }
+
+    // Interpretar estado de la API
+    // Los campos comunes: status, orderStatus, reservationStatus, state
+    const statusField = apiData?.status || apiData?.orderStatus || apiData?.reservationStatus 
+      || apiData?.state || apiData?.bookingStatus || apiData?.Status;
+    
+    // Buscar tickets emitidos
+    if (apiData?.tickets?.length) ticketNumbers = apiData.tickets.map(t => t.ticketNumber || t.number).filter(Boolean);
+    if (apiData?.ticketNumbers?.length) ticketNumbers = apiData.ticketNumbers;
+    if (apiData?.etickets?.length) ticketNumbers = apiData.etickets.map(t => t.number || t).filter(Boolean);
+
+    // Time limit (fecha límite para emitir)
+    timeLimit = apiData?.timeLimit || apiData?.ticketingTimeLimit || apiData?.lastTicketingDate || null;
+
+    // Mapear estado de API a nuestros estados
+    if (statusField) {
+      const s = String(statusField).toUpperCase();
+      if (s.includes('CANCEL') || s.includes('VOID') || s === 'CANCELLED' || s === 'XX') {
+        apiEstado = 'CANCELADA';
+      } else if (s.includes('TICKET') || s.includes('ISSUED') || s.includes('EMIT') || s === 'TK') {
+        apiEstado = 'EMITIDA';
+      } else if (s.includes('CONFIRM') || s.includes('HOLD') || s.includes('RESERV') || s === 'HK' || s === 'OK') {
+        apiEstado = 'CREADA';
+      } else if (s.includes('COMPLET') || s.includes('FLOWN') || s.includes('USED')) {
+        apiEstado = 'COMPLETADA';
+      }
+    }
+
+    // Si encontramos tickets, está emitida
+    if (ticketNumbers.length > 0 && apiEstado !== 'CANCELADA') {
+      apiEstado = 'EMITIDA';
+    }
+
+    // Actualizar en DB si cambió el estado
+    let estadoActualizado = false;
+    if (apiEstado && apiEstado !== reserva.estado) {
+      await db.query('UPDATE reservas SET estado=$1, updated_at=NOW() WHERE id=$2', [apiEstado, req.params.id]);
+      estadoActualizado = true;
+    }
+
+    res.json({
+      ok: true,
+      estadoAPI: apiEstado || 'NO_DETERMINADO',
+      estadoAnterior: reserva.estado,
+      estadoActualizado,
+      tickets: ticketNumbers,
+      timeLimit,
+      rawStatus: statusField || null,
+      apiResponse: apiData ? Object.keys(apiData) : null
+    });
+  } catch(e) {
+    console.error('[Verificar] Error:', e.message);
+    res.json({ ok: false, error: e.message });
+  }
+});
+
 app.listen(PORT, () => console.log(`✅ Puerto ${PORT}`));
 
 // ─── DETALLE DE VUELO (desglose de precio) ───
