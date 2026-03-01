@@ -823,7 +823,7 @@ app.post('/reservas/:id/pdf', async (req, res) => {
       SELECT r.*, 
         json_agg(json_build_object(
           'nombre', c.apellido || ', ' || c.nombre,
-          'tipo', rp.tipo_pasajero,
+          'tipo', rp.tipo,
           'doc_tipo', c.doc_tipo,
           'doc_numero', c.doc_numero
         )) as pasajeros_info
