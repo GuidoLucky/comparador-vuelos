@@ -460,24 +460,40 @@ async function ejecutarRecotizar() {
     if (data.tarifas && data.tarifas.length) {
       let html = '';
       let grandTotal = 0;
+      let grandNeto = 0;
       data.tarifas.forEach(t => {
         grandTotal += t.total;
+        // Neto = total + fee (lo que se paga a Tucano)
+        const neto = t.total + t.fee;
+        grandNeto += neto;
+        
         html += `
           <div class="tarifa-card">
             <div class="tarifa-header">${t.tipo} × 1 ${t.pasajero ? '— ' + t.pasajero : ''}</div>
-            ${t.tipoTarifa ? `<div class="tarifa-row"><span>Tipo tarifa</span><span>${t.tipoTarifa}${t.validadora ? ' / ' + t.validadora : ''}</span></div>` : ''}
+            ${t.tipoTarifa ? `<div class="tarifa-row" style="color:#666;font-size:12px"><span>Tipo: ${t.tipoTarifa}${t.validadora ? ' / ' + t.validadora : ''}</span></div>` : ''}
             <div class="tarifa-row"><span>Tarifa base</span><span>${t.monedaBase} ${t.tarifaBase.toLocaleString('es-AR', {minimumFractionDigits:2})}</span></div>
             <div class="tarifa-row"><span>Impuestos</span><span>${t.monedaImpuestos} ${t.impuestos.toLocaleString('es-AR', {minimumFractionDigits:2})}</span></div>
-            ${t.fee ? `<div class="tarifa-row"><span>Fee</span><span>${t.monedaFee} ${t.fee.toLocaleString('es-AR', {minimumFractionDigits:2})}</span></div>` : ''}
-            <div class="tarifa-row total"><span>Total</span><span>${t.monedaTotal} ${t.total.toLocaleString('es-AR', {minimumFractionDigits:2})}</span></div>
+            <div class="tarifa-row" style="border-top:1px solid #eee;padding-top:4px;"><span>Subtotal tarifa</span><span>${t.monedaTotal} ${t.total.toLocaleString('es-AR', {minimumFractionDigits:2})}</span></div>
+            ${t.fee ? `<div class="tarifa-row"><span>Fee Tucano</span><span>${t.monedaFee} ${t.fee.toLocaleString('es-AR', {minimumFractionDigits:2})}</span></div>` : ''}
+            ${t.comisionObtenida ? `<div class="tarifa-row" style="color:#2e7d32"><span>Comisión obtenida</span><span>${JSON.stringify(t.comisionObtenida)}</span></div>` : ''}
+            ${t.comisionCedida ? `<div class="tarifa-row" style="color:#c62828"><span>Comisión cedida</span><span>${JSON.stringify(t.comisionCedida)}</span></div>` : ''}
+            <div class="tarifa-row total"><span>NETO a pagar</span><span>${t.monedaTotal} ${neto.toLocaleString('es-AR', {minimumFractionDigits:2})}</span></div>
           </div>
         `;
       });
       const mon = data.tarifas[0]?.monedaTotal || 'USD';
       html += `<div class="tarifa-card" style="background:#e8f5e9;border-color:#4caf50;">
-        <div class="tarifa-row total" style="border:none;margin:0;padding:0;">
-          <span>TOTAL RESERVA</span>
+        <div class="tarifa-row" style="padding:2px 0;font-size:13px">
+          <span>Subtotal tarifas</span>
           <span>${mon} ${grandTotal.toLocaleString('es-AR', {minimumFractionDigits:2})}</span>
+        </div>
+        <div class="tarifa-row" style="padding:2px 0;font-size:13px">
+          <span>+ Fees</span>
+          <span>${mon} ${(grandNeto - grandTotal).toLocaleString('es-AR', {minimumFractionDigits:2})}</span>
+        </div>
+        <div class="tarifa-row total" style="border:none;margin:0;padding-top:6px;">
+          <span>TOTAL NETO RESERVA</span>
+          <span>${mon} ${grandNeto.toLocaleString('es-AR', {minimumFractionDigits:2})}</span>
         </div>
       </div>`;
       
