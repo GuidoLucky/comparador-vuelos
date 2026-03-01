@@ -671,12 +671,15 @@ app.post('/reservas/:id/recotizar', async (req, res) => {
     }));
 
     // Construir pasajeros con referenceId del PNR
-    const typeMap = { 0: 'ADT', 1: 'CHD', 2: 'INF' };
-    const paxWithType = passengers.map(p => ({
-      ReferenceId: p.referenceId || p.reference,
-      Type: typeMap[p.type] || p.typeCode || 'ADT',
-      DiscountType: typeMap[p.type] || p.typeCode || 'ADT'
-    }));
+    // INF a veces da error de pricing - excluirlos del request
+    const typeMap = { 0: 'ADT', 1: 'CNN', 2: 'INF' };
+    const paxWithType = passengers
+      .filter(p => (p.type !== 2)) // Excluir infantes del pricing
+      .map(p => ({
+        ReferenceId: p.referenceId || p.reference,
+        Type: typeMap[p.type] || p.typeCode || 'ADT',
+        DiscountType: typeMap[p.type] || p.typeCode || 'ADT'
+      }));
     const paxRefIds = paxWithType.map(p => p.ReferenceId);
     const segRefIds = segments.map(s => s.ReferenceId);
 
@@ -878,7 +881,9 @@ app.post('/reservas/:id/pdf', async (req, res) => {
           storedFares.forEach((f, idx) => {
             const total = f.fareValues?.totalAmount || 0;
             const fee = (f.feeValues||[]).reduce((s,x)=>s+(x.amount||0),0);
-            console.log(`[PDF] fare[${idx}]: total=${total}, fee=${fee}, paxType=${f.passengerDiscountType}, numberInPNR=${f.numberInPNR}`);
+            // Log all keys to find correct passenger type field
+            const topKeys = Object.keys(f).filter(k => typeof f[k] !== 'object' || f[k] === null);
+            console.log(`[PDF] fare[${idx}]: total=${total}, fee=${fee}, keys=${topKeys.join(',')}, vals=${topKeys.map(k=>k+'='+f[k]).join(', ')}`);
           });
           
           // Tomar todas las tarifas del numberInPNR más alto
@@ -889,15 +894,24 @@ app.post('/reservas/:id/pdf', async (req, res) => {
             if (latestGroup.length > 0) latestFares = latestGroup;
           }
           
-          fareInfo = latestFares.map(f => {
+          fareInfo = latestFares.map((f, idx) => {
             const totalTarifa = f.fareValues?.totalAmount || 0;
             const feeTucano = (f.feeValues || []).reduce((s, fee) => s + (fee.amount || 0), 0);
-            console.log(`[PDF] Usando fare: paxType=${f.passengerDiscountType}, total=${totalTarifa}, fee=${feeTucano}, neto=${totalTarifa+feeTucano}`);
+            // Try multiple possible field names for passenger type
+            const paxType = f.passengerDiscountType || f.passengerType || f.paxType || f.discountType || f.type || f.paxCode;
+            // If still undefined, try to match by index with passengersInformation
+            let resolvedType = paxType;
+            if (!resolvedType && rrData.passengersInformation && rrData.passengersInformation[idx]) {
+              const pInfo = rrData.passengersInformation[idx];
+              const pTypeMap = { 0: 'ADT', 1: 'CHD', 2: 'INF' };
+              resolvedType = pTypeMap[pInfo.type] || pInfo.typeCode || 'ADT';
+            }
+            console.log(`[PDF] Usando fare[${idx}]: paxType=${paxType}, resolved=${resolvedType}, total=${totalTarifa}, fee=${feeTucano}, neto=${totalTarifa+feeTucano}`);
             return {
               neto: totalTarifa + feeTucano,
               tipo_tarifa: f.fareType || 'PNEG',
               comision_over: ((f.commissionRule?.obtained?.amount || 0) + (f.overCommissionRule?.amount || 0)),
-              passengerDiscountType: f.passengerDiscountType || 'ADT'
+              passengerDiscountType: resolvedType || 'ADT'
             };
           });
         }
