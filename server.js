@@ -715,12 +715,13 @@ app.post('/reservas/:id/recotizar', async (req, res) => {
     const fares = prData.storedFares || prData.fares || prData.pricingOptions || prData.quotations || [];
     if (Array.isArray(fares)) {
       for (const fare of fares) {
-        console.log('[Recotizar] Fare keys:', Object.keys(fare).join(','), 'passengerType:', fare.passengerType, 'compiledPassenger:', fare.compiledPassenger);
+        console.log('[Recotizar] Fare keys:', Object.keys(fare).join(','), 'passengerDiscountType:', fare.passengerDiscountType);
         const fv = fare.fareValues || fare;
         tarifas.push({
-          pasajero: fare.compiledPassenger || fare.passenger || '',
-          tipo: fare.passengerTypeCode || typeMap[fare.passengerType] || fare.typeCode || (fare.passengerType === 0 ? 'ADT' : fare.passengerType === 1 ? 'CHD' : fare.passengerType === 2 ? 'INF' : 'ADT'),
-          tipoTarifa: fare.fareType || prData.fareType || '',
+          pasajero: fare.compiledPassenger || fare.compiledPassengerList?.[0] || '',
+          tipo: fare.passengerDiscountType || fare.passengerTypeCode || fare.typeCode || 'ADT',
+          tipoTarifa: fare.fareType || '',
+          validadora: fare.validatingCarrier || '',
           tarifaBase: fv.baseFareAmount || fv.fareAmount || 0,
           monedaBase: fv.baseFareCurrency || fv.fareCurrency || 'USD',
           impuestos: fv.totalTaxAmount || fv.taxAmount || 0,
