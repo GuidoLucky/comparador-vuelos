@@ -120,6 +120,18 @@
   }
   
   .loading { text-align:center; padding:40px; color:#999; }
+  
+  /* RECOTIZAR PANEL */
+  .recotizar-panel { background:#f0f4ff; border-radius:10px; padding:16px; margin-top:16px; }
+  .recotizar-panel h4 { font-size:14px; margin-bottom:10px; color:#1a1a2e; }
+  .recotizar-opts { display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-bottom:12px; }
+  .recotizar-opts label { font-size:11px; color:#666; text-transform:uppercase; }
+  .recotizar-opts select, .recotizar-opts input { padding:6px 10px; border:1px solid #ccc; border-radius:6px; font-size:13px; width:100%; }
+  .recotizar-result { margin-top:12px; }
+  .tarifa-card { background:#fff; border-radius:8px; padding:12px; margin-bottom:8px; border:1px solid #e0e0e0; }
+  .tarifa-card .tarifa-header { font-weight:700; margin-bottom:6px; }
+  .tarifa-card .tarifa-row { display:flex; justify-content:space-between; font-size:13px; padding:2px 0; }
+  .tarifa-card .tarifa-row.total { font-weight:700; font-size:15px; border-top:1px solid #eee; padding-top:6px; margin-top:4px; }
 </style>
 </head>
 <body>
@@ -359,6 +371,7 @@ async function verDetalle(id) {
     let actionsHtml = `<button class="btn btn-primary" onclick="verificarEstado()">🔍 Verificar estado</button>`;
     actionsHtml += `<button class="btn btn-outline" onclick="guardarNotas()">💾 Guardar notas</button>`;
     if (r.estado === 'CREADA') {
+      actionsHtml += `<button class="btn btn-success" onclick="mostrarRecotizar()">💲 Recotizar</button>`;
       actionsHtml += `<button class="btn btn-success" onclick="cambiarEstado('EMITIDA')">✅ Marcar como Emitida</button>`;
       actionsHtml += `<button class="btn btn-danger" onclick="cambiarEstado('CANCELADA')">❌ Cancelar</button>`;
     } else if (r.estado === 'EMITIDA') {
@@ -369,6 +382,104 @@ async function verDetalle(id) {
     
   } catch(e) {
     document.getElementById('modalBody').innerHTML = '<div class="empty">Error: ' + e.message + '</div>';
+  }
+}
+
+function mostrarRecotizar() {
+  // Agregar panel de calificadores dentro del modal
+  const existing = document.getElementById('recotizarPanel');
+  if (existing) { existing.remove(); return; } // toggle
+  
+  const panel = document.createElement('div');
+  panel.id = 'recotizarPanel';
+  panel.className = 'recotizar-panel';
+  panel.innerHTML = `
+    <h4>💲 Recotizar reserva</h4>
+    <div class="recotizar-opts">
+      <div>
+        <label>Moneda</label>
+        <select id="recotMoneda">
+          <option value="">Auto (por defecto)</option>
+          <option value="USD">USD</option>
+          <option value="ARS">ARS (Pesos)</option>
+        </select>
+      </div>
+      <div>
+        <label>Tipo tarifa</label>
+        <select id="recotFareType">
+          <option value="0">No forzar</option>
+          <option value="1">Públicas</option>
+          <option value="2">Privadas</option>
+        </select>
+      </div>
+      <div>
+        <label>Validadora (override)</label>
+        <input type="text" id="recotCarrier" placeholder="Ej: UX, AR..." maxlength="3" />
+      </div>
+      <div>
+        <label>Nacionalidad</label>
+        <input type="text" id="recotNationality" placeholder="Ej: ARG" maxlength="3" />
+      </div>
+    </div>
+    <button class="btn btn-primary" onclick="ejecutarRecotizar()" id="btnRecotizar">📊 Obtener tarifa actual</button>
+    <div id="recotizarResult" class="recotizar-result"></div>
+  `;
+  document.getElementById('modalBody').appendChild(panel);
+}
+
+async function ejecutarRecotizar() {
+  if (!reservaActual) return;
+  const btn = document.getElementById('btnRecotizar');
+  const resultDiv = document.getElementById('recotizarResult');
+  btn.textContent = '⏳ Consultando tarifa...'; btn.disabled = true;
+  resultDiv.innerHTML = '';
+  
+  const opts = {
+    moneda: document.getElementById('recotMoneda').value || null,
+    fareType: parseInt(document.getElementById('recotFareType').value) || 0,
+    overrideCarrier: document.getElementById('recotCarrier').value || null,
+    nationality: document.getElementById('recotNationality').value || null
+  };
+  
+  try {
+    const res = await fetch('/reservas/' + reservaActual.id + '/recotizar', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(opts)
+    });
+    const data = await res.json();
+    if (!data.ok) throw new Error(data.error);
+    
+    if (data.tarifas && data.tarifas.length) {
+      let html = '';
+      let grandTotal = 0;
+      data.tarifas.forEach(t => {
+        grandTotal += t.total;
+        html += `
+          <div class="tarifa-card">
+            <div class="tarifa-header">${t.pasajero || t.tipo} (${t.tipo})</div>
+            <div class="tarifa-row"><span>Tarifa base</span><span>${t.monedaBase} ${t.tarifaBase.toLocaleString('es-AR', {minimumFractionDigits:2})}</span></div>
+            <div class="tarifa-row"><span>Impuestos</span><span>${t.monedaImpuestos} ${t.impuestos.toLocaleString('es-AR', {minimumFractionDigits:2})}</span></div>
+            ${t.fee ? `<div class="tarifa-row"><span>Fee</span><span>${t.monedaFee} ${t.fee.toLocaleString('es-AR', {minimumFractionDigits:2})}</span></div>` : ''}
+            <div class="tarifa-row total"><span>Total</span><span>${t.monedaTotal} ${t.total.toLocaleString('es-AR', {minimumFractionDigits:2})}</span></div>
+          </div>
+        `;
+      });
+      const mon = data.tarifas[0]?.monedaTotal || 'USD';
+      html += `<div class="tarifa-card" style="background:#e8f5e9;border-color:#4caf50;">
+        <div class="tarifa-row total" style="border:none;margin:0;padding:0;">
+          <span>TOTAL RESERVA</span>
+          <span>${mon} ${grandTotal.toLocaleString('es-AR', {minimumFractionDigits:2})}</span>
+        </div>
+      </div>`;
+      resultDiv.innerHTML = html;
+    } else {
+      resultDiv.innerHTML = `<p style="color:#999">Sin tarifas. Respuesta: ${data.rawKeys?.join(', ') || 'vacía'}</p>
+        <pre style="font-size:11px;max-height:200px;overflow:auto;background:#f5f5f5;padding:8px;border-radius:4px">${data.rawPreview || ''}</pre>`;
+    }
+  } catch(e) {
+    resultDiv.innerHTML = `<p style="color:#e74c3c">Error: ${e.message}</p>`;
+  } finally {
+    btn.textContent = '📊 Obtener tarifa actual'; btn.disabled = false;
   }
 }
 
