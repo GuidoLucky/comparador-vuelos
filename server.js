@@ -713,8 +713,6 @@ app.post('/reservas/:id/recotizar', async (req, res) => {
         if (prResp.ok && prText.length > 5) break;
       }
     }
-    const prText = await prResp.text();
-    console.log('[Recotizar] HTTP', prResp.status, 'Response:', prText.substring(0, 500));
 
     if (!prResp.ok || prText.length < 5) {
       return res.json({ ok: false, error: `Ningún endpoint respondió. Último: HTTP ${prResp.status}. Response: ${prText.substring(0, 200)}` });
