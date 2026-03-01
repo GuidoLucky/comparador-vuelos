@@ -464,7 +464,8 @@ async function ejecutarRecotizar() {
         grandTotal += t.total;
         html += `
           <div class="tarifa-card">
-            <div class="tarifa-header">${t.pasajero || t.tipo} (${t.tipo})</div>
+            <div class="tarifa-header">${t.tipo} × 1 ${t.pasajero ? '— ' + t.pasajero : ''}</div>
+            ${t.tipoTarifa ? `<div class="tarifa-row"><span>Tipo tarifa</span><span>${t.tipoTarifa}${t.validadora ? ' / ' + t.validadora : ''}</span></div>` : ''}
             <div class="tarifa-row"><span>Tarifa base</span><span>${t.monedaBase} ${t.tarifaBase.toLocaleString('es-AR', {minimumFractionDigits:2})}</span></div>
             <div class="tarifa-row"><span>Impuestos</span><span>${t.monedaImpuestos} ${t.impuestos.toLocaleString('es-AR', {minimumFractionDigits:2})}</span></div>
             ${t.fee ? `<div class="tarifa-row"><span>Fee</span><span>${t.monedaFee} ${t.fee.toLocaleString('es-AR', {minimumFractionDigits:2})}</span></div>` : ''}
