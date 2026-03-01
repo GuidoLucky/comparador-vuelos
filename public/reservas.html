@@ -383,25 +383,39 @@ async function verificarEstado() {
     const data = await res.json();
     if (!data.ok) throw new Error(data.error);
     
-    let msg = `PNR: ${data.pnr}\nOrder: ${data.orderNumber}\nEstado local: ${data.estadoLocal}\n\n`;
+    let msg = `PNR: ${data.pnr}\n`;
     
-    if (data.exitoso) {
-      msg += `✅ Endpoint exitoso: ${data.exitoso}\n\n`;
+    // Estado
+    if (data.estadoActualizado) {
+      msg += `\n⚡ ESTADO ACTUALIZADO: ${data.estadoAnterior} → ${data.estadoAPI}\n`;
     } else {
-      msg += `Explorando endpoints de la API...\n\n`;
+      msg += `\n✅ Estado: ${data.estadoAPI} (sin cambios)\n`;
     }
     
-    if (data.resultados) {
-      data.resultados.forEach(r => {
-        const icon = r.status === 200 && r.keys && r.keys.length > 2 ? '✅' : r.status === 200 ? '⚠️' : '❌';
-        msg += `${icon} ${r.nombre}: HTTP ${r.status}`;
-        if (r.keys) msg += ` [${r.keys.join(', ')}]`;
-        msg += '\n';
-      });
+    // Time limit
+    if (data.timeLimit) {
+      const tl = new Date(data.timeLimit);
+      msg += `\n⏰ Límite emisión: ${tl.toLocaleDateString('es-AR')} ${tl.toLocaleTimeString('es-AR', {hour:'2-digit',minute:'2-digit'})}\n`;
+    }
+    
+    // Tickets
+    if (data.tickets && data.tickets.length) {
+      msg += `\n🎫 Tickets emitidos:\n`;
+      data.tickets.forEach(t => msg += `   ${t}\n`);
+    }
+    
+    // Vuelos
+    if (data.vuelos && data.vuelos.length) {
+      msg += `\n✈️ Vuelos:\n`;
+      data.vuelos.forEach(v => msg += `   ${v.vuelo} ${v.ruta} [${v.status}]\n`);
     }
     
     alert(msg);
     
+    if (data.estadoActualizado) {
+      cerrarModal();
+      cargarReservas();
+    }
   } catch(e) {
     alert('Error al verificar: ' + e.message);
   } finally {
