@@ -871,35 +871,35 @@ app.post('/reservas/:id/pdf', async (req, res) => {
           vuelos = rrData.flightsInformation || [];
           airportsInfo = rrData.airportsInformation || {};
           if (vuelos.length && vuelos[0].airlineName) aerolinea = vuelos[0].airlineName;
-          // Puede haber múltiples storedFares (vieja + nueva). Usar la ÚLTIMA (más reciente)
+          // Puede haber múltiples storedFares (vieja + nueva por SavePricing)
+          // Agrupar por numberInPNR y tomar el grupo más alto (más reciente)
           const storedFares = rrData.storedFaresInformation || [];
           console.log('[PDF] storedFares count:', storedFares.length);
           storedFares.forEach((f, idx) => {
             const total = f.fareValues?.totalAmount || 0;
             const fee = (f.feeValues||[]).reduce((s,x)=>s+(x.amount||0),0);
-            console.log(`[PDF] fare[${idx}]: total=${total}, fee=${fee}, neto=${total+fee}, type=${f.fareType}, numberInPNR=${f.numberInPNR}`);
+            console.log(`[PDF] fare[${idx}]: total=${total}, fee=${fee}, paxType=${f.passengerDiscountType}, numberInPNR=${f.numberInPNR}`);
           });
           
-          // Tomar la tarifa con numberInPNR más alto, o la última
-          const latestFare = storedFares.length > 0 
-            ? storedFares.reduce((best, f) => {
-                const bestNum = parseInt(best.numberInPNR) || 0;
-                const fNum = parseInt(f.numberInPNR) || 0;
-                return fNum >= bestNum ? f : best;
-              })
-            : null;
+          // Tomar todas las tarifas del numberInPNR más alto
+          let latestFares = storedFares;
+          if (storedFares.length > 0) {
+            const maxNum = Math.max(...storedFares.map(f => parseInt(f.numberInPNR) || 0));
+            const latestGroup = storedFares.filter(f => (parseInt(f.numberInPNR) || 0) === maxNum);
+            if (latestGroup.length > 0) latestFares = latestGroup;
+          }
           
-          fareInfo = latestFare ? [latestFare].map(f => {
+          fareInfo = latestFares.map(f => {
             const totalTarifa = f.fareValues?.totalAmount || 0;
             const feeTucano = (f.feeValues || []).reduce((s, fee) => s + (fee.amount || 0), 0);
-            console.log(`[PDF] Usando fare: total=${totalTarifa}, fee=${feeTucano}, neto=${totalTarifa+feeTucano}, numberInPNR=${f.numberInPNR}`);
+            console.log(`[PDF] Usando fare: paxType=${f.passengerDiscountType}, total=${totalTarifa}, fee=${feeTucano}, neto=${totalTarifa+feeTucano}`);
             return {
               neto: totalTarifa + feeTucano,
               tipo_tarifa: f.fareType || 'PNEG',
               comision_over: ((f.commissionRule?.obtained?.amount || 0) + (f.overCommissionRule?.amount || 0)),
               passengerDiscountType: f.passengerDiscountType || 'ADT'
             };
-          }) : [];
+          });
         }
       } catch(e) {
         console.log('[PDF] Error API, usando datos locales:', e.message);
@@ -933,45 +933,9 @@ app.post('/reservas/:id/pdf', async (req, res) => {
     let preciosVenta = [];
     const tipoLabels = { ADT: 'adulto', CHD: 'menor', CNN: 'menor', INF: 'infante' };
 
-    // Usar precio de la DB (que se actualiza con SavePricing)
-    // Es el neto que Lucky Tour paga a Tucano
-    if (reserva.precio_usd) {
-      const totalPax = pasajeros.length || 1;
-      const netoPorPax = reserva.precio_usd / totalPax;
-      // Determinar tipo_tarifa desde storedFares si disponible
-      let tipoTarifa = 'PNEG';
-      let comOver = 0;
-      if (fareInfo && fareInfo.length) {
-        tipoTarifa = fareInfo[0].tipo_tarifa || 'PNEG';
-        comOver = fareInfo[0].comision_over || 0;
-      }
-      
-      if (pasajeros.length <= 1 || new Set(pasajeros.map(p => tipoLabels[p.tipo] || 'adulto')).size === 1) {
-        // Todos del mismo tipo
-        const tipoLabel = pasajeros.length ? (tipoLabels[pasajeros[0].tipo] || 'adulto') : 'adulto';
-        preciosVenta = [{
-          tipo: tipoLabel, cantidad: totalPax,
-          neto: netoPorPax, tipo_tarifa: tipoTarifa, comision_over: comOver
-        }];
-      } else {
-        // Mix de tipos — usar fareInfo si disponible para neto por tipo
-        if (fareInfo && fareInfo.length > 1) {
-          const grouped = {};
-          for (const f of fareInfo) {
-            const tipo = tipoLabels[f.passengerDiscountType] || 'adulto';
-            if (!grouped[tipo]) {
-              grouped[tipo] = { tipo, cantidad: 0, neto: f.neto, tipo_tarifa: f.tipo_tarifa, comision_over: f.comision_over };
-            }
-            grouped[tipo].cantidad++;
-          }
-          preciosVenta = Object.values(grouped);
-        } else {
-          preciosVenta = [{ tipo: 'adulto', cantidad: totalPax, neto: netoPorPax, tipo_tarifa: tipoTarifa, comision_over: comOver }];
-        }
-      }
-      console.log('[PDF] Usando neto DB:', reserva.precio_usd, 'por pax:', netoPorPax, 'tipo_tarifa:', tipoTarifa);
-    } else if (fareInfo && fareInfo.length) {
-      // Fallback: usar storedFares de la API
+    // Usar storedFaresInformation de la API para desglose por tipo de pasajero
+    if (fareInfo && fareInfo.length) {
+      // Agrupar por tipo de pasajero
       const grouped = {};
       for (const f of fareInfo) {
         const tipo = tipoLabels[f.passengerDiscountType] || 'adulto';
@@ -982,6 +946,14 @@ app.post('/reservas/:id/pdf', async (req, res) => {
       }
       preciosVenta = Object.values(grouped);
       console.log('[PDF] Usando fareInfo API:', JSON.stringify(preciosVenta));
+    } else if (reserva.precio_usd) {
+      // Fallback: usar DB neto total (sin desglose por tipo)
+      preciosVenta = [{
+        tipo: 'adulto', cantidad: pasajeros.length || 1,
+        neto: reserva.precio_usd / (pasajeros.length || 1),
+        tipo_tarifa: 'PNEG', comision_over: 0
+      }];
+      console.log('[PDF] Usando neto DB:', reserva.precio_usd);
     }
 
     // ── GENERAR PDF CON PDFKIT ──
