@@ -532,8 +532,8 @@ async function ejecutarRecotizar() {
             <div class="tarifa-row"><span>Impuestos</span><span>${t.monedaImpuestos} ${t.impuestos.toLocaleString('es-AR', {minimumFractionDigits:2})}</span></div>
             <div class="tarifa-row" style="border-top:1px solid #eee;padding-top:4px;"><span>Subtotal tarifa</span><span>${t.monedaTotal} ${t.total.toLocaleString('es-AR', {minimumFractionDigits:2})}</span></div>
             ${t.fee ? `<div class="tarifa-row"><span>Fee Tucano</span><span>${t.monedaFee} ${t.fee.toLocaleString('es-AR', {minimumFractionDigits:2})}</span></div>` : ''}
-            ${t.comisionObtenida ? `<div class="tarifa-row" style="color:#2e7d32"><span>Comisión obtenida</span><span>${JSON.stringify(t.comisionObtenida)}</span></div>` : ''}
-            ${t.comisionCedida ? `<div class="tarifa-row" style="color:#c62828"><span>Comisión cedida</span><span>${JSON.stringify(t.comisionCedida)}</span></div>` : ''}
+            ${t.comisionObtenida ? `<div class="tarifa-row" style="color:#2e7d32"><span>Comisión obtenida</span><span>${t.comisionObtenida.displayValue || ''} ${t.comisionObtenida.valueApplied ? '- ' + t.monedaTotal + ' ' + Number(t.comisionObtenida.valueApplied).toLocaleString('es-AR', {minimumFractionDigits:2}) : ''}</span></div>` : ''}
+            ${t.comisionCedida ? `<div class="tarifa-row" style="color:#c62828"><span>Comisión cedida</span><span>${t.comisionCedida.displayValue || ''} ${t.comisionCedida.valueApplied ? '- ' + t.monedaTotal + ' ' + Number(t.comisionCedida.valueApplied).toLocaleString('es-AR', {minimumFractionDigits:2}) : ''}</span></div>` : ''}
             <div class="tarifa-row total"><span>NETO a pagar</span><span>${t.monedaTotal} ${neto.toLocaleString('es-AR', {minimumFractionDigits:2})}</span></div>
           </div>
         `;
