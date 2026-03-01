@@ -734,7 +734,22 @@ app.post('/generar-cotizacion', async (req, res) => {
       const pasajeros = rates.map(rate => {
         const neto = rate.sellingPriceAmount;
         const comOver = (rate.commissionRule?.ceded?.valueApplied || 0) + (rate.overCommissionRule?.ceded?.valueApplied || 0);
-        const tipoLabel = rate.passengerTypeCode === 'ADT' ? 'adulto' : rate.passengerTypeCode === 'CHD' ? 'menor' : 'infante';
+        const code = rate.passengerTypeCode;
+        const codeStr = String(code || '').toUpperCase();
+        const paxType = rate.passengerType; // some APIs use numeric passengerType
+
+        let tipoLabel;
+        if (codeStr === 'ADT' || codeStr === 'AD' || paxType === 0 || codeStr === '0') {
+          tipoLabel = 'adulto';
+        } else if (codeStr === 'CHD' || codeStr === 'CNN' || codeStr === 'CH' || codeStr === 'CLD' || codeStr === 'CHILD' || paxType === 1 || codeStr === '1') {
+          tipoLabel = 'menor';
+        } else if (codeStr === 'INF' || codeStr === 'INS' || paxType === 2 || codeStr === '2') {
+          tipoLabel = 'beb\u00e9';
+        } else {
+          // Fallback: si no reconocemos el código, inferir por precio
+          tipoLabel = neto > 200 ? 'menor' : 'beb\u00e9';
+        }
+        console.log(`[Cotizacion] Pasajero: typeCode=${code} passengerType=${paxType} => ${tipoLabel} neto=${neto} cant=${rate.passengerQuantity}`);
         return { tipo: tipoLabel, cantidad: rate.passengerQuantity, neto, tipo_tarifa: rate.fareType || 'PUB', comision_over: comOver };
       });
 
