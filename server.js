@@ -687,31 +687,18 @@ app.post('/reservas/:id/recotizar', async (req, res) => {
 
     // Intentar ambos endpoints
     let prResp, prText;
-    for (const ep of ['RetrievePricingByText', 'RetrievePricing']) {
-      const url = `${API_BASE}/FlightTicketing/${ep}`;
-      console.log(`[Recotizar] Intentando ${url}`);
-      prResp = await fetch(url, {
+    for (const ep of [
+      `${API_BASE}/FlightReservationPricing/RetrievePricing`,
+      `${API_BASE}/FlightReservationPricing/RetrievePricingByText`
+    ]) {
+      console.log(`[Recotizar] Intentando ${ep}`);
+      prResp = await fetch(ep, {
         method: 'POST', headers: hdrs,
         body: JSON.stringify(pricingPayload)
       });
       prText = await prResp.text();
-      console.log(`[Recotizar] ${ep}: HTTP ${prResp.status}, body: ${prText.substring(0, 300)}`);
+      console.log(`[Recotizar] HTTP ${prResp.status}, body: ${prText.substring(0, 300)}`);
       if (prResp.ok && prText.length > 5) break;
-    }
-
-    // Si ambos fallaron, intentar bajo FlightReservation
-    if (!prResp.ok || prText.length < 5) {
-      for (const ep of ['RetrievePricingByText', 'RetrievePricing']) {
-        const url = `${API_BASE}/FlightReservation/${ep}`;
-        console.log(`[Recotizar] Intentando ${url}`);
-        prResp = await fetch(url, {
-          method: 'POST', headers: hdrs,
-          body: JSON.stringify(pricingPayload)
-        });
-        prText = await prResp.text();
-        console.log(`[Recotizar] FlightReservation/${ep}: HTTP ${prResp.status}, body: ${prText.substring(0, 300)}`);
-        if (prResp.ok && prText.length > 5) break;
-      }
     }
 
     if (!prResp.ok || prText.length < 5) {
