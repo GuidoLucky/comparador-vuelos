@@ -622,7 +622,7 @@ app.post('/reservas/:id/recotizar', async (req, res) => {
     const hdrs = getHeaders(token);
 
     // Calificadores opcionales del frontend
-    const { moneda, fareType, nationality, overrideCarrier } = req.body || {};
+    const { moneda, fareType, nationality, overrideCarrier, brandId } = req.body || {};
 
     // Paso 1: RetrieveReservation para obtener datos actuales
     const rrResp = await fetch(`${API_BASE}/FlightReservation/RetrieveReservation`, {
@@ -648,7 +648,7 @@ app.post('/reservas/:id/recotizar', async (req, res) => {
       ArrivalDate: f.arrivalDate,
       FlightNumber: (f.flightNumber || '').replace(/^[A-Z]{2}\s*/, ''),
       BookingClass: f.bookingClass || '',
-      BrandId: '',
+      BrandId: brandId || '',
       Grp: null
     }));
 
@@ -685,8 +685,8 @@ app.post('/reservas/:id/recotizar', async (req, res) => {
 
     console.log('[Recotizar] Payload:', JSON.stringify(pricingPayload).substring(0, 500));
 
-    // Paso 2: RetrievePricing
-    const prResp = await fetch(`${API_BASE}/FlightTicketing/RetrievePricing`, {
+    // Paso 2: RetrievePricingByText
+    const prResp = await fetch(`${API_BASE}/FlightTicketing/RetrievePricingByText`, {
       method: 'POST', headers: hdrs,
       body: JSON.stringify(pricingPayload)
     });
