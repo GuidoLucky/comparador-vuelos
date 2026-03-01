@@ -590,18 +590,18 @@ function generarPDFBuffer(opciones, vendedor, nombreCliente) {
       doc.fontSize(9).fillColor('#666666').font(REGULAR)
          .text(new Date().toLocaleDateString('es-AR'), PAGE_LEFT, 40, { width: W, align: 'right' });
 
-      // Logo centrado y grande (igual que el PDF de referencia ~55mm)
+      // Logo centrado y grande
       if (logoFinal) {
-        const logoW = 160;  // ~55mm
+        const logoW = 200;  // Grande como en el PDF de referencia
         const logoX = PAGE_LEFT + (W - logoW) / 2;
-        doc.image(logoFinal, logoX, 60, { width: logoW });
-        doc.y = 200;  // Saltar después del logo
+        doc.image(logoFinal, logoX, 55, { width: logoW });
+        doc.y = 220;  // Saltar después del logo grande
       } else {
         doc.y = 80;
       }
 
       // Título "Cotización" grande, centrado
-      doc.fontSize(20).fillColor(NAVY).font(BOLD)
+      doc.fontSize(22).fillColor(NAVY).font(BOLD)
          .text('Cotizaci\u00f3n', PAGE_LEFT, doc.y, { width: W, align: 'center' });
 
       // Nombre del cliente debajo (si existe)
@@ -617,25 +617,33 @@ function generarPDFBuffer(opciones, vendedor, nombreCliente) {
       const lineY = doc.y;
       doc.moveTo(PAGE_LEFT, lineY).lineTo(PAGE_LEFT + W, lineY)
          .lineWidth(2).strokeColor(NAVY).stroke();
-      doc.y = lineY + 12;
+      doc.y = lineY + 14;
     }
 
     function dibujarFooter() {
       const pages = doc.bufferedPageRange();
       for (let i = 0; i < pages.count; i++) {
         doc.switchToPage(pages.start + i);
-        const y = doc.page.height - 65;
+        const pageH = doc.page.height;
+        const y = pageH - 70;
+
         // Línea navy
+        doc.save();
         doc.moveTo(PAGE_LEFT, y).lineTo(PAGE_LEFT + W, y)
            .lineWidth(1.5).strokeColor(NAVY).stroke();
-        // "Contacto:   Nombre" en bold navy
+
+        // "Contacto:   Nombre"
         doc.fontSize(9).font(BOLD).fillColor(NAVY);
-        doc.text('Contacto:', PAGE_LEFT, y + 10, { continued: false });
-        doc.font(BOLD).text(contacto.nombre, PAGE_LEFT + 65, y + 10);
-        // Mail y teléfono
+        doc.text('Contacto:', PAGE_LEFT, y + 8, { lineBreak: false, width: 60 });
+        doc.text(contacto.nombre, PAGE_LEFT + 65, y + 8, { lineBreak: false });
+
+        // Mail
         doc.fontSize(9).font(REGULAR).fillColor('#333333');
-        doc.text(contacto.mail, PAGE_LEFT, y + 24);
-        doc.text(contacto.tel, PAGE_LEFT, y + 36);
+        doc.text(contacto.mail, PAGE_LEFT, y + 22, { lineBreak: false });
+
+        // Teléfono
+        doc.text(contacto.tel, PAGE_LEFT, y + 34, { lineBreak: false });
+        doc.restore();
       }
     }
 
@@ -734,6 +742,35 @@ app.post('/generar-cotizacion', async (req, res) => {
       const vuelos = [];
       const cabinMap = { 0: 'Primera', 1: 'Economica', 2: 'Business', 3: 'Premium Economy' };
 
+      // Mapeo de aeropuertos comunes a ciudades (fallback cuando la API no da city name)
+      const AIRPORT_CITY = {
+        'EZE':'Buenos Aires','AEP':'Buenos Aires','MIA':'Miami','MAD':'Madrid','BCN':'Barcelona',
+        'FCO':'Roma','CDG':'Paris','ORY':'Paris','LHR':'Londres','LGW':'Londres','FRA':'Frankfurt',
+        'AMS':'Amsterdam','IST':'Estambul','SAW':'Estambul','DXB':'Dubai','DOH':'Doha',
+        'TLV':'Tel Aviv','ADD':'Addis Abeba','GRU':'San Pablo','GIG':'Rio de Janeiro',
+        'SCL':'Santiago','LIM':'Lima','BOG':'Bogota','PTY':'Panama','CUN':'Cancun',
+        'MEX':'Mexico DF','JFK':'Nueva York','EWR':'Nueva York','LAX':'Los Angeles',
+        'ORD':'Chicago','ATL':'Atlanta','DFW':'Dallas','CLT':'Charlotte','PHL':'Filadelfia',
+        'MVD':'Montevideo','ASU':'Asuncion','COR':'Cordoba','MDZ':'Mendoza','BRC':'Bariloche',
+        'IGR':'Iguazu','FTE':'El Calafate','USH':'Ushuaia','NQN':'Neuquen','ROS':'Rosario',
+        'SLA':'Salta','TUC':'Tucuman','JUJ':'Jujuy','PMC':'Puerto Montt','PUQ':'Punta Arenas',
+        'SSA':'Salvador','REC':'Recife','FOR':'Fortaleza','FLN':'Florianopolis',
+        'SDU':'Rio de Janeiro','CNF':'Belo Horizonte','CWB':'Curitiba','POA':'Porto Alegre',
+        'VCP':'Campinas','BSB':'Brasilia','MXP':'Milan','LIN':'Milan','MUC':'Munich',
+        'ZRH':'Zurich','VIE':'Viena','CPH':'Copenhague','OSL':'Oslo','ARN':'Estocolmo',
+        'HEL':'Helsinki','WAW':'Varsovia','PRG':'Praga','BUD':'Budapest','OTP':'Bucarest',
+        'ATH':'Atenas','LIS':'Lisboa','OPO':'Oporto','DUB':'Dublin','EDI':'Edimburgo',
+        'BRU':'Bruselas','GVA':'Ginebra','NCE':'Niza','MRS':'Marsella','LYS':'Lyon',
+        'NRT':'Tokio','HND':'Tokio','ICN':'Seul','PEK':'Beijing','PVG':'Shanghai',
+        'HKG':'Hong Kong','SIN':'Singapur','BKK':'Bangkok','DEL':'Delhi','BOM':'Mumbai',
+        'SYD':'Sydney','MEL':'Melbourne','AKL':'Auckland','JNB':'Johannesburgo',
+        'CAI':'El Cairo','CMN':'Casablanca','NBO':'Nairobi','CPT':'Ciudad del Cabo',
+      };
+
+      function cityFromCode(code) {
+        return AIRPORT_CITY[code] || '';
+      }
+
       for (const tramo of trip) {
         const flights = tramo.legFlights || [];
         for (let fi = 0; fi < flights.length; fi++) {
@@ -741,26 +778,48 @@ app.post('/generar-cotizacion', async (req, res) => {
           const dep = new Date(flight.departure || tramo.departure);
           const arr = new Date(flight.arrival || tramo.arrival);
 
-          // Para vuelos con escala, usar origen/destino de cada segmento
           let origenNombre, origenCode, destinoNombre, destinoCode;
+
           if (flights.length === 1) {
-            // Vuelo directo: usar datos del tramo
+            // Vuelo directo
             origenNombre = tramo.cityNameFrom;
             origenCode = tramo.airportCodeFrom;
             destinoNombre = tramo.cityNameTo;
             destinoCode = tramo.airportCodeTo;
           } else {
-            // Con escala: usar datos de cada vuelo individual
-            origenNombre = flight.departureCityName || flight.departureCity || (fi === 0 ? tramo.cityNameFrom : '');
-            origenCode = flight.departureAirportCode || flight.departureAirport || (fi === 0 ? tramo.airportCodeFrom : '');
-            destinoNombre = flight.arrivalCityName || flight.arrivalCity || (fi === flights.length - 1 ? tramo.cityNameTo : '');
-            destinoCode = flight.arrivalAirportCode || flight.arrivalAirport || (fi === flights.length - 1 ? tramo.airportCodeTo : '');
+            // Con escalas: encadenar segmentos
+            // Primer segmento: origen = tramo.from, destino = flight.arrival
+            // Último segmento: origen = flight.departure, destino = tramo.to
+            // Intermedios: ambos del flight
+            const depCode = flight.departureAirportCode || flight.departureAirport || flight.airportCodeFrom || '';
+            const arrCode = flight.arrivalAirportCode || flight.arrivalAirport || flight.airportCodeTo || '';
+
+            if (fi === 0) {
+              origenNombre = tramo.cityNameFrom;
+              origenCode = tramo.airportCodeFrom;
+              destinoNombre = flight.arrivalCityName || flight.arrivalCity || cityFromCode(arrCode);
+              destinoCode = arrCode;
+            } else if (fi === flights.length - 1) {
+              origenNombre = flight.departureCityName || flight.departureCity || cityFromCode(depCode);
+              origenCode = depCode;
+              destinoNombre = tramo.cityNameTo;
+              destinoCode = tramo.airportCodeTo;
+            } else {
+              origenNombre = flight.departureCityName || flight.departureCity || cityFromCode(depCode);
+              origenCode = depCode;
+              destinoNombre = flight.arrivalCityName || flight.arrivalCity || cityFromCode(arrCode);
+              destinoCode = arrCode;
+            }
           }
+
+          // Formatear: "Buenos Aires (EZE)" o solo "(MAD)" si no hay nombre
+          const origenStr = origenNombre ? `${origenNombre} (${origenCode})` : `(${origenCode})`;
+          const destinoStr = destinoNombre ? `${destinoNombre} (${destinoCode})` : `(${destinoCode})`;
 
           vuelos.push({
             fecha: `${String(dep.getDate()).padStart(2,'0')}/${String(dep.getMonth()+1).padStart(2,'0')}`,
-            origen: `${origenNombre} (${origenCode})`,
-            destino: `${destinoNombre} (${destinoCode})`,
+            origen: origenStr,
+            destino: destinoStr,
             salida: `${String(dep.getHours()).padStart(2,'0')}.${String(dep.getMinutes()).padStart(2,'0')}`,
             llegada: `${String(arr.getHours()).padStart(2,'0')}.${String(arr.getMinutes()).padStart(2,'0')}`,
             numero_vuelo: `${flight.airlineCode} ${flight.flightNumber}`,
@@ -780,6 +839,11 @@ app.post('/generar-cotizacion', async (req, res) => {
     }));
 
     const pdfBuffer = await generarPDFBuffer(opcionesCompletas, vendedor || 'guido', nombreCliente || '');
+    console.log('[Cotizacion] Opciones:', JSON.stringify(opcionesCompletas.map(o => ({
+      aerolinea: o.aerolinea,
+      vuelos: o.vuelos.length,
+      pasajeros: o.pasajeros.map(p => `${p.cantidad}x ${p.tipo} neto=${p.neto}`)
+    }))));
     res.set({ 'Content-Type': 'application/pdf', 'Content-Disposition': 'attachment; filename="cotizacion_lucky_tour.pdf"' });
     res.send(pdfBuffer);
   } catch(e) {
