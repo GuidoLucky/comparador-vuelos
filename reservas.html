@@ -1,0 +1,413 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Reservas - Lucky Tour</title>
+<style>
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background:#f0f2f5; color:#1a1a2e; }
+  
+  /* NAV */
+  .nav { background:#1a1a2e; padding:12px 24px; display:flex; align-items:center; gap:20px; }
+  .nav a { color:rgba(255,255,255,0.7); text-decoration:none; font-size:14px; font-weight:500; }
+  .nav a:hover, .nav a.active { color:#fff; }
+  .nav .brand { color:#fff; font-weight:700; font-size:18px; margin-right:auto; }
+  
+  /* MAIN */
+  .container { max-width:1200px; margin:0 auto; padding:24px; }
+  
+  /* HEADER */
+  .page-header { display:flex; align-items:center; justify-content:space-between; margin-bottom:24px; flex-wrap:wrap; gap:12px; }
+  .page-header h1 { font-size:24px; color:#1a1a2e; }
+  
+  /* FILTERS */
+  .filters { display:flex; gap:10px; align-items:center; flex-wrap:wrap; margin-bottom:20px; }
+  .filters input, .filters select { padding:8px 12px; border:1px solid #ddd; border-radius:8px; font-size:14px; background:#fff; }
+  .filters input { width:260px; }
+  .filters select { min-width:140px; }
+  
+  /* STATS */
+  .stats { display:flex; gap:16px; margin-bottom:24px; flex-wrap:wrap; }
+  .stat-card { background:#fff; border-radius:12px; padding:16px 20px; flex:1; min-width:140px; box-shadow:0 1px 3px rgba(0,0,0,0.08); }
+  .stat-card .num { font-size:28px; font-weight:700; }
+  .stat-card .label { font-size:12px; color:#666; margin-top:2px; text-transform:uppercase; letter-spacing:0.5px; }
+  .stat-card.creada .num { color:#e67e22; }
+  .stat-card.emitida .num { color:#2ecc71; }
+  .stat-card.completada .num { color:#3498db; }
+  .stat-card.cancelada .num { color:#e74c3c; }
+  
+  /* TABLE */
+  .table-wrap { background:#fff; border-radius:12px; overflow:hidden; box-shadow:0 1px 3px rgba(0,0,0,0.08); }
+  table { width:100%; border-collapse:collapse; }
+  th { background:#f8f9fa; padding:12px 16px; text-align:left; font-size:12px; text-transform:uppercase; letter-spacing:0.5px; color:#666; border-bottom:2px solid #eee; }
+  td { padding:12px 16px; border-bottom:1px solid #f0f0f0; font-size:14px; vertical-align:middle; }
+  tr:hover td { background:#f8f9ff; }
+  tr { cursor:pointer; }
+  
+  .pnr { font-family:'SF Mono',Consolas,monospace; font-weight:700; color:#1a1a2e; font-size:15px; }
+  .ruta { font-weight:600; }
+  .ruta small { font-weight:400; color:#666; }
+  .aerolinea { color:#444; }
+  .fecha { color:#666; font-size:13px; }
+  .precio { font-weight:700; color:#1a1a2e; }
+  
+  /* BADGES */
+  .badge { display:inline-block; padding:4px 10px; border-radius:20px; font-size:11px; font-weight:600; text-transform:uppercase; letter-spacing:0.3px; }
+  .badge-CREADA { background:#fef3e2; color:#e67e22; }
+  .badge-EMITIDA { background:#e8f8ef; color:#27ae60; }
+  .badge-COMPLETADA { background:#eaf2fb; color:#2980b9; }
+  .badge-CANCELADA { background:#fde8e8; color:#c0392b; }
+  
+  /* MODAL */
+  .modal-overlay { display:none; position:fixed; top:0; left:0; right:0; bottom:0; background:rgba(0,0,0,0.5); z-index:100; justify-content:center; align-items:flex-start; padding:40px 20px; overflow-y:auto; }
+  .modal-overlay.show { display:flex; }
+  .modal { background:#fff; border-radius:16px; width:100%; max-width:700px; box-shadow:0 20px 60px rgba(0,0,0,0.3); }
+  .modal-header { padding:20px 24px; border-bottom:1px solid #eee; display:flex; justify-content:space-between; align-items:center; }
+  .modal-header h2 { font-size:18px; }
+  .modal-close { background:none; border:none; font-size:24px; cursor:pointer; color:#999; padding:4px 8px; }
+  .modal-close:hover { color:#333; }
+  .modal-body { padding:24px; }
+  
+  /* DETAIL SECTIONS */
+  .detail-section { margin-bottom:20px; }
+  .detail-section h3 { font-size:13px; text-transform:uppercase; letter-spacing:0.5px; color:#999; margin-bottom:8px; }
+  .detail-grid { display:grid; grid-template-columns:repeat(auto-fit, minmax(180px, 1fr)); gap:12px; }
+  .detail-item { }
+  .detail-item .lbl { font-size:11px; color:#999; text-transform:uppercase; }
+  .detail-item .val { font-size:15px; font-weight:600; margin-top:2px; }
+  
+  /* ITINERARY IN MODAL */
+  .itin-segment { padding:10px 14px; background:#f8f9fa; border-radius:8px; margin-bottom:6px; display:flex; align-items:center; gap:12px; }
+  .itin-date { font-weight:700; min-width:50px; }
+  .itin-route { flex:1; }
+  .itin-route .cities { font-weight:600; }
+  .itin-route .flight-num { font-size:12px; color:#666; }
+  .itin-times { font-size:13px; color:#555; white-space:nowrap; }
+  
+  /* PAX LIST */
+  .pax-row { padding:10px 14px; background:#f8f9fa; border-radius:8px; margin-bottom:6px; display:flex; justify-content:space-between; align-items:center; }
+  .pax-name { font-weight:600; }
+  .pax-type { font-size:12px; color:#666; }
+  .pax-doc { font-size:13px; color:#555; }
+  
+  /* ACTIONS */
+  .actions-bar { display:flex; gap:8px; padding:16px 24px; border-top:1px solid #eee; flex-wrap:wrap; }
+  .btn { padding:8px 16px; border:none; border-radius:8px; font-size:13px; font-weight:600; cursor:pointer; transition:all 0.2s; }
+  .btn-primary { background:#1a1a2e; color:#fff; }
+  .btn-primary:hover { background:#2d2d4e; }
+  .btn-success { background:#27ae60; color:#fff; }
+  .btn-success:hover { background:#219a52; }
+  .btn-danger { background:#e74c3c; color:#fff; }
+  .btn-danger:hover { background:#c0392b; }
+  .btn-outline { background:#fff; color:#333; border:1px solid #ddd; }
+  .btn-outline:hover { background:#f8f9fa; }
+  
+  /* NOTAS */
+  .notas-area { width:100%; padding:10px; border:1px solid #ddd; border-radius:8px; font-size:14px; font-family:inherit; resize:vertical; min-height:60px; }
+  
+  /* EMPTY */
+  .empty { text-align:center; padding:60px 20px; color:#999; }
+  .empty .icon { font-size:48px; margin-bottom:12px; }
+  
+  /* RESPONSIVE */
+  @media (max-width:768px) {
+    .filters { flex-direction:column; }
+    .filters input, .filters select { width:100%; }
+    .stats { flex-direction:column; }
+    th:nth-child(4), td:nth-child(4),
+    th:nth-child(6), td:nth-child(6) { display:none; }
+  }
+  
+  .loading { text-align:center; padding:40px; color:#999; }
+</style>
+</head>
+<body>
+
+<div class="nav">
+  <span class="brand">Lucky Tour</span>
+  <a href="/">Buscador</a>
+  <a href="/reservas.html" class="active">Reservas</a>
+</div>
+
+<div class="container">
+  <div class="page-header">
+    <h1>📋 Reservas</h1>
+  </div>
+  
+  <div class="stats" id="stats"></div>
+  
+  <div class="filters">
+    <input type="text" id="searchInput" placeholder="Buscar PNR, ruta, aerolínea..." />
+    <select id="filterEstado">
+      <option value="TODAS">Todos los estados</option>
+      <option value="CREADA">Creada</option>
+      <option value="EMITIDA">Emitida</option>
+      <option value="COMPLETADA">Completada</option>
+      <option value="CANCELADA">Cancelada</option>
+    </select>
+    <button class="btn btn-outline" onclick="cargarReservas()">🔄 Actualizar</button>
+  </div>
+  
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>PNR</th>
+          <th>Ruta</th>
+          <th>Aerolínea</th>
+          <th>Fecha</th>
+          <th>Pasajeros</th>
+          <th>Precio</th>
+          <th>Estado</th>
+        </tr>
+      </thead>
+      <tbody id="tableBody">
+        <tr><td colspan="7" class="loading">Cargando reservas...</td></tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<!-- MODAL DETALLE -->
+<div class="modal-overlay" id="modalOverlay" onclick="if(event.target===this)cerrarModal()">
+  <div class="modal">
+    <div class="modal-header">
+      <h2 id="modalTitle">Detalle de Reserva</h2>
+      <button class="modal-close" onclick="cerrarModal()">✕</button>
+    </div>
+    <div class="modal-body" id="modalBody">
+      <div class="loading">Cargando...</div>
+    </div>
+    <div class="actions-bar" id="modalActions"></div>
+  </div>
+</div>
+
+<script>
+let reservas = [];
+let reservaActual = null;
+
+async function cargarReservas() {
+  const estado = document.getElementById('filterEstado').value;
+  const q = document.getElementById('searchInput').value.trim();
+  const params = new URLSearchParams();
+  if (estado !== 'TODAS') params.set('estado', estado);
+  if (q) params.set('q', q);
+  
+  try {
+    const res = await fetch('/reservas?' + params);
+    reservas = await res.json();
+    renderTabla();
+    renderStats();
+  } catch(e) {
+    document.getElementById('tableBody').innerHTML = '<tr><td colspan="7" class="empty"><div class="icon">⚠️</div>Error al cargar reservas</td></tr>';
+  }
+}
+
+function renderStats() {
+  const counts = { CREADA:0, EMITIDA:0, COMPLETADA:0, CANCELADA:0 };
+  reservas.forEach(r => { if (counts[r.estado] !== undefined) counts[r.estado]++; });
+  document.getElementById('stats').innerHTML = `
+    <div class="stat-card creada"><div class="num">${counts.CREADA}</div><div class="label">Creadas</div></div>
+    <div class="stat-card emitida"><div class="num">${counts.EMITIDA}</div><div class="label">Emitidas</div></div>
+    <div class="stat-card completada"><div class="num">${counts.COMPLETADA}</div><div class="label">Completadas</div></div>
+    <div class="stat-card cancelada"><div class="num">${counts.CANCELADA}</div><div class="label">Canceladas</div></div>
+  `;
+}
+
+function renderTabla() {
+  const tb = document.getElementById('tableBody');
+  if (!reservas.length) {
+    tb.innerHTML = '<tr><td colspan="7" class="empty"><div class="icon">📭</div>No hay reservas</td></tr>';
+    return;
+  }
+  tb.innerHTML = reservas.map(r => {
+    const pax = (r.adultos||0) + (r.ninos||0) + (r.infantes||0);
+    const paxDetail = [];
+    if (r.adultos) paxDetail.push(r.adultos + ' ADT');
+    if (r.ninos) paxDetail.push(r.ninos + ' CHD');
+    if (r.infantes) paxDetail.push(r.infantes + ' INF');
+    const fecha = r.fecha_salida ? new Date(r.fecha_salida).toLocaleDateString('es-AR', { day:'2-digit', month:'short' }) : '-';
+    const creado = r.created_at ? new Date(r.created_at).toLocaleDateString('es-AR', { day:'2-digit', month:'short', hour:'2-digit', minute:'2-digit' }) : '';
+    return `<tr onclick="verDetalle(${r.id})">
+      <td><span class="pnr">${r.pnr || '-'}</span><br><span class="fecha">${creado}</span></td>
+      <td><span class="ruta">${r.origen || '?'} → ${r.destino || '?'}</span></td>
+      <td class="aerolinea">${r.aerolinea || '-'}</td>
+      <td class="fecha">${fecha}</td>
+      <td>${paxDetail.join(', ') || pax}</td>
+      <td class="precio">USD ${(r.precio_usd||0).toLocaleString('es-AR', {minimumFractionDigits:0})}</td>
+      <td><span class="badge badge-${r.estado}">${r.estado}</span></td>
+    </tr>`;
+  }).join('');
+}
+
+async function verDetalle(id) {
+  document.getElementById('modalOverlay').classList.add('show');
+  document.getElementById('modalBody').innerHTML = '<div class="loading">Cargando...</div>';
+  document.getElementById('modalActions').innerHTML = '';
+  
+  try {
+    const res = await fetch('/reservas/' + id);
+    const data = await res.json();
+    if (!data.ok) throw new Error(data.error);
+    
+    reservaActual = data.reserva;
+    const r = data.reserva;
+    document.getElementById('modalTitle').textContent = 'Reserva ' + (r.pnr || '#' + r.id);
+    
+    // Parse itinerario
+    let itinHtml = '';
+    try {
+      const itin = typeof r.itinerario_json === 'string' ? JSON.parse(r.itinerario_json) : r.itinerario_json;
+      if (Array.isArray(itin)) {
+        itinHtml = itin.map(s => `
+          <div class="itin-segment">
+            <div class="itin-date">${s.fecha || ''}</div>
+            <div class="itin-route">
+              <div class="cities">${s.origen || ''} → ${s.destino || ''}</div>
+              <div class="flight-num">${s.numero_vuelo || ''}</div>
+            </div>
+            <div class="itin-times">${s.salida || ''} → ${s.llegada || ''}</div>
+          </div>
+        `).join('');
+      }
+    } catch(e) {}
+    
+    // Parse pasajeros
+    let paxHtml = '';
+    const paxList = r.pasajeros_detalle || [];
+    if (paxList.length) {
+      paxHtml = paxList.map(p => `
+        <div class="pax-row">
+          <div>
+            <span class="pax-name">${p.apellido || ''}, ${p.nombre || ''}</span>
+            <span class="pax-type">(${p.tipo === 'ADT' ? 'Adulto' : p.tipo === 'CHD' ? 'Menor' : 'Bebé'})</span>
+          </div>
+          <span class="pax-doc">${p.doc_tipo || ''} ${p.doc_numero || ''}</span>
+        </div>
+      `).join('');
+    } else {
+      // Fallback: pasajeros_json
+      try {
+        const pj = typeof r.pasajeros_json === 'string' ? JSON.parse(r.pasajeros_json) : r.pasajeros_json;
+        if (Array.isArray(pj)) {
+          paxHtml = pj.map(p => `
+            <div class="pax-row">
+              <div>
+                <span class="pax-name">${p.apellido || ''}, ${p.nombre || ''}</span>
+                <span class="pax-type">(${p.tipo === 'ADT' ? 'Adulto' : p.tipo === 'CHD' ? 'Menor' : 'Bebé'})</span>
+              </div>
+              <span class="pax-doc">${p.docTipo || ''} ${p.docNumero || ''}</span>
+            </div>
+          `).join('');
+        }
+      } catch(e) {}
+    }
+    
+    // Parse contacto
+    let contactoHtml = '';
+    try {
+      const c = typeof r.contacto_json === 'string' ? JSON.parse(r.contacto_json) : r.contacto_json;
+      if (c) {
+        contactoHtml = `${c.nombre || ''} ${c.apellido || ''} · ${c.email || ''} · ${c.telefono1 || ''}`;
+      }
+    } catch(e) {}
+    
+    const creado = r.created_at ? new Date(r.created_at).toLocaleString('es-AR') : '-';
+    
+    document.getElementById('modalBody').innerHTML = `
+      <div class="detail-section">
+        <h3>Información general</h3>
+        <div class="detail-grid">
+          <div class="detail-item"><div class="lbl">PNR</div><div class="val">${r.pnr || '-'}</div></div>
+          <div class="detail-item"><div class="lbl">Order</div><div class="val">${r.order_number || '-'}</div></div>
+          <div class="detail-item"><div class="lbl">Estado</div><div class="val"><span class="badge badge-${r.estado}">${r.estado}</span></div></div>
+          <div class="detail-item"><div class="lbl">Aerolínea</div><div class="val">${r.aerolinea || '-'}</div></div>
+          <div class="detail-item"><div class="lbl">Precio neto</div><div class="val">USD ${(r.precio_usd||0).toLocaleString('es-AR')}</div></div>
+          <div class="detail-item"><div class="lbl">Creada</div><div class="val">${creado}</div></div>
+        </div>
+      </div>
+      
+      ${itinHtml ? `<div class="detail-section"><h3>✈ Itinerario</h3>${itinHtml}</div>` : ''}
+      ${paxHtml ? `<div class="detail-section"><h3>👥 Pasajeros</h3>${paxHtml}</div>` : ''}
+      ${contactoHtml ? `<div class="detail-section"><h3>📞 Contacto</h3><p>${contactoHtml}</p></div>` : ''}
+      
+      <div class="detail-section">
+        <h3>📝 Notas</h3>
+        <textarea class="notas-area" id="notasArea" placeholder="Agregar notas sobre esta reserva...">${r.notas || ''}</textarea>
+      </div>
+    `;
+    
+    // Actions
+    let actionsHtml = `<button class="btn btn-outline" onclick="guardarNotas()">💾 Guardar notas</button>`;
+    if (r.estado === 'CREADA') {
+      actionsHtml += `<button class="btn btn-success" onclick="cambiarEstado('EMITIDA')">✅ Marcar como Emitida</button>`;
+      actionsHtml += `<button class="btn btn-danger" onclick="cambiarEstado('CANCELADA')">❌ Cancelar</button>`;
+    } else if (r.estado === 'EMITIDA') {
+      actionsHtml += `<button class="btn btn-primary" onclick="cambiarEstado('COMPLETADA')">🏁 Marcar Completada</button>`;
+      actionsHtml += `<button class="btn btn-danger" onclick="cambiarEstado('CANCELADA')">❌ Cancelar</button>`;
+    }
+    document.getElementById('modalActions').innerHTML = actionsHtml;
+    
+  } catch(e) {
+    document.getElementById('modalBody').innerHTML = '<div class="empty">Error: ' + e.message + '</div>';
+  }
+}
+
+async function cambiarEstado(estado) {
+  if (!reservaActual) return;
+  const label = { EMITIDA: 'emitida', COMPLETADA: 'completada', CANCELADA: 'cancelada' }[estado];
+  if (!confirm(`¿Marcar como ${label}?`)) return;
+  try {
+    const res = await fetch('/reservas/' + reservaActual.id + '/estado', {
+      method: 'PUT', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ estado })
+    });
+    const data = await res.json();
+    if (data.ok) {
+      cerrarModal();
+      cargarReservas();
+    } else {
+      alert('Error: ' + (data.error || 'desconocido'));
+    }
+  } catch(e) { alert('Error: ' + e.message); }
+}
+
+async function guardarNotas() {
+  if (!reservaActual) return;
+  const notas = document.getElementById('notasArea').value;
+  try {
+    const res = await fetch('/reservas/' + reservaActual.id + '/notas', {
+      method: 'PUT', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ notas })
+    });
+    const data = await res.json();
+    if (data.ok) {
+      // Feedback visual
+      const btn = document.querySelector('.actions-bar .btn-outline');
+      if (btn) { btn.textContent = '✅ Guardado'; setTimeout(() => btn.textContent = '💾 Guardar notas', 1500); }
+    }
+  } catch(e) { alert('Error: ' + e.message); }
+}
+
+function cerrarModal() {
+  document.getElementById('modalOverlay').classList.remove('show');
+  reservaActual = null;
+}
+
+// Buscar al escribir (con debounce)
+let searchTimer;
+document.getElementById('searchInput').addEventListener('input', () => {
+  clearTimeout(searchTimer);
+  searchTimer = setTimeout(cargarReservas, 400);
+});
+document.getElementById('filterEstado').addEventListener('change', cargarReservas);
+
+// Cerrar modal con Escape
+document.addEventListener('keydown', e => { if (e.key === 'Escape') cerrarModal(); });
+
+// Init
+cargarReservas();
+</script>
+</body>
+</html>
