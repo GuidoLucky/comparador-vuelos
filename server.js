@@ -276,6 +276,10 @@ app.post('/crear-reserva', async (req, res) => {
       if (!p.fechaNacMes) p.fechaNacMes = '1';
       if (!p.fechaNacAnio) p.fechaNacAnio = '2025';
       if (!sv(p.nacionalidadId)) p.nacionalidadId = ARG_ID;
+      if (!sv(p.docPaisId)) p.docPaisId = ARG_ID;
+      if (!sv(p.factPaisId)) p.factPaisId = ARG_ID;
+      if (!sv(p.docTipoId)) p.docTipoId = 'f0914e0e-b105-4805-a118-1ac3f497eff5'; // DNI
+      if (!sv(p.factTipoId)) p.factTipoId = '695a576b-23b3-460a-98f3-7a2916ddeed9'; // CUIL
     }
     
     function buildPax(p, i, tipo) {
@@ -288,7 +292,7 @@ app.post('/crear-reserva', async (req, res) => {
         Gender: parseInt(p.genero),
         BirthdateDay: parseInt(p.fechaNacDia), BirthdateMonth: parseInt(p.fechaNacMes), BirthdateYear: parseInt(p.fechaNacAnio),
         Email: p.email || null,
-        DocumentType: p.docTipoId, DocumentCountry: p.docPaisId, DocumentNumber: p.docNumero,
+        DocumentType: sv(p.docTipoId), DocumentCountry: sv(p.docPaisId) || ARG_ID, DocumentNumber: p.docNumero,
         ExpirationdateDay: parseInt(p.docVencDia), ExpirationdateMonth: parseInt(p.docVencMes), ExpirationdateYear: parseInt(p.docVencAnio),
         Nationality: sv(p.nacionalidadId) || ARG_ID,
         AccountingDocumentType: sv(p.factTipoId) || null,
@@ -929,7 +933,45 @@ app.post('/reservas/:id/pdf', async (req, res) => {
     let preciosVenta = [];
     const tipoLabels = { ADT: 'adulto', CHD: 'menor', CNN: 'menor', INF: 'infante' };
 
-    if (fareInfo && fareInfo.length) {
+    // Usar precio de la DB (que se actualiza con SavePricing)
+    // Es el neto que Lucky Tour paga a Tucano
+    if (reserva.precio_usd) {
+      const totalPax = pasajeros.length || 1;
+      const netoPorPax = reserva.precio_usd / totalPax;
+      // Determinar tipo_tarifa desde storedFares si disponible
+      let tipoTarifa = 'PNEG';
+      let comOver = 0;
+      if (fareInfo && fareInfo.length) {
+        tipoTarifa = fareInfo[0].tipo_tarifa || 'PNEG';
+        comOver = fareInfo[0].comision_over || 0;
+      }
+      
+      if (pasajeros.length <= 1 || new Set(pasajeros.map(p => tipoLabels[p.tipo] || 'adulto')).size === 1) {
+        // Todos del mismo tipo
+        const tipoLabel = pasajeros.length ? (tipoLabels[pasajeros[0].tipo] || 'adulto') : 'adulto';
+        preciosVenta = [{
+          tipo: tipoLabel, cantidad: totalPax,
+          neto: netoPorPax, tipo_tarifa: tipoTarifa, comision_over: comOver
+        }];
+      } else {
+        // Mix de tipos — usar fareInfo si disponible para neto por tipo
+        if (fareInfo && fareInfo.length > 1) {
+          const grouped = {};
+          for (const f of fareInfo) {
+            const tipo = tipoLabels[f.passengerDiscountType] || 'adulto';
+            if (!grouped[tipo]) {
+              grouped[tipo] = { tipo, cantidad: 0, neto: f.neto, tipo_tarifa: f.tipo_tarifa, comision_over: f.comision_over };
+            }
+            grouped[tipo].cantidad++;
+          }
+          preciosVenta = Object.values(grouped);
+        } else {
+          preciosVenta = [{ tipo: 'adulto', cantidad: totalPax, neto: netoPorPax, tipo_tarifa: tipoTarifa, comision_over: comOver }];
+        }
+      }
+      console.log('[PDF] Usando neto DB:', reserva.precio_usd, 'por pax:', netoPorPax, 'tipo_tarifa:', tipoTarifa);
+    } else if (fareInfo && fareInfo.length) {
+      // Fallback: usar storedFares de la API
       const grouped = {};
       for (const f of fareInfo) {
         const tipo = tipoLabels[f.passengerDiscountType] || 'adulto';
@@ -939,13 +981,7 @@ app.post('/reservas/:id/pdf', async (req, res) => {
         grouped[tipo].cantidad++;
       }
       preciosVenta = Object.values(grouped);
-      console.log('[PDF] fareInfo count:', fareInfo.length, 'grouped:', JSON.stringify(preciosVenta), 'pasajeros count:', pasajeros.length);
-    } else if (reserva.precio_usd) {
-      preciosVenta = [{
-        tipo: 'adulto', cantidad: pasajeros.length || 1,
-        neto: reserva.precio_usd / (pasajeros.length || 1),
-        tipo_tarifa: 'PNEG', comision_over: 0
-      }];
+      console.log('[PDF] Usando fareInfo API:', JSON.stringify(preciosVenta));
     }
 
     // ── GENERAR PDF CON PDFKIT ──
