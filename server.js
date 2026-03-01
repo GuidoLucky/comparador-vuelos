@@ -906,6 +906,7 @@ app.post('/reservas/:id/pdf', async (req, res) => {
         grouped[tipo].cantidad++;
       }
       preciosVenta = Object.values(grouped);
+      console.log('[PDF] fareInfo count:', fareInfo.length, 'grouped:', JSON.stringify(preciosVenta), 'pasajeros count:', pasajeros.length);
     } else if (reserva.precio_usd) {
       preciosVenta = [{
         tipo: 'adulto', cantidad: pasajeros.length || 1,
@@ -918,6 +919,12 @@ app.post('/reservas/:id/pdf', async (req, res) => {
     const vendedor = reqVendedor || 'guido';
     const contacto = CONTACTOS[vendedor] || CONTACTOS.guido;
     const NAVY = '#1B3A5C';
+
+    // Helper: Title Case
+    function titleCase(str) {
+      if (!str) return '';
+      return str.toLowerCase().replace(/\b\w/g, c => c.toUpperCase());
+    }
 
     const logoCandidates = [
       pathModule.join(__dirname, 'public', 'logo_transparent.png'),
@@ -942,10 +949,11 @@ app.post('/reservas/:id/pdf', async (req, res) => {
     });
 
     const pageW = doc.page.width - 80;
+    const LEFT = 40;
 
     // Fecha
     doc.font(REGULAR).fontSize(9).fillColor('#666666');
-    doc.text(new Date().toLocaleDateString('es-AR'), 40, 40, { width: pageW, align: 'right' });
+    doc.text(new Date().toLocaleDateString('es-AR'), LEFT, 40, { width: pageW, align: 'right' });
 
     // Logo
     let y = 55;
@@ -954,32 +962,34 @@ app.post('/reservas/:id/pdf', async (req, res) => {
       y += 130;
     }
 
-    // Título: Confirmación de Reserva — PNR
-    doc.font(BOLD).fontSize(16).fillColor(NAVY);
-    doc.text('Confirmación de Reserva', 40, y, { width: pageW, align: 'center', continued: true });
-    doc.font(BOLD).fontSize(12).text(` — ${reserva.pnr}`, { align: 'center' });
+    // Título en una sola línea
+    const titleText = `Confirmación de Reserva  —  ${reserva.pnr}`;
+    doc.font(BOLD).fontSize(14).fillColor(NAVY);
+    doc.text(titleText, LEFT, y, { width: pageW, align: 'center' });
     y = doc.y + 8;
 
     // Línea
-    doc.moveTo(40, y).lineTo(doc.page.width - 40, y).strokeColor(NAVY).lineWidth(2).stroke();
-    y += 12;
+    doc.moveTo(LEFT, y).lineTo(doc.page.width - LEFT, y).strokeColor(NAVY).lineWidth(2).stroke();
+    y += 15;
 
     // ── PASAJEROS ──
-    doc.font(BOLD).fontSize(9).fillColor(NAVY).text('PASAJEROS', 40, y);
-    y = doc.y + 4;
+    doc.font(BOLD).fontSize(9).fillColor(NAVY).text('PASAJEROS', LEFT, y);
+    y = doc.y + 6;
     for (const p of pasajeros) {
       const tipoLabel = tipoLabels[p.tipo] || p.tipo || 'Adulto';
       const capTipo = tipoLabel.charAt(0).toUpperCase() + tipoLabel.slice(1);
-      doc.font(BOLD).fontSize(9).fillColor('#000000').text(p.nombre, 40, y, { continued: true });
-      doc.font(REGULAR).fontSize(9).fillColor('#555555').text(` (${capTipo})${p.documento ? '  —  ' + p.documento : ''}`);
-      y = doc.y + 2;
+      const docStr = p.documento ? `  —  ${p.documento}` : '';
+      doc.font(BOLD).fontSize(9).fillColor('#000000').text(`${p.nombre} `, LEFT, y, { continued: true });
+      doc.font(REGULAR).fontSize(9).fillColor('#555555').text(`(${capTipo})${docStr}`);
+      y = doc.y + 3;
     }
-    y += 6;
+    y += 8;
 
     // ── ITINERARIO ──
-    const tituloItin = aerolinea ? `ITINERARIO — ${aerolinea}` : 'ITINERARIO';
-    doc.font(BOLD).fontSize(9).fillColor(NAVY).text(tituloItin, 40, y);
-    y = doc.y + 4;
+    const airlineTitleCase = titleCase(aerolinea);
+    const tituloItin = airlineTitleCase ? `ITINERARIO  —  ${airlineTitleCase}` : 'ITINERARIO';
+    doc.font(BOLD).fontSize(9).fillColor(NAVY).text(tituloItin, LEFT, y);
+    y = doc.y + 6;
 
     for (const v of vuelos) {
       const dep = v.departureAirportCode || '';
@@ -999,44 +1009,51 @@ app.post('/reservas/:id/pdf', async (req, res) => {
         llegada = `${String(at.getHours()).padStart(2,'0')}.${String(at.getMinutes()).padStart(2,'0')}`;
       } catch(e) {}
 
-      const depCity = airportsInfo[dep]?.cityName ? `${airportsInfo[dep].cityName} (${dep})` : dep;
-      const arrCity = airportsInfo[arr]?.cityName ? `${airportsInfo[arr].cityName} (${arr})` : arr;
+      const depCityRaw = airportsInfo[dep]?.cityName || '';
+      const arrCityRaw = airportsInfo[arr]?.cityName || '';
+      const depCity = depCityRaw ? `${titleCase(depCityRaw)} (${dep})` : dep;
+      const arrCity = arrCityRaw ? `${titleCase(arrCityRaw)} (${arr})` : arr;
 
       doc.font(BOLD).fontSize(10).fillColor('#000000');
-      doc.text(`${fecha}   ${depCity}  →  ${arrCity}    ${salida} → ${llegada}`, 40, y);
+      doc.text(`${fecha}   ${depCity}  →  ${arrCity}     ${salida} → ${llegada}`, LEFT, y);
       y = doc.y + 1;
       if (flight) {
-        doc.font(REGULAR).fontSize(8).fillColor('#555555').text(flight, 40, y);
-        y = doc.y + 4;
+        doc.font(REGULAR).fontSize(8).fillColor('#555555').text(flight, LEFT, y);
+        y = doc.y + 6;
       }
     }
-    y += 6;
+    y += 8;
 
     // ── PRECIO DE VENTA ──
     if (preciosVenta.length) {
-      const totalPax = preciosVenta.reduce((s, p) => s + p.cantidad, 0);
+      // Use actual passenger count, not fare entry count
+      const realPaxCount = pasajeros.length || preciosVenta.reduce((s, p) => s + p.cantidad, 0);
+      const totalPax = realPaxCount;
       const multiTipos = preciosVenta.length > 1;
-      doc.font(BOLD).fontSize(9).fillColor(NAVY).text(totalPax === 1 ? 'PRECIO' : 'PRECIOS', 40, y);
-      y = doc.y + 4;
+      doc.font(BOLD).fontSize(9).fillColor(NAVY).text(totalPax === 1 ? 'PRECIO' : 'PRECIOS', LEFT, y);
+      y = doc.y + 6;
       for (const pp of preciosVenta) {
+        // Adjust cantidad to match real passengers of this type
+        const realCantidad = multiTipos ? pp.cantidad : totalPax;
         const precioVenta = calcularPrecio(pp.neto, pp.tipo_tarifa, pp.comision_over);
-        const linea = etiquetaPrecio(precioVenta, pp.tipo, pp.cantidad, totalPax, multiTipos);
-        doc.font(BOLD).fontSize(10).fillColor(NAVY).text(linea, 40, y);
+        const linea = etiquetaPrecio(precioVenta, pp.tipo, realCantidad, totalPax, multiTipos);
+        doc.font(BOLD).fontSize(11).fillColor(NAVY).text(linea, LEFT, y);
         y = doc.y + 4;
       }
     }
 
-    // ── FOOTER ──
+    // ── FOOTER (posición absoluta en cada página) ──
     const pages = doc.bufferedPageRange();
     for (let i = 0; i < pages.count; i++) {
       doc.switchToPage(i);
-      const footerY = doc.page.height - 60;
-      doc.moveTo(40, footerY).lineTo(doc.page.width - 40, footerY).strokeColor(NAVY).lineWidth(1.5).stroke();
-      doc.font(BOLD).fontSize(9).fillColor(NAVY).text('Contacto:', 40, footerY + 6, { continued: true });
-      doc.text(`  ${contacto.nombre}`);
+      const footerY = doc.page.height - 70;
+      doc.moveTo(LEFT, footerY).lineTo(doc.page.width - LEFT, footerY).strokeColor(NAVY).lineWidth(1.5).stroke();
+      doc.font(BOLD).fontSize(9).fillColor(NAVY);
+      doc.text('Contacto:', LEFT, footerY + 8, { lineBreak: false });
+      doc.text(contacto.nombre, LEFT + 55, footerY + 8, { lineBreak: false });
       doc.font(REGULAR).fontSize(9).fillColor('#333333');
-      doc.text(contacto.mail, 40, footerY + 18);
-      doc.text(contacto.tel, 40, footerY + 30);
+      doc.text(contacto.mail, LEFT, footerY + 20, { lineBreak: false });
+      doc.text(contacto.tel, LEFT, footerY + 32, { lineBreak: false });
     }
 
     doc.end();
