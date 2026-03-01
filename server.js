@@ -494,60 +494,86 @@ app.post('/reservas/:id/verificar', async (req, res) => {
     const r = await db.query('SELECT * FROM reservas WHERE id=$1', [req.params.id]);
     if (!r.rows.length) return res.json({ ok: false, error: 'Reserva no encontrada' });
     const reserva = r.rows[0];
+
+    if (!reserva.order_id) return res.json({ ok: false, error: 'Sin orderId guardado' });
+
     const token = await getToken();
     const hdrs = getHeaders(token);
 
-    const resultados = [];
-
-    // Probar múltiples endpoints para encontrar el correcto
-    const endpoints = [
-      { nombre: 'GetOrder', url: `${API_BASE}/Order/GetOrder?orderId=${reserva.order_id}` },
-      { nombre: 'GetOrderDetail', url: `${API_BASE}/Order/GetOrderDetail?orderId=${reserva.order_id}` },
-      { nombre: 'GetOrderByNumber', url: `${API_BASE}/Order/GetOrderByNumber?orderNumber=${reserva.order_number}` },
-      { nombre: 'GetReservation', url: `${API_BASE}/FlightReservation/GetReservation?recordLocator=${reserva.pnr}` },
-      { nombre: 'GetByLocator', url: `${API_BASE}/FlightReservation/GetReservationByLocator?recordLocator=${reserva.pnr}` },
-      { nombre: 'GetBooking', url: `${API_BASE}/FlightReservation/GetBooking?recordLocator=${reserva.pnr}` },
-      { nombre: 'OrderDetail', url: `${API_BASE}/Order/${reserva.order_id}` },
-      { nombre: 'OrderSearch', url: `${API_BASE}/Order/Search?recordLocator=${reserva.pnr}` },
-      { nombre: 'GetOrdersList', url: `${API_BASE}/Order/GetOrders?recordLocator=${reserva.pnr}` },
-      { nombre: 'ReservationDetail', url: `${API_BASE}/FlightReservation/Detail?orderId=${reserva.order_id}` },
-    ];
-
-    for (const ep of endpoints) {
-      try {
-        const resp = await fetch(ep.url, { headers: hdrs });
-        const text = await resp.text();
-        const status = resp.status;
-        let preview = text.substring(0, 300);
-        let keys = null;
-        try {
-          const json = JSON.parse(text);
-          keys = Object.keys(json);
-          // Si tiene datos útiles, guardar más info
-          if (keys.length > 0 && status === 200) {
-            preview = JSON.stringify(json).substring(0, 500);
-          }
-        } catch(e) {}
-        resultados.push({ nombre: ep.nombre, status, keys, preview: preview.substring(0, 200) });
-        console.log(`[Verificar] ${ep.nombre}: HTTP ${status}, keys: ${keys ? keys.join(',') : 'no-json'}, preview: ${preview.substring(0, 200)}`);
-      } catch(e) {
-        resultados.push({ nombre: ep.nombre, status: 'ERROR', error: e.message });
-        console.log(`[Verificar] ${ep.nombre}: ERROR ${e.message}`);
-      }
+    // Endpoint real: POST FlightReservation/RetrieveReservation
+    const resp = await fetch(`${API_BASE}/FlightReservation/RetrieveReservation`, {
+      method: 'POST', headers: hdrs,
+      body: JSON.stringify({ OrderId: reserva.order_id })
+    });
+    const text = await resp.text();
+    if (!resp.ok) {
+      console.error('[Verificar] HTTP', resp.status, text.substring(0, 300));
+      return res.json({ ok: false, error: `API respondió ${resp.status}` });
     }
 
-    // Buscar el primer resultado exitoso con datos útiles
-    const exitoso = resultados.find(r => r.status === 200 && r.keys && r.keys.length > 2);
+    let data;
+    try { data = JSON.parse(text); } catch(e) {
+      return res.json({ ok: false, error: 'Respuesta no-JSON' });
+    }
+
+    // Extraer información clave
+    const pnr = data.recordLocator || reserva.pnr;
+    const orderState = data.orderState; // numérico
+    const timeLimit = data.limitDateTimeCTZ || data.lastTicketingDateCTZ || data.expiringDateTimeCTZ;
+
+    // Tickets emitidos
+    const tickets = (data.ticketsInformation || []).map(t => ({
+      numero: t.number,
+      carrier: t.validatigCarrierNumericCode,
+      status: t.status // "E" = emitido
+    }));
+    const ticketsEmitidos = tickets.filter(t => t.status === 'E');
+
+    // Estado de vuelos
+    const vuelos = (data.flightsInformation || []).map(f => ({
+      vuelo: f.flightNumber,
+      ruta: `${f.departureAirportCode} → ${f.arrivalAirportCode}`,
+      status: f.status // "OK", "XX" (cancelado), etc.
+    }));
+    const vuelosCancelados = vuelos.filter(v => v.status === 'XX' || v.status === 'UC' || v.status === 'UN');
+
+    // Pasajeros con tickets
+    const pasajeros = (data.passengersInformation || []).map(p => ({
+      nombre: `${p.lastName}, ${p.firstName}`,
+      tipo: p.typeCode,
+      ticketStatus: p.tickets?.[0]?.status || null // "Emitido", "Reservado", etc.
+    }));
+
+    // Determinar estado
+    let apiEstado = null;
+    if (vuelosCancelados.length === vuelos.length && vuelos.length > 0) {
+      apiEstado = 'CANCELADA';
+    } else if (ticketsEmitidos.length > 0) {
+      apiEstado = 'EMITIDA';
+    } else if (vuelos.some(v => v.status === 'OK' || v.status === 'HK')) {
+      apiEstado = 'CREADA'; // confirmada pero no emitida
+    } else {
+      apiEstado = 'CREADA';
+    }
+
+    // Actualizar en DB si cambió
+    let estadoActualizado = false;
+    if (apiEstado && apiEstado !== reserva.estado) {
+      await db.query('UPDATE reservas SET estado=$1, updated_at=NOW() WHERE id=$2', [apiEstado, req.params.id]);
+      estadoActualizado = true;
+    }
 
     res.json({
       ok: true,
-      estadoAPI: 'EXPLORANDO',
-      estadoLocal: reserva.estado,
-      pnr: reserva.pnr,
-      orderId: reserva.order_id,
-      orderNumber: reserva.order_number,
-      resultados,
-      exitoso: exitoso ? exitoso.nombre : null
+      estadoAPI: apiEstado,
+      estadoAnterior: reserva.estado,
+      estadoActualizado,
+      pnr,
+      orderState,
+      timeLimit,
+      tickets: ticketsEmitidos.map(t => `${t.carrier}-${t.numero}`),
+      vuelos,
+      pasajeros
     });
   } catch(e) {
     console.error('[Verificar] Error:', e.message);
