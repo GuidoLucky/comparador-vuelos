@@ -479,6 +479,17 @@ async function ejecutarRecotizar() {
           <span>${mon} ${grandTotal.toLocaleString('es-AR', {minimumFractionDigits:2})}</span>
         </div>
       </div>`;
+      
+      // Botón guardar tarifa
+      if (data.pricingId) {
+        html += `<button class="btn btn-success" style="margin-top:10px;width:100%" 
+          onclick="guardarTarifa('${data.pricingId}', ${JSON.stringify(data.segmentIds)})">
+          💾 Guardar tarifa en reserva
+        </button>`;
+      } else {
+        html += `<p style="color:#999;font-size:12px;margin-top:8px">⚠️ Sin PricingId - verificá la respuesta</p>`;
+      }
+      
       resultDiv.innerHTML = html;
     } else {
       resultDiv.innerHTML = `<p style="color:#999">Sin tarifas. Respuesta: ${data.rawKeys?.join(', ') || 'vacía'}</p>
@@ -488,6 +499,22 @@ async function ejecutarRecotizar() {
     resultDiv.innerHTML = `<p style="color:#e74c3c">Error: ${e.message}</p>`;
   } finally {
     btn.textContent = '📊 Obtener tarifa actual'; btn.disabled = false;
+  }
+}
+
+async function guardarTarifa(pricingId, segmentIds) {
+  if (!reservaActual) return;
+  if (!confirm('¿Guardar esta tarifa en la reserva?')) return;
+  try {
+    const res = await fetch('/reservas/' + reservaActual.id + '/guardar-tarifa', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ pricingId, segmentIds })
+    });
+    const data = await res.json();
+    if (!data.ok) throw new Error(data.error);
+    alert('✅ ' + data.mensaje);
+  } catch(e) {
+    alert('Error: ' + e.message);
   }
 }
 
