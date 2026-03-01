@@ -508,7 +508,34 @@ app.post('/reservas/:id/verificar', async (req, res) => {
     const text = await resp.text();
     console.log(`[Verificar] orderId=${reserva.order_id}, pnr=${reserva.pnr}, HTTP ${resp.status}`);
     console.log(`[Verificar] Response:`, text.substring(0, 500));
+    
+    // 400 con "no cuenta con vuelos asociados" = reserva cancelada/expirada
     if (!resp.ok) {
+      let errorData = {};
+      try { errorData = JSON.parse(text); } catch(e) {}
+      const innerMsg = errorData?.innerException?.message || errorData?.message || '';
+      
+      if (innerMsg.includes('no cuenta con vuelos') || innerMsg.includes('no ha sido posible cargar')) {
+        // Reserva cancelada/expirada en la aerolínea
+        const apiEstado = 'CANCELADA';
+        let estadoActualizado = false;
+        if (reserva.estado !== apiEstado) {
+          await db.query('UPDATE reservas SET estado=$1, updated_at=NOW() WHERE id=$2', [apiEstado, req.params.id]);
+          estadoActualizado = true;
+        }
+        return res.json({
+          ok: true,
+          estadoAPI: apiEstado,
+          estadoAnterior: reserva.estado,
+          estadoActualizado,
+          pnr: reserva.pnr,
+          tickets: [],
+          vuelos: [],
+          pasajeros: [],
+          mensaje: 'La reserva ya no tiene vuelos asociados (cancelada/expirada)'
+        });
+      }
+      
       return res.json({ ok: false, error: `API respondió ${resp.status}: ${text.substring(0, 200)}`, orderId: reserva.order_id });
     }
 
