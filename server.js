@@ -836,8 +836,8 @@ app.post('/reservas/:id/pdf', async (req, res) => {
     if (!r.rows.length) return res.json({ ok: false, error: 'Reserva no encontrada' });
     const reserva = r.rows[0];
 
-    // Intentar obtener datos frescos de la API
-    let vuelos = [], airports = {}, aerolinea = reserva.aerolinea || '';
+    // Obtener datos frescos de la API
+    let vuelos = [], airportsInfo = {}, aerolinea = reserva.aerolinea || '';
     let fareInfo = null;
 
     if (reserva.order_id) {
@@ -851,22 +851,16 @@ app.post('/reservas/:id/pdf', async (req, res) => {
         if (rrResp.ok) {
           const rrData = JSON.parse(await rrResp.text());
           vuelos = rrData.flightsInformation || [];
-          airports = rrData.airportsInformation || {};
-          if (vuelos.length && vuelos[0].airlineName) {
-            aerolinea = vuelos[0].airlineName;
-          }
-          // Extraer info de tarifas para calcular precio de venta
-          // NETO para Lucky Tour = total tarifa (base+imp) + fee Tucano
+          airportsInfo = rrData.airportsInformation || {};
+          if (vuelos.length && vuelos[0].airlineName) aerolinea = vuelos[0].airlineName;
           fareInfo = (rrData.storedFaresInformation || []).map(f => {
             const totalTarifa = f.fareValues?.totalAmount || 0;
             const feeTucano = (f.feeValues || []).reduce((s, fee) => s + (fee.amount || 0), 0);
-            const netoLucky = totalTarifa + feeTucano; // lo que Lucky paga a Tucano
             return {
-              neto: netoLucky,
+              neto: totalTarifa + feeTucano,
               tipo_tarifa: f.fareType || 'PNEG',
               comision_over: ((f.commissionRule?.obtained?.amount || 0) + (f.overCommissionRule?.amount || 0)),
-              passengerType: f.passengerType,
-              compiledPassenger: f.compiledPassenger
+              passengerDiscountType: f.passengerDiscountType || 'ADT'
             };
           });
         }
@@ -875,17 +869,17 @@ app.post('/reservas/:id/pdf', async (req, res) => {
       }
     }
 
-    // Si no tenemos vuelos de la API, usar datos locales
+    // Fallback vuelos desde itinerario local
     if (!vuelos.length && reserva.itinerario) {
       try {
         const itin = JSON.parse(reserva.itinerario);
         vuelos = (itin.segments || itin || []).map(s => ({
           departureAirportCode: s.departureAirportCode || s.origin || '',
           arrivalAirportCode: s.arrivalAirportCode || s.destination || '',
-          departureDate: s.departureDate || s.departureDateTime || '',
-          arrivalDate: s.arrivalDate || s.arrivalDateTime || '',
-          flightNumber: s.flightNumber || `${s.marketingAirlineCode || ''} ${s.flightNumber || ''}`,
-          airlineName: s.airlineName || aerolinea
+          departureDate: s.departureDate || '',
+          arrivalDate: s.arrivalDate || '',
+          flightNumber: s.flightNumber || '',
+          marketingAirlineCode: s.marketingAirlineCode || ''
         }));
       } catch(e) {}
     }
@@ -897,66 +891,162 @@ app.post('/reservas/:id/pdf', async (req, res) => {
       documento: p.doc_tipo && p.doc_numero ? `${p.doc_tipo} ${p.doc_numero}` : ''
     }));
 
-    // Precio: usar fareInfo de API o datos locales
-    const { vendedor: reqVendedor, precioVenta } = req.body || {};
-    let precioData = {};
+    // Calcular precios de venta
+    const { vendedor: reqVendedor } = req.body || {};
+    let preciosVenta = [];
+    const tipoLabels = { ADT: 'adulto', CHD: 'menor', CNN: 'menor', INF: 'infante' };
 
     if (fareInfo && fareInfo.length) {
-      // Agrupar tarifas por tipo de pasajero
-      const typeMap = { 0: 'adulto', 1: 'menor', 2: 'infante' };
       const grouped = {};
       for (const f of fareInfo) {
-        const tipo = typeMap[f.passengerType] || 'adulto';
+        const tipo = tipoLabels[f.passengerDiscountType] || 'adulto';
         if (!grouped[tipo]) {
           grouped[tipo] = { tipo, cantidad: 0, neto: f.neto, tipo_tarifa: f.tipo_tarifa, comision_over: f.comision_over };
         }
         grouped[tipo].cantidad++;
       }
-      precioData = { pasajeros: Object.values(grouped) };
-    } else if (precioVenta) {
-      precioData = { venta: precioVenta };
+      preciosVenta = Object.values(grouped);
     } else if (reserva.precio_usd) {
-      // Calcular con fee por defecto (PNEG)
-      precioData = { 
-        pasajeros: [{
-          tipo: 'adulto',
-          cantidad: pasajeros.length || 1,
-          neto: reserva.precio_usd / (pasajeros.length || 1),
-          tipo_tarifa: 'PNEG',
-          comision_over: 0
-        }]
-      };
+      preciosVenta = [{
+        tipo: 'adulto', cantidad: pasajeros.length || 1,
+        neto: reserva.precio_usd / (pasajeros.length || 1),
+        tipo_tarifa: 'PNEG', comision_over: 0
+      }];
     }
 
-    // Armar JSON para el script Python
-    const pdfData = {
-      pnr: reserva.pnr,
-      aerolinea,
-      pasajeros,
-      vuelos,
-      airports,
-      precio: precioData,
-      vendedor: reqVendedor || reserva.vendedor || 'guido'
-    };
+    // ── GENERAR PDF CON PDFKIT ──
+    const vendedor = reqVendedor || 'guido';
+    const contacto = CONTACTOS[vendedor] || CONTACTOS.guido;
+    const NAVY = '#1B3A5C';
 
-    const fs = require('fs');
-    const tmpJson = `/tmp/reserva_${reserva.id}.json`;
-    const tmpPdf = `/tmp/reserva_${reserva.pnr}.pdf`;
-    fs.writeFileSync(tmpJson, JSON.stringify(pdfData, null, 2));
+    const logoCandidates = [
+      pathModule.join(__dirname, 'public', 'logo_transparent.png'),
+      pathModule.join(__dirname, 'logo_transparent.png'),
+    ];
+    const logoFinal = logoCandidates.find(p => fsModule.existsSync(p)) || null;
 
-    const { execSync } = require('child_process');
-    execSync(`python3 /app/generar_reserva_pdf.py ${tmpJson} ${tmpPdf}`, { timeout: 15000 });
+    const doc = new PDFDocument({ size: 'A4', margin: 40, bufferPages: true });
+    const chunks = [];
+    doc.on('data', c => chunks.push(c));
 
-    // Enviar PDF
+    const BOLD = HAS_UNICODE_FONT ? 'UCBold' : 'Helvetica-Bold';
+    const REGULAR = HAS_UNICODE_FONT ? 'UCRegular' : 'Helvetica';
+    if (HAS_UNICODE_FONT) {
+      doc.registerFont('UCRegular', FONT_REGULAR);
+      doc.registerFont('UCBold', FONT_BOLD);
+    }
+
+    const pdfPromise = new Promise((resolve, reject) => {
+      doc.on('end', () => resolve(Buffer.concat(chunks)));
+      doc.on('error', reject);
+    });
+
+    const pageW = doc.page.width - 80;
+
+    // Fecha
+    doc.font(REGULAR).fontSize(9).fillColor('#666666');
+    doc.text(new Date().toLocaleDateString('es-AR'), 40, 40, { width: pageW, align: 'right' });
+
+    // Logo
+    let y = 55;
+    if (logoFinal) {
+      doc.image(logoFinal, (doc.page.width - 160) / 2, y, { width: 160 });
+      y += 130;
+    }
+
+    // Título: Confirmación de Reserva — PNR
+    doc.font(BOLD).fontSize(16).fillColor(NAVY);
+    doc.text('Confirmación de Reserva', 40, y, { width: pageW, align: 'center', continued: true });
+    doc.font(BOLD).fontSize(12).text(` — ${reserva.pnr}`, { align: 'center' });
+    y = doc.y + 8;
+
+    // Línea
+    doc.moveTo(40, y).lineTo(doc.page.width - 40, y).strokeColor(NAVY).lineWidth(2).stroke();
+    y += 12;
+
+    // ── PASAJEROS ──
+    doc.font(BOLD).fontSize(9).fillColor(NAVY).text('PASAJEROS', 40, y);
+    y = doc.y + 4;
+    for (const p of pasajeros) {
+      const tipoLabel = tipoLabels[p.tipo] || p.tipo || 'Adulto';
+      const capTipo = tipoLabel.charAt(0).toUpperCase() + tipoLabel.slice(1);
+      doc.font(BOLD).fontSize(9).fillColor('#000000').text(p.nombre, 40, y, { continued: true });
+      doc.font(REGULAR).fontSize(9).fillColor('#555555').text(` (${capTipo})${p.documento ? '  —  ' + p.documento : ''}`);
+      y = doc.y + 2;
+    }
+    y += 6;
+
+    // ── ITINERARIO ──
+    const tituloItin = aerolinea ? `ITINERARIO — ${aerolinea}` : 'ITINERARIO';
+    doc.font(BOLD).fontSize(9).fillColor(NAVY).text(tituloItin, 40, y);
+    y = doc.y + 4;
+
+    for (const v of vuelos) {
+      const dep = v.departureAirportCode || '';
+      const arr = v.arrivalAirportCode || '';
+      const depDate = v.departureDate || '';
+      const arrDate = v.arrivalDate || '';
+      const flight = v.flightNumber || `${v.marketingAirlineCode || ''} ${v.flightNumber || ''}`.trim();
+
+      let fecha = '';
+      let salida = '', llegada = '';
+      try {
+        const dt = new Date(depDate);
+        const meses = ['ene','feb','mar','abr','may','jun','jul','ago','sep','oct','nov','dic'];
+        fecha = `${String(dt.getDate()).padStart(2,'0')}/${meses[dt.getMonth()]}`;
+        salida = `${String(dt.getHours()).padStart(2,'0')}.${String(dt.getMinutes()).padStart(2,'0')}`;
+        const at = new Date(arrDate);
+        llegada = `${String(at.getHours()).padStart(2,'0')}.${String(at.getMinutes()).padStart(2,'0')}`;
+      } catch(e) {}
+
+      const depCity = airportsInfo[dep]?.cityName ? `${airportsInfo[dep].cityName} (${dep})` : dep;
+      const arrCity = airportsInfo[arr]?.cityName ? `${airportsInfo[arr].cityName} (${arr})` : arr;
+
+      doc.font(BOLD).fontSize(10).fillColor('#000000');
+      doc.text(`${fecha}   ${depCity}  →  ${arrCity}    ${salida} → ${llegada}`, 40, y);
+      y = doc.y + 1;
+      if (flight) {
+        doc.font(REGULAR).fontSize(8).fillColor('#555555').text(flight, 40, y);
+        y = doc.y + 4;
+      }
+    }
+    y += 6;
+
+    // ── PRECIO DE VENTA ──
+    if (preciosVenta.length) {
+      const totalPax = preciosVenta.reduce((s, p) => s + p.cantidad, 0);
+      const multiTipos = preciosVenta.length > 1;
+      doc.font(BOLD).fontSize(9).fillColor(NAVY).text(totalPax === 1 ? 'PRECIO' : 'PRECIOS', 40, y);
+      y = doc.y + 4;
+      for (const pp of preciosVenta) {
+        const precioVenta = calcularPrecio(pp.neto, pp.tipo_tarifa, pp.comision_over);
+        const linea = etiquetaPrecio(precioVenta, pp.tipo, pp.cantidad, totalPax, multiTipos);
+        doc.font(BOLD).fontSize(10).fillColor(NAVY).text(linea, 40, y);
+        y = doc.y + 4;
+      }
+    }
+
+    // ── FOOTER ──
+    const pages = doc.bufferedPageRange();
+    for (let i = 0; i < pages.count; i++) {
+      doc.switchToPage(i);
+      const footerY = doc.page.height - 60;
+      doc.moveTo(40, footerY).lineTo(doc.page.width - 40, footerY).strokeColor(NAVY).lineWidth(1.5).stroke();
+      doc.font(BOLD).fontSize(9).fillColor(NAVY).text('Contacto:', 40, footerY + 6, { continued: true });
+      doc.text(`  ${contacto.nombre}`);
+      doc.font(REGULAR).fontSize(9).fillColor('#333333');
+      doc.text(contacto.mail, 40, footerY + 18);
+      doc.text(contacto.tel, 40, footerY + 30);
+    }
+
+    doc.end();
+    const pdfBuffer = await pdfPromise;
+
     res.setHeader('Content-Type', 'application/pdf');
     res.setHeader('Content-Disposition', `inline; filename="Reserva_${reserva.pnr}.pdf"`);
-    const pdfBuffer = fs.readFileSync(tmpPdf);
     res.send(pdfBuffer);
-
-    // Cleanup
-    try { fs.unlinkSync(tmpJson); fs.unlinkSync(tmpPdf); } catch(e) {}
   } catch(e) {
-    console.error('[PDF] Error:', e.message);
+    console.error('[PDF Reserva] Error:', e.message);
     res.status(500).json({ ok: false, error: e.message });
   }
 });
