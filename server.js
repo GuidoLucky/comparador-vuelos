@@ -666,7 +666,7 @@ app.post('/reservas/:id/recotizar', async (req, res) => {
     const pricingPayload = {
       OrderId: reserva.order_id,
       OrderRecord: null,
-      Source: rrData.source || 0,
+      Source: 0,
       StrategyType: 0,
       FareType: fareType || 0,
       Currency: moneda || null,
@@ -685,16 +685,39 @@ app.post('/reservas/:id/recotizar', async (req, res) => {
 
     console.log('[Recotizar] Payload:', JSON.stringify(pricingPayload).substring(0, 500));
 
-    // Paso 2: RetrievePricingByText
-    const prResp = await fetch(`${API_BASE}/FlightTicketing/RetrievePricingByText`, {
-      method: 'POST', headers: hdrs,
-      body: JSON.stringify(pricingPayload)
-    });
+    // Intentar ambos endpoints
+    let prResp, prText;
+    for (const ep of ['RetrievePricingByText', 'RetrievePricing']) {
+      const url = `${API_BASE}/FlightTicketing/${ep}`;
+      console.log(`[Recotizar] Intentando ${url}`);
+      prResp = await fetch(url, {
+        method: 'POST', headers: hdrs,
+        body: JSON.stringify(pricingPayload)
+      });
+      prText = await prResp.text();
+      console.log(`[Recotizar] ${ep}: HTTP ${prResp.status}, body: ${prText.substring(0, 300)}`);
+      if (prResp.ok && prText.length > 5) break;
+    }
+
+    // Si ambos fallaron, intentar bajo FlightReservation
+    if (!prResp.ok || prText.length < 5) {
+      for (const ep of ['RetrievePricingByText', 'RetrievePricing']) {
+        const url = `${API_BASE}/FlightReservation/${ep}`;
+        console.log(`[Recotizar] Intentando ${url}`);
+        prResp = await fetch(url, {
+          method: 'POST', headers: hdrs,
+          body: JSON.stringify(pricingPayload)
+        });
+        prText = await prResp.text();
+        console.log(`[Recotizar] FlightReservation/${ep}: HTTP ${prResp.status}, body: ${prText.substring(0, 300)}`);
+        if (prResp.ok && prText.length > 5) break;
+      }
+    }
     const prText = await prResp.text();
     console.log('[Recotizar] HTTP', prResp.status, 'Response:', prText.substring(0, 500));
 
-    if (!prResp.ok) {
-      return res.json({ ok: false, error: `API respondió ${prResp.status}: ${prText.substring(0, 200)}` });
+    if (!prResp.ok || prText.length < 5) {
+      return res.json({ ok: false, error: `Ningún endpoint respondió. Último: HTTP ${prResp.status}. Response: ${prText.substring(0, 200)}` });
     }
 
     let prData;
