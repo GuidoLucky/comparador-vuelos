@@ -489,7 +489,7 @@ app.put('/reservas/:id/estado', async (req, res) => {
   if (!db) return res.json({ ok: false });
   try {
     const { estado } = req.body;
-    const estados = ['CREADA', 'EMITIDA', 'COMPLETADA', 'CANCELADA'];
+    const estados = ['CREADA', 'EMITIDA', 'CANCELADA'];
     if (!estados.includes(estado)) return res.json({ ok: false, error: 'Estado inválido' });
     await db.query('UPDATE reservas SET estado=$1, updated_at=NOW() WHERE id=$2', [estado, req.params.id]);
     res.json({ ok: true });
