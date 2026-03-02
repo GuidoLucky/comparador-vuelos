@@ -191,19 +191,41 @@ function procesarVuelos(data, stopsFilter) {
       const bagLeg = q.legsWithBaggageAllowance?.[0]?.baggageAllowance;
       const maxEscalas = itinerario.reduce((max, l) => Math.max(max, l.escalas||0), 0);
 
+      // Log raw baggage data for debugging
+      if (bagLeg) {
+        console.log(`[Equipaje] Vuelo ${q.validatingCarrier} $${q.grandTotalSellingPriceAmount}:`, JSON.stringify({
+          handOn: bagLeg.handOn,
+          carryOn: bagLeg.carryOn,
+          checked: (bagLeg.checked||[]).filter(b=>b.passengerType===0)
+        }).substring(0, 600));
+      }
+
+      // chargeType: 0=Included, 1=Available for purchase, 2=Not available
+      // Algunos GDS manejan campos extra como 'included' o 'freeOfCharge'
+      const isIncluded = (b) => {
+        if (b.included === true || b.freeOfCharge === true) return true;
+        if (b.included === false || b.freeOfCharge === false) return false;
+        return b.chargeType === 0;
+      };
+
       const handOnList = bagLeg?.handOn || [];
-      const handOnIncluido = handOnList.some(b => b.chargeType===0 && b.pieces>0);
-      const handOnLabel = handOnList.length>0 ? (handOnIncluido?'Incluida':'Con cargo') : 'No informado';
+      const handOnItem = handOnList.find(b => isIncluded(b));
+      const handOnIncluido = !!handOnItem;
+      const handOnLabel = handOnItem ? 'Incluida' : (handOnList.length > 0 ? 'Con cargo' : 'No informado');
 
       const carryOnList = bagLeg?.carryOn || [];
-      const carryOnItem = carryOnList.find(b => b.chargeType===0 && b.pieces>0);
+      const carryOnItem = carryOnList.find(b => isIncluded(b));
       const carryOnIncluido = !!carryOnItem;
-      const carryOnLabel = carryOnItem ? (`${carryOnItem.weight||''}${carryOnItem.weightUnit||''}`).trim()||'Incluido' : (carryOnList.length>0?'Con cargo':'No incluido');
+      const carryOnLabel = carryOnItem 
+        ? (`${carryOnItem.weight||''}${carryOnItem.weightUnit||''}`).trim() || 'Incluido' 
+        : (carryOnList.length > 0 ? 'Con cargo' : 'No incluido');
 
       const checkedList = (bagLeg?.checked||[]).filter(b=>b.passengerType===0);
-      const checkedIncluido = checkedList.some(b=>b.chargeType===0&&(b.pieces>0||(b.weight&&b.weight!=='0')));
-      const checkedItem = checkedList.find(b=>b.chargeType===0&&(b.pieces>0||(b.weight&&b.weight!=='0')));
-      const checkedLabel = checkedItem ? (checkedItem.pieces>0?`${checkedItem.pieces}x ${checkedItem.weight}${checkedItem.unit}`:`${checkedItem.weight}${checkedItem.unit}`) : 'No incluida';
+      const checkedItem = checkedList.find(b => isIncluded(b) && (b.pieces > 0 || (b.weight && b.weight !== '0')));
+      const checkedIncluido = !!checkedItem;
+      const checkedLabel = checkedItem 
+        ? (checkedItem.pieces > 0 ? `${checkedItem.pieces}x ${checkedItem.weight}${checkedItem.unit||'KG'}` : `${checkedItem.weight}${checkedItem.unit||'KG'}`) 
+        : 'No incluida';
 
       return {
         id: q.quotationId, aerolinea: q.validatingCarrier,
