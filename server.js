@@ -609,7 +609,10 @@ app.post('/crear-reserva', async (req, res) => {
         surnames: [(contacto.apellido || pasajeros[0]?.apellido || '').toUpperCase()],
         contact: {
           mails: [contacto.email || ''],
-          phones: [{ number: contacto.telefono1 || '', type: 'M' }]
+          phones: [
+            { country_pref: '54', number: (contacto.telefono1 || '').replace(/[^\d]/g, '') },
+            { country_pref: '54', number: (contacto.telefono2 || '').replace(/[^\d]/g, '') }
+          ]
         },
         documents: []
       };
