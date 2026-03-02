@@ -556,10 +556,8 @@ function renderVuelo(v){
       <label class="cotizar-check">
         <input type="checkbox" onchange="toggleCotizar('${v.id}','${searchIdActual}',this.checked)"> Cotizar
       </label>
-      ${v.fuente==='GEA'
-        ?'<span style="font-size:11px;color:var(--muted);padding:6px 0">Reservar desde Lleego</span>'
-        :`<button class="btn-detalle" onclick="verDetalle('${v.id}','${searchIdActual}',event)">📊 Ver precio</button>
-      <button class="btn-reservar" onclick="abrirReserva('${v.id}','${searchIdActual}',event)">✈ Reservar</button>`}
+      <button class="btn-detalle" onclick="verDetalle('${v.id}','${searchIdActual}',event)">📊 Ver precio</button>
+      <button class="btn-reservar" onclick="abrirReserva('${v.id}','${searchIdActual}',event)">✈ Reservar</button>
     </div>
     <div class="detalle-panel" data-detalle="${v.id}"></div>
   </div>`;
