@@ -150,6 +150,11 @@ app.post('/buscar-vuelos', async (req, res) => {
     if (!searchRes.ok) throw new Error(`API error: ${searchRes.status} - ${await searchRes.text().then(t=>t.substring(0,300))}`);
     const data = await searchRes.json();
     console.log(`[Vuelos] ${data.minifiedQuotations?.length || 0} resultados`);
+    // Log source/GDS info from first quote
+    if (data.minifiedQuotations?.[0]) {
+      const q0 = data.minifiedQuotations[0];
+      console.log(`[Vuelos] Source fields:`, JSON.stringify({ source: q0.source, sourceDescription: q0.sourceDescription, channel: q0.channel, channelName: q0.channelName, gds: q0.gds, platform: q0.platform, provider: q0.provider, providerName: q0.providerName, supplierCode: q0.supplierCode }));
+    }
 
     const vuelos = procesarVuelos(data, stopsFilter);
     res.json({ ok:true, vuelos, searchId: data.searchId || data.SearchId });
@@ -1209,7 +1214,8 @@ app.post('/reservas/:id/pdf', async (req, res) => {
     }
 
     // Título en una sola línea
-    const titleText = `Confirmación de Reserva  —  ${reserva.pnr}`;
+    const pdfTitulo = reserva.estado === 'EMITIDA' ? 'Confirmación de Vuelo' : 'Confirmación de Reserva';
+    const titleText = `${pdfTitulo}  —  ${reserva.pnr}`;
     doc.font(BOLD).fontSize(14).fillColor(NAVY);
     doc.text(titleText, LEFT, y, { width: pageW, align: 'center' });
     y = doc.y + 8;
@@ -1270,8 +1276,10 @@ app.post('/reservas/:id/pdf', async (req, res) => {
     }
     y += 8;
 
-    // ── PRECIO DE VENTA ──
-    if (preciosVenta.length) {
+    // ── PRECIO DE VENTA (solo si NO está emitida) ──
+    const esEmitida = reserva.estado === 'EMITIDA';
+    
+    if (!esEmitida && preciosVenta.length) {
       // Use actual passenger count, not fare entry count
       const realPaxCount = pasajeros.length || preciosVenta.reduce((s, p) => s + p.cantidad, 0);
       const totalPax = realPaxCount;
@@ -1286,7 +1294,29 @@ app.post('/reservas/:id/pdf', async (req, res) => {
         doc.font(BOLD).fontSize(11).fillColor(NAVY).text(linea, LEFT, y);
         y = doc.y + 4;
       }
-      // Condiciones
+    }
+
+    // ── TICKETS (solo si emitida) ──
+    if (esEmitida) {
+      let tickets = [];
+      try {
+        const ed = typeof reserva.emision_data === 'string' ? JSON.parse(reserva.emision_data) : reserva.emision_data;
+        if (ed && ed.tickets) tickets = ed.tickets;
+      } catch(e) {}
+      if (tickets.length) {
+        doc.font(BOLD).fontSize(9).fillColor(NAVY).text('TICKETS', LEFT, y);
+        y = doc.y + 6;
+        for (const t of tickets) {
+          const ticketNum = (t.carrier || '') + '-' + (t.numero || t.number || '');
+          doc.font(REGULAR).fontSize(9).fillColor('#000000').text(`  • ${ticketNum}`, LEFT, y);
+          y = doc.y + 3;
+        }
+        y += 4;
+      }
+    }
+
+    // ── CONDICIONES (siempre, emitida o no) ──
+    {
       const pen = penalidades;
       if (pen && (pen.cambio_antes || pen.cambio_durante || pen.devolucion_antes || pen.devolucion_durante || pen.cambio || pen.cancelacion)) {
         y += 6;
