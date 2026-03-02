@@ -1639,6 +1639,23 @@ function generarPDFBuffer(opciones, vendedor, nombreCliente) {
         doc.moveDown(0.3);
       }
 
+      // ── EQUIPAJE ──
+      if (op.equipaje) {
+        doc.moveDown(0.3);
+        doc.fontSize(8).font(BOLD).fillColor(NAVY).text('Equipaje:', PAGE_LEFT);
+        doc.moveDown(0.2);
+        const eq = op.equipaje;
+        const eqItems = [
+          { label: 'Mochila', valor: eq.handOn.label, ok: eq.handOn.incluido },
+          { label: 'Carry on', valor: eq.carryOn.label, ok: eq.carryOn.incluido },
+          { label: 'Despachado', valor: eq.checked.label, ok: eq.checked.incluido }
+        ];
+        for (const item of eqItems) {
+          doc.font(REGULAR).fontSize(7.5).fillColor(item.ok ? '#2d8a4e' : '#999999');
+          doc.text(`  • ${item.label}: ${item.valor}`, PAGE_LEFT);
+        }
+      }
+
       // ── PENALIDADES / CONDICIONES ──
       console.log(`[PDF-Cotizacion] Penalidades para opción: ${JSON.stringify(op.penalidades)}`);
       const pen = op.penalidades;
@@ -1835,9 +1852,42 @@ app.post('/generar-cotizacion', async (req, res) => {
       };
       console.log(`[Cotizacion] Penalidades: ${JSON.stringify(penalidades)}`);
 
+      // Equipaje - misma lógica que procesarVuelos
+      const bagLeg = q.legsWithBaggageAllowance?.[0]?.baggageAllowance;
+      let equipaje = null;
+      if (bagLeg) {
+        const handOnList = bagLeg.handOn || [];
+        const handOnIncluido = handOnList.some(b => b.chargeType === 1 && b.pieces >= 1);
+        const handOnLabel = handOnIncluido ? 'Incluida' : (handOnList.length > 0 ? 'Con cargo' : 'No informado');
+
+        const carryOnList = bagLeg.carryOn || [];
+        const carryOnItem = carryOnList.find(b => b.chargeType === 1 && b.pieces >= 1);
+        const carryOnIncluido = !!carryOnItem;
+        const carryOnLabel = carryOnItem 
+          ? (`${carryOnItem.weight||''}${carryOnItem.weightUnit||''}`).trim() || 'Incluido' 
+          : (carryOnList.length > 0 ? 'Con cargo' : 'No incluido');
+
+        const checkedList = (bagLeg.checked || []).filter(b => b.passengerType === 0);
+        const checkedIncluidos = checkedList.filter(b => b.chargeType === 1 && b.pieces > 0);
+        const totalPieces = checkedIncluidos.reduce((sum, b) => sum + b.pieces, 0);
+        const checkedIncluido = totalPieces > 0;
+        const checkedRef = checkedIncluidos[0];
+        const checkedLabel = checkedIncluido
+          ? (checkedRef.weight && checkedRef.weight !== '0' && checkedRef.weight !== '' && checkedRef.weight !== null
+              ? `${totalPieces}x ${checkedRef.weight}${checkedRef.unit || 'KG'}`
+              : `${totalPieces}x 23KG`)
+          : 'No incluida';
+
+        equipaje = {
+          handOn: { label: handOnLabel, incluido: handOnIncluido },
+          carryOn: { label: carryOnLabel, incluido: carryOnIncluido },
+          checked: { label: checkedLabel, incluido: checkedIncluido }
+        };
+      }
+
       return {
         aerolinea: d.airlinesDictionary?.[q.validatingCarrier] || q.validatingCarrier,
-        vuelos, detalle_vuelo: detalle, pasajeros, penalidades
+        vuelos, detalle_vuelo: detalle, pasajeros, penalidades, equipaje
       };
     }));
 
