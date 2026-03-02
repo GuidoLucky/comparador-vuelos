@@ -373,6 +373,7 @@ async function verDetalle(id) {
     actionsHtml += `<button class="btn btn-outline" onclick="mostrarPdfOpts()">📄 Generar PDF</button>`;
     if (r.estado === 'CREADA') {
       actionsHtml += `<button class="btn btn-success" onclick="mostrarRecotizar()">💲 Recotizar</button>`;
+      actionsHtml += `<button class="btn btn-outline" style="background:#d32f2f;color:white;border:none;" onclick="confirmarEmision()">✈️ Emitir</button>`;
       actionsHtml += `<button class="btn btn-success" onclick="cambiarEstado('EMITIDA')">✅ Marcar como Emitida</button>`;
       actionsHtml += `<button class="btn btn-danger" onclick="cambiarEstado('CANCELADA')">❌ Cancelar</button>`;
     } else if (r.estado === 'EMITIDA') {
@@ -573,6 +574,19 @@ async function ejecutarRecotizar() {
         </div>
       </div>`;
       
+      // Penalidades
+      if (data.penalidades) {
+        const pen = data.penalidades;
+        const parts = [];
+        if (pen.cambio) parts.push(`<span>Cambio: ${pen.cambio.moneda} ${pen.cambio.monto}</span>`);
+        if (pen.cancelacion) parts.push(`<span>Cancelación: ${pen.cancelacion.moneda} ${pen.cancelacion.monto}</span>`);
+        if (parts.length) {
+          html += `<div style="margin-top:8px;padding:8px 12px;background:#fff3e0;border:1px solid #ffcc80;border-radius:6px;font-size:12px;color:#e65100;">
+            <strong>⚠️ Penalidades:</strong> ${parts.join(' &nbsp;|&nbsp; ')}
+          </div>`;
+        }
+      }
+      
       // Botón guardar tarifa
       if (data.pricingId) {
         window._lastPricing = { pricingId: data.pricingId, segmentIds: data.segmentIds, netoTotal: grandNeto, moneda: mon };
@@ -711,6 +725,54 @@ async function guardarNotas() {
 function cerrarModal() {
   document.getElementById('modalOverlay').classList.remove('show');
   reservaActual = null;
+}
+
+// ─── EMISIÓN ───
+async function confirmarEmision() {
+  if (!reservaActual) return;
+  if (reservaActual.estado === 'EMITIDA') {
+    alert('Esta reserva ya está emitida.');
+    return;
+  }
+  if (reservaActual.estado === 'CANCELADA') {
+    alert('No se puede emitir una reserva cancelada.');
+    return;
+  }
+  
+  const msg = `⚠️ EMITIR TICKETS\n\nPNR: ${reservaActual.pnr}\nPrecio neto: USD ${reservaActual.precio_usd || 'N/A'}\n\n¿Estás seguro de que querés emitir los tickets?\nEsta acción NO se puede deshacer.`;
+  
+  if (!confirm(msg)) return;
+  if (!confirm('ÚLTIMA CONFIRMACIÓN: ¿Emitir tickets ahora?')) return;
+  
+  try {
+    const statusDiv = document.getElementById('modalContent');
+    const emitirMsg = document.createElement('div');
+    emitirMsg.id = 'emitirStatus';
+    emitirMsg.style.cssText = 'margin-top:16px;padding:16px;background:#fff3e0;border:2px solid #ff9800;border-radius:10px;text-align:center;';
+    emitirMsg.innerHTML = '<p style="font-size:16px;margin:0;">✈️ Emitiendo tickets...</p><p style="color:#666;margin:4px 0 0;">Esto puede tardar unos segundos</p>';
+    statusDiv.appendChild(emitirMsg);
+    
+    const resp = await fetch('/reservas/' + reservaActual.id + '/emitir', { method: 'POST', headers: {'Content-Type':'application/json'} });
+    const data = await resp.json();
+    
+    if (data.ok) {
+      emitirMsg.style.borderColor = '#4caf50';
+      emitirMsg.style.background = '#e8f5e9';
+      let ticketsHtml = '';
+      if (data.tickets && data.tickets.length) {
+        ticketsHtml = '<div style="margin-top:8px">' + data.tickets.map(t => `<span style="display:inline-block;background:#fff;padding:4px 10px;border-radius:4px;margin:2px;font-family:monospace;">${t.carrier}-${t.numero}</span>`).join('') + '</div>';
+      }
+      emitirMsg.innerHTML = `<p style="font-size:16px;margin:0;color:#2e7d32;">✅ ${data.mensaje}</p>${ticketsHtml}`;
+      // Actualizar lista
+      setTimeout(cargarReservas, 1000);
+    } else {
+      emitirMsg.style.borderColor = '#f44336';
+      emitirMsg.style.background = '#ffebee';
+      emitirMsg.innerHTML = `<p style="font-size:14px;margin:0;color:#c62828;">❌ Error: ${data.error}</p>`;
+    }
+  } catch(e) {
+    alert('Error de conexión: ' + e.message);
+  }
 }
 
 // Buscar al escribir (con debounce)
