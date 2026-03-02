@@ -562,40 +562,135 @@ app.get('/document-countries', async (req, res) => {
 app.post('/crear-reserva', async (req, res) => {
   const { searchId, quotationId, pasajeros, contacto, vueloInfo } = req.body;
   
-  // ─── GEA / Lleego → abrir web de Lleego ───
+  // ─── GEA / Lleego booking ───
   if (String(quotationId).startsWith('lleego_')) {
     try {
       const cached = lleegoSolutionsCache.get(quotationId);
       if (!cached) throw new Error('Solución GEA expirada. Buscá de nuevo.');
       
+      const llToken = await getLleegoToken();
+      if (!llToken) throw new Error('No se pudo autenticar con Lleego/GEA');
+      
       const sol = cached.sol;
       const searchToken = cached.searchToken;
       const assocs = sol.data?.associations || [];
       
-      // Build journey selection JSON: {"0{solId}":"{flightCode}", "1{solId}":"{flightCode}"}
-      const journeySelection = {};
-      assocs.forEach((assoc, idx) => {
+      // Build journey codes: airline + flightNum + dateYYYYMMDD
+      const journeyCodes = [];
+      for (const assoc of assocs) {
         const journeyRefs = assoc.journey_references || [];
-        const jRef = journeyRefs[0];
-        if (!jRef) return;
-        const journey = cached.journeys[jRef];
-        if (!journey) return;
+        const jRef = journeyRefs[0]; if (!jRef) continue;
+        const journey = cached.journeys[jRef]; if (!journey) continue;
         const firstSegId = (journey.segments || [])[0];
-        const seg = cached.segments[firstSegId];
-        if (!seg) return;
+        const seg = cached.segments[firstSegId]; if (!seg) continue;
         const depDate = seg.departure_date ? seg.departure_date.substring(0, 10).replace(/-/g, '') : '';
-        const flightCode = `${seg.marketing_company}${seg.transport_number}${depDate}`;
-        journeySelection[`${idx}${sol.id}`] = flightCode;
+        journeyCodes.push(`${seg.marketing_company}${seg.transport_number}${depDate}`);
+      }
+      
+      // Build travellers
+      const titleMap = { '0': 'Mr', '1': 'Mrs', 0: 'Mr', 1: 'Mrs' };
+      const travellers = pasajeros.map(p => ({
+        type: p.tipo || 'ADT',
+        title: titleMap[p.genero] || 'Mr',
+        name: (p.nombre || '').toUpperCase(),
+        surnames: [(p.apellido || '').toUpperCase()],
+        documents: []
+      }));
+      
+      // Build fees
+      const fees = pasajeros.map((p, i) => ({
+        pax_type: `${p.tipo || 'ADT'}-${i}`,
+        amount: 0
+      }));
+      
+      // Holder = contacto
+      const holder = {
+        name: (contacto.nombre || pasajeros[0]?.nombre || '').toUpperCase(),
+        surnames: [(contacto.apellido || pasajeros[0]?.apellido || '').toUpperCase()],
+        contact: {
+          mails: [contacto.email || ''],
+          phones: [{ number: contacto.telefono1 || '', type: 'M' }]
+        },
+        documents: []
+      };
+      
+      const bookBody = {
+        query: {
+          token: searchToken,
+          solutions: [{ id: sol.id, journeys: journeyCodes }],
+          travellers,
+          holder,
+          fees
+        }
+      };
+      
+      console.log('[Lleego] Booking payload:', JSON.stringify(bookBody).substring(0, 800));
+      
+      const bookRes = await fetch('https://api-tr.lleego.com/api/v2/transport/booking?locale=es-ar', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${llToken}`,
+          'Content-Type': 'application/json',
+          'x-api-key': LLEEGO_API_KEY,
+          'lang': 'es-ar'
+        },
+        body: JSON.stringify(bookBody)
       });
       
-      const selectionEncoded = encodeURIComponent(JSON.stringify(journeySelection));
-      const lleegoUrl = `https://app.lleego.com/transport/book/${sol.id}/${selectionEncoded}/${searchToken}/wpgp`;
+      const bookText = await bookRes.text();
+      console.log(`[Lleego] Booking response ${bookRes.status}:`, bookText.substring(0, 500));
       
-      console.log('[Lleego] Booking URL:', lleegoUrl);
+      if (!bookRes.ok) throw new Error(`Lleego booking error ${bookRes.status}: ${bookText.substring(0, 300)}`);
       
-      return res.json({ ok: true, lleegoUrl, fuente: 'GEA' });
+      let bookData;
+      try { bookData = JSON.parse(bookText); } catch(e) { throw new Error('Respuesta inválida'); }
+      
+      // Extract PNR - can be in multiple places
+      const pnr = bookData.locator || bookData.pnr || bookData.record_locator || 
+                   bookData.data?.locator || bookData.data?.pnr || bookData.booking?.locator ||
+                   bookData.reservations?.[0]?.locator || 'GEA-PENDING';
+      const orderId = bookData.id || bookData.booking_id || bookData.voucher_id || sol.id;
+      
+      console.log('[Lleego] Booking OK! PNR:', pnr, 'OrderId:', orderId);
+      
+      // Guardar en DB
+      if (db) {
+        try {
+          for (const p of pasajeros) {
+            const ex = await db.query('SELECT id FROM clientes WHERE doc_numero=$1', [p.docNumero]);
+            if (ex.rows.length) {
+              p._clienteId = ex.rows[0].id;
+            } else if (p.docNumero) {
+              const ins = await db.query(`INSERT INTO clientes (apellido,nombre,email,genero,
+                fecha_nac_dia,fecha_nac_mes,fecha_nac_anio,doc_tipo,doc_numero)
+                VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING id`,
+                [p.apellido,p.nombre,p.email,p.genero,p.fechaNacDia,p.fechaNacMes,p.fechaNacAnio,p.docTipo||'DNI',p.docNumero]);
+              p._clienteId = ins.rows[0].id;
+            }
+          }
+          
+          await db.query(`INSERT INTO reservas (
+            pnr,order_id,source,quotation_id,tipo_viaje,origen,destino,fecha_salida,
+            aerolinea,precio_usd,moneda,adultos,ninos,infantes,estado,
+            itinerario_json,pasajeros_json,contacto_json)
+            VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18)`,
+            [pnr, orderId, 'GEA', String(quotationId),
+             vueloInfo?.tipo, vueloInfo?.origen, vueloInfo?.destino, vueloInfo?.salida,
+             vueloInfo?.aerolinea, vueloInfo?.precioUSD, 'USD',
+             pasajeros.filter(p=>p.tipo==='ADT').length,
+             pasajeros.filter(p=>p.tipo==='CHD').length,
+             pasajeros.filter(p=>p.tipo==='INF').length,
+             'CREADA',
+             JSON.stringify(vueloInfo?.itinerario),
+             JSON.stringify(pasajeros),
+             JSON.stringify(contacto)]);
+          console.log('[DB] Reserva GEA guardada, PNR:', pnr);
+        } catch(dbErr) { console.error('[DB] Error:', dbErr.message); }
+      }
+      
+      return res.json({ ok: true, pnr, orderNumber: orderId, orderId, fuente: 'GEA' });
     } catch(e) {
-      console.error('[Lleego] Book URL error:', e.message);
+      console.error('[Lleego] Book error:', e.message);
       return res.json({ ok: false, error: e.message });
     }
   }
@@ -1721,7 +1816,38 @@ app.get('/detalle-vuelo', async (req, res) => {
     try {
       const llToken = await getLleegoToken();
       if (llToken && cached.searchToken) {
-        const policyRes = await fetch(`https://api-tr.lleego.com/api/v2/transport/policy?format=json&solutionID0=${sol.id}&token=${cached.searchToken}&locale=es-ar`, {
+        // Fetch pricing for detailed breakdown
+        try {
+          const pricingUrl = `https://api-tr.lleego.com/api/v2/transport/pricing?format=json&solutionID0=${sol.id}&token=${cached.searchToken}&locale=es-ar`;
+          const pricingRes = await fetch(pricingUrl, {
+            headers: { 'Authorization': `Bearer ${llToken}`, 'x-api-key': LLEEGO_API_KEY, 'lang': 'es-ar' }
+          });
+          if (pricingRes.ok) {
+            const pricingData = await pricingRes.json();
+            console.log('[Lleego] Pricing response:', JSON.stringify(pricingData).substring(0, 800));
+            // Update desglose from pricing if available
+            const paxBreakdown = pricingData.passengers || pricingData.pax_prices || pricingData.data?.passengers || [];
+            if (paxBreakdown.length) {
+              desglose.length = 0;
+              for (const pp of paxBreakdown) {
+                desglose.push({
+                  tipo: pp.pax_type || pp.type || 'ADT',
+                  cantidad: pp.quantity || pp.count || 1,
+                  tarifa: pp.base || pp.fare || pp.base_amount || 0,
+                  impuestos: pp.taxes || pp.tax || pp.tax_amount || 0,
+                  fee: pp.fee || 0, descuento: 0,
+                  total: pp.total || pp.total_amount || ((pp.base||0) + (pp.taxes||0)),
+                  detImpuestos: pp.tax_details || pp.taxes_detail || []
+                });
+              }
+            }
+          }
+        } catch(pricingErr) { console.log('[Lleego] Pricing error (non-fatal):', pricingErr.message); }
+
+        // Fetch conditions from policy endpoint
+        const policyUrl = `https://api-tr.lleego.com/api/v2/transport/policy?token=${cached.searchToken}&solutionID0=${sol.id}&locale=es-ar`;
+        console.log('[Lleego] Policy URL:', policyUrl);
+        const policyRes = await fetch(policyUrl, {
           headers: {
             'Authorization': `Bearer ${llToken}`,
             'x-api-key': LLEEGO_API_KEY,
@@ -1730,7 +1856,7 @@ app.get('/detalle-vuelo', async (req, res) => {
         });
         if (policyRes.ok) {
           const policyData = await policyRes.json();
-          console.log('[Lleego] Policy response:', JSON.stringify(policyData).substring(0, 500));
+          console.log('[Lleego] Policy response:', JSON.stringify(policyData).substring(0, 800));
           // Parse penalties from policy
           const policies = policyData.policies || policyData.data?.policies || policyData || [];
           const policyArr = Array.isArray(policies) ? policies : Object.values(policies);
