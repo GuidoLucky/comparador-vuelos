@@ -1528,10 +1528,6 @@ function generarPDFBuffer(opciones, vendedor, nombreCliente) {
       doc.y = lineY + 14;
     }
 
-    function dibujarFooter() {
-      // No hacer nada aquí - el footer se dibuja en dibujarFooterEnPagina()
-    }
-
     function dibujarFooterEnPagina() {
       // Guardar posición actual del cursor
       const savedY = doc.y;
@@ -1645,8 +1641,13 @@ function generarPDFBuffer(opciones, vendedor, nombreCliente) {
       }
     }
 
+    // Dibujar footer en TODAS las páginas
+    const pages = doc.bufferedPageRange();
+    for (let i = 0; i < pages.count; i++) {
+      doc.switchToPage(i);
+      dibujarFooterEnPagina();
+    }
     doc.flushPages();
-    dibujarFooter();
     doc.end();
   });
 }
