@@ -1564,6 +1564,15 @@ async function confirmarEmisionRes() {
   try {
     const resp = await fetch('/reservas/' + reservaActual.id + '/emitir', { method:'POST', headers:{'Content-Type':'application/json'} });
     const data = await resp.json(); if (!data.ok) { alert('Error: ' + data.error); return; }
+    
+    // GEA direct emission via API
+    if (data.emitida) {
+      alert('✅ Reserva ' + data.pnr + ' emitida exitosamente vía GEA');
+      verReservaDetalle(reservaActual.id); // Refresh detail
+      cargarReservas(); // Refresh list
+      return;
+    }
+    
     const plataforma = data.isGEA ? 'Lleego/GEA' : 'SCIWeb';
     if (data.sciweb_url && confirm('Emitir reserva ' + data.pnr + '\n\nSe abrirá ' + plataforma + '. Después volvé y hacé "Verificar estado".\n\n¿Abrir?')) {
       window.open(data.sciweb_url, '_blank');
