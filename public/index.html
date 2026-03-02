@@ -116,8 +116,14 @@ header{background:var(--dark2);border-bottom:1px solid var(--border);padding:14p
 @keyframes spin{to{transform:rotate(360deg);}}
 .no-results{text-align:center;padding:40px;background:var(--dark2);border:1px solid var(--border);border-radius:12px;color:var(--muted);}
 
-.btn-reservar{background:var(--gold);color:#000;border:none;border-radius:7px;font-family:'Sora',sans-serif;font-size:12px;font-weight:700;padding:8px 16px;cursor:pointer;margin-top:8px;width:100%;transition:all 0.2s;}
+.btn-reservar{background:var(--gold);color:#000;border:none;border-radius:7px;font-family:'Sora',sans-serif;font-size:12px;font-weight:700;padding:8px 16px;cursor:pointer;transition:all 0.2s;}
 .btn-reservar:hover{background:var(--gold-light);}
+
+/* Acciones debajo del vuelo */
+.vuelo-actions{display:flex;align-items:center;gap:10px;padding:0 18px 12px 18px;border-top:1px solid var(--border);padding-top:10px;margin-top:0;}
+.vuelo-actions .cotizar-check{font-size:12px;color:var(--muted);cursor:pointer;display:flex;align-items:center;gap:4px;}
+.vuelo-actions .btn-detalle{flex:0 0 auto;}
+.vuelo-actions .btn-reservar{flex:0 0 auto;margin-top:0;width:auto;padding:8px 20px;}
 
 /* MODAL */
 .modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,0.8);z-index:1000;display:flex;align-items:flex-start;justify-content:center;padding:20px;overflow-y:auto;}
@@ -156,8 +162,11 @@ header{background:var(--dark2);border-bottom:1px solid var(--border);padding:14p
 
 .btn-detalle{background:transparent;color:var(--gold);border:1px solid var(--gold);border-radius:7px;font-family:'Sora',sans-serif;font-size:12px;font-weight:600;padding:7px 14px;cursor:pointer;margin-top:6px;width:100%;transition:all 0.2s;}
 .btn-detalle:hover{background:rgba(201,168,76,0.1);}
-.detalle-panel{background:var(--dark3);border:1px solid var(--border);border-radius:10px;padding:14px;margin-top:10px;display:none;}
+.detalle-panel{background:var(--dark3);border-top:1px solid var(--border);padding:16px 18px;display:none;}
 .detalle-panel.show{display:block;}
+.detalle-grid{display:grid;grid-template-columns:1fr 1fr;gap:20px;}
+@media(max-width:768px){.detalle-grid{grid-template-columns:1fr;}}
+.detalle-section-title{font-size:10px;font-weight:700;color:var(--gold);text-transform:uppercase;letter-spacing:1px;margin-bottom:10px;}
 .detalle-row{display:flex;justify-content:space-between;align-items:center;padding:5px 0;font-size:12px;border-bottom:1px solid var(--border);}
 .detalle-row:last-child{border-bottom:none;}
 .detalle-row.total{font-weight:700;font-size:14px;color:var(--gold);padding-top:8px;}
@@ -166,6 +175,16 @@ header{background:var(--dark2);border-bottom:1px solid var(--border);padding:14p
 .detalle-venta{background:rgba(201,168,76,0.1);border:1px solid var(--gold);border-radius:8px;padding:10px;margin-top:10px;text-align:center;}
 .detalle-venta-precio{font-size:20px;font-weight:700;color:var(--gold);}
 .detalle-venta-label{font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:1px;}
+/* Condiciones table */
+.cond-table{width:100%;border-collapse:collapse;font-size:12px;}
+.cond-table tr{border-bottom:1px solid var(--border);}
+.cond-table tr:last-child{border-bottom:none;}
+.cond-table td{padding:7px 0;}
+.cond-table .cond-label{color:var(--muted);padding-right:10px;}
+.cond-table .cond-monto{text-align:right;font-weight:600;color:var(--text);padding-right:8px;white-space:nowrap;}
+.cond-badge{font-size:10px;font-weight:600;padding:2px 8px;border-radius:4px;display:inline-block;white-space:nowrap;}
+.cond-badge.permite{background:rgba(63,185,80,0.15);color:var(--green);border:1px solid rgba(63,185,80,0.3);}
+.cond-badge.no-permite{background:rgba(248,81,73,0.1);color:var(--red);border:1px solid rgba(248,81,73,0.2);}
 .markup-bar{background:var(--dark2);border:1px solid var(--border);border-radius:10px;padding:14px;margin-bottom:16px;display:flex;align-items:center;gap:12px;flex-wrap:wrap;}
 .markup-bar label{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:1px;font-weight:600;}
 .markup-bar input, .markup-bar select{background:var(--dark3);border:1px solid var(--border);border-radius:6px;color:var(--text);font-family:'Sora',sans-serif;font-size:13px;padding:6px 10px;outline:none;width:90px;}
@@ -405,14 +424,16 @@ function renderVuelo(v){
         ${pax>1?`<div class="precio-pax">≈ ${fmtPrecio(precio/pax)} por pax</div>`:''}
         ${renderEquipaje(v.equipaje)}
         <div class="precio-expira ${urgente?'urgente':''}">${expiraStr}</div>
-        <label class="cotizar-check">
-          <input type="checkbox" onchange="toggleCotizar('${v.id}','${searchIdActual}',this.checked)"> Cotizar
-        </label>
-        <button class="btn-detalle" onclick="verDetalle('${v.id}','${searchIdActual}',event)">📊 Ver precio</button>
-      <div class="detalle-panel" data-detalle="${v.id}"></div>
-        <button class="btn-reservar" onclick="abrirReserva('${v.id}','${searchIdActual}',event)">✈ Reservar</button>
       </div>
     </div>
+    <div class="vuelo-actions">
+      <label class="cotizar-check">
+        <input type="checkbox" onchange="toggleCotizar('${v.id}','${searchIdActual}',this.checked)"> Cotizar
+      </label>
+      <button class="btn-detalle" onclick="verDetalle('${v.id}','${searchIdActual}',event)">📊 Ver precio</button>
+      <button class="btn-reservar" onclick="abrirReserva('${v.id}','${searchIdActual}',event)">✈ Reservar</button>
+    </div>
+    <div class="detalle-panel" data-detalle="${v.id}"></div>
   </div>`;
 }
 
@@ -1108,18 +1129,36 @@ async function verDetalle(quotationId, searchId, e) {
         '<div class="detalle-row total"><span>Total Tucano</span><span>' + d.moneda + ' ' + p.total.toFixed(2) + '</span></div>' +
         '</div>';
     }).join('');
-    var penHTML = [];
-    if (d.penalidades && d.penalidades.cambio) penHTML.push('<span style="font-size:11px;color:var(--muted)">✏️ Cambio: ' + d.penalidades.cambio.moneda + ' ' + d.penalidades.cambio.monto + '</span>');
-    if (d.penalidades && d.penalidades.cancelacion) penHTML.push('<span style="font-size:11px;color:var(--muted)">❌ Cancelación: ' + d.penalidades.cancelacion.moneda + ' ' + d.penalidades.cancelacion.monto + '</span>');
-    if (!penHTML.length) penHTML.push('<span style="font-size:11px;color:#28a745">✅ Sin penalidades</span>');
+    // ─── CONDICIONES (tabla estilo SCIWeb) ───
+    var pen = d.penalidades || {};
+    function renderCondRow(label, data) {
+      if (!data) return '<tr><td class="cond-label">' + label + '</td><td class="cond-monto">—</td><td><span class="cond-badge no-permite">Sin info</span></td></tr>';
+      var permite = data.permite !== false;
+      var badge = permite ? '<span class="cond-badge permite">Permite</span>' : '<span class="cond-badge no-permite">No permite</span>';
+      var monto = permite && data.monto > 0 ? (data.moneda + ' ' + data.monto.toLocaleString('es-AR', {minimumFractionDigits:2})) : '';
+      return '<tr><td class="cond-label">' + label + '</td><td class="cond-monto">' + monto + '</td><td>' + badge + '</td></tr>';
+    }
+    var condHTML = '<table class="cond-table">' +
+      renderCondRow('Cambio (Antes del viaje)', pen.cambio_antes || pen.cambio) +
+      renderCondRow('Cambio (Durante el viaje)', pen.cambio_durante) +
+      renderCondRow('Devolución (Antes del viaje)', pen.devolucion_antes || pen.cancelacion) +
+      renderCondRow('Devolución (Durante el viaje)', pen.devolucion_durante) +
+      '</table>';
     panel.innerHTML =
-      '<div style="font-size:10px;color:var(--gold);font-weight:700;text-transform:uppercase;letter-spacing:1px;margin-bottom:10px">📊 Desglose de precio</div>' +
-      desgloseHTML +
-      '<div style="display:flex;gap:6px;flex-wrap:wrap;margin:8px 0">' + penHTML.join('') + '</div>' +
-      '<div class="detalle-venta">' +
-        '<div class="detalle-venta-label">Precio Tucano (neto)</div>' +
-        '<div class="detalle-venta-precio">USD ' + precioVenta.toFixed(2) + '</div>' +
-        '<div style="font-size:11px;color:var(--muted);margin-top:2px">≈ ARS ' + Math.round(precioVenta * bsp).toLocaleString('es-AR') + '</div>' +
+      '<div class="detalle-grid">' +
+        '<div>' +
+          '<div class="detalle-section-title">📊 Desglose de precio</div>' +
+          desgloseHTML +
+          '<div class="detalle-venta">' +
+            '<div class="detalle-venta-label">Precio Tucano (neto)</div>' +
+            '<div class="detalle-venta-precio">USD ' + precioVenta.toFixed(2) + '</div>' +
+            '<div style="font-size:11px;color:var(--muted);margin-top:2px">≈ ARS ' + Math.round(precioVenta * bsp).toLocaleString('es-AR') + '</div>' +
+          '</div>' +
+        '</div>' +
+        '<div>' +
+          '<div class="detalle-section-title">📋 Condiciones</div>' +
+          condHTML +
+        '</div>' +
       '</div>';
   } catch(err) {
     panel.innerHTML = '<div style="color:var(--red);font-size:12px;padding:8px">Error: ' + err.message + '</div>';
