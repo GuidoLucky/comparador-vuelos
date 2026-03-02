@@ -147,14 +147,14 @@ async function buscarLleego({ tipo, origen, destino, salida, regreso, adultos, n
     if (solCount === 0) {
       console.log(`[Lleego] Raw resp sample:`, JSON.stringify(resp).substring(0, 500));
     }
-    return procesarVuelosLleego(resp);
+    return procesarVuelosLleego(resp, { adultos: parseInt(adultos)||1, ninos: parseInt(ninos)||0, infantes: parseInt(infantes)||0 });
   } catch(e) {
     console.error('[Lleego] Search error:', e.message);
     return [];
   }
 }
 
-function procesarVuelosLleego(resp) {
+function procesarVuelosLleego(resp, paxCounts = { adultos: 1, ninos: 0, infantes: 0 }) {
   // Top-level: solutions, segments, journeys, fares
   // Under resp.data: port, currency, company, provider
   const solutions = resp.solutions || [];
@@ -174,7 +174,7 @@ function procesarVuelosLleego(resp) {
     try {
       // Cache raw solution + shared data for later use
       const searchToken = resp.token || '';
-      lleegoSolutionsCache.set(`lleego_${sol.id}`, { sol, segments, journeys, fares, companies, providers, ports, searchToken });
+      lleegoSolutionsCache.set(`lleego_${sol.id}`, { sol, segments, journeys, fares, companies, providers, ports, searchToken, paxCounts });
       
       // Log first solution structure for debugging
       if (solIdx === 0) {
@@ -1426,11 +1426,68 @@ app.post('/reservas/:id/emitir', async (req, res) => {
     const reserva = r.rows[0];
     if (!reserva.order_id) return res.json({ ok: false, error: 'Sin orderId' });
 
-    // GEA: abrir Lleego voucher
+    // GEA: try to emit via Lleego API, then open voucher
     const isGEA = (reserva.quotation_id || '').startsWith('lleego_') || (reserva.notas || '').includes('GEA');
     if (isGEA) {
-      const lleego_url = `https://app.lleego.com/transport/voucher/${reserva.order_id}`;
-      return res.json({ ok: true, sciweb_url: lleego_url, order_id: reserva.order_id, pnr: reserva.pnr, isGEA: true });
+      try {
+        const llToken = await getLleegoToken();
+        if (!llToken) throw new Error('No se pudo autenticar con Lleego');
+        
+        // Try to issue/emit via API
+        const issueBody = { locator: reserva.pnr };
+        console.log('[Lleego] Trying to issue PNR:', reserva.pnr, 'orderId:', reserva.order_id);
+        
+        const endpoints = [
+          `https://api-tr.lleego.com/api/v2/transport/issue?locale=es-ar`,
+          `https://api-tr.lleego.com/api/v2/transport/ticketing?locale=es-ar`,
+          `https://api-tr.lleego.com/api/v2/transport/emit?locale=es-ar`
+        ];
+        
+        let emitOk = false;
+        for (const ep of endpoints) {
+          try {
+            console.log(`[Lleego] Trying emit: ${ep}`);
+            const emitRes = await fetch(ep, {
+              method: 'POST',
+              headers: {
+                'Authorization': `Bearer ${llToken}`,
+                'Content-Type': 'application/json',
+                'x-api-key': LLEEGO_API_KEY,
+                'lang': 'es-ar'
+              },
+              body: JSON.stringify(issueBody)
+            });
+            const emitText = await emitRes.text();
+            console.log(`[Lleego] Emit ${ep} → ${emitRes.status}:`, emitText.substring(0, 500));
+            if (emitRes.status === 404) continue;
+            if (emitRes.ok) {
+              emitOk = true;
+              await db.query("UPDATE reservas SET estado='EMITIDA' WHERE id=$1", [reserva.id]);
+              return res.json({ ok: true, emitida: true, pnr: reserva.pnr, fuente: 'GEA' });
+            }
+          } catch(tryErr) { console.log('[Lleego] Emit try error:', tryErr.message); }
+        }
+        
+        // Fallback: fetch voucher page by locator to find correct voucher ID
+        let voucherId = reserva.order_id;
+        try {
+          const voucherSearchUrl = `https://api-tr.lleego.com/api/v2/transport/${reserva.order_id}?locator=${reserva.pnr}&locale=es-ar`;
+          const vsRes = await fetch(voucherSearchUrl, {
+            headers: { 'Authorization': `Bearer ${llToken}`, 'x-api-key': LLEEGO_API_KEY }
+          });
+          if (vsRes.ok) {
+            const vsData = await vsRes.json();
+            console.log('[Lleego] Voucher search response:', JSON.stringify(vsData).substring(0, 500));
+            voucherId = vsData.voucher_id || vsData.id || reserva.order_id;
+          }
+        } catch(e) { console.log('[Lleego] Voucher search error:', e.message); }
+        
+        const lleego_url = `https://app.lleego.com/transport/voucher/${voucherId}`;
+        return res.json({ ok: true, sciweb_url: lleego_url, order_id: reserva.order_id, pnr: reserva.pnr, isGEA: true });
+      } catch(e) {
+        console.error('[Lleego] Emit error:', e.message);
+        return res.json({ ok: false, error: e.message });
+      }
     }
 
     // Tucano: SCIWeb ticketing
@@ -1897,51 +1954,50 @@ app.get('/detalle-vuelo', async (req, res) => {
     const sol = cached.sol;
     const price = sol.total_price || {};
     
-    // Log solution structure for debugging price breakdown
-    console.log('[Lleego] Solution price keys:', Object.keys(price));
-    console.log('[Lleego] Solution data keys:', Object.keys(sol.data || {}));
-    console.log('[Lleego] Sol top keys:', Object.keys(sol));
-    if (sol.pax_prices) console.log('[Lleego] pax_prices:', JSON.stringify(sol.pax_prices).substring(0, 500));
-    if (sol.prices) console.log('[Lleego] prices:', JSON.stringify(sol.prices).substring(0, 500));
-    if (sol.data?.prices) console.log('[Lleego] data.prices:', JSON.stringify(sol.data.prices).substring(0, 500));
-    
     // Try to extract per-pax pricing from multiple possible locations
     const desglose = [];
-    const paxPrices = sol.pax_prices || sol.prices || sol.data?.prices || [];
+    const { adultos = 1, ninos = 0, infantes = 0 } = cached.paxCounts || {};
+    const totalPax = adultos + ninos + infantes;
     
-    // Check associations for per-pax price info  
-    const assocs = sol.data?.associations || [];
-    let assocPrices = [];
-    for (const assoc of assocs) {
-      if (assoc.price_detail?.passengers) assocPrices = assoc.price_detail.passengers;
-      if (assoc.passengers) assocPrices = assoc.passengers;
-      if (assoc.prices) assocPrices = assoc.prices;
-      if (assocPrices.length) break;
-    }
-    console.log('[Lleego] assocPrices:', JSON.stringify(assocPrices).substring(0, 500));
+    console.log('[Lleego] PaxCounts:', adultos, 'ADT', ninos, 'CHD', infantes, 'INF');
     
-    const priceSource = paxPrices.length ? paxPrices : assocPrices;
-    
-    if (priceSource.length) {
-      for (const pp of priceSource) {
-        desglose.push({
-          tipo: pp.pax_type || pp.type || 'ADT',
-          cantidad: pp.quantity || pp.count || 1,
-          tarifa: pp.base || pp.fare || 0,
-          impuestos: pp.taxes || pp.tax || 0,
-          fee: 0, descuento: 0,
-          total: pp.total || (pp.base||0)+(pp.taxes||0),
-          detImpuestos: []
-        });
-      }
-    } else {
-      // Fallback: single entry - but use search params to guess pax count
+    // For now, Lleego only gives total_price for all pax combined
+    // Show per-type breakdown using total / pax count as approximation
+    if (adultos > 0) {
+      // Adult fare = total / totalPax (approximation since Lleego doesn't give per-pax)
+      const adtTotal = price.total ? (price.total / totalPax) : 0;
+      const adtBase = price.base ? (price.base / totalPax) : 0;
+      const adtTax = adtTotal - adtBase;
       desglose.push({
-        tipo: 'ADT', cantidad: 1,
-        tarifa: price.base || price.fare || 0,
-        impuestos: price.taxes || price.tax || ((price.total||0) - (price.base||price.fare||0)),
+        tipo: 'ADT', cantidad: adultos,
+        tarifa: Math.round(adtBase * 100) / 100,
+        impuestos: Math.round(adtTax * 100) / 100,
         fee: 0, descuento: 0,
-        total: price.total || 0,
+        total: Math.round(adtTotal * 100) / 100,
+        detImpuestos: []
+      });
+    }
+    if (ninos > 0) {
+      const chdTotal = price.total ? (price.total / totalPax) : 0;
+      const chdBase = price.base ? (price.base / totalPax) : 0;
+      desglose.push({
+        tipo: 'CHD', cantidad: ninos,
+        tarifa: Math.round(chdBase * 100) / 100,
+        impuestos: Math.round((chdTotal - chdBase) * 100) / 100,
+        fee: 0, descuento: 0,
+        total: Math.round(chdTotal * 100) / 100,
+        detImpuestos: []
+      });
+    }
+    if (infantes > 0) {
+      const infTotal = price.total ? (price.total / totalPax) : 0;
+      const infBase = price.base ? (price.base / totalPax) : 0;
+      desglose.push({
+        tipo: 'INF', cantidad: infantes,
+        tarifa: Math.round(infBase * 100) / 100,
+        impuestos: Math.round((infTotal - infBase) * 100) / 100,
+        fee: 0, descuento: 0,
+        total: Math.round(infTotal * 100) / 100,
         detImpuestos: []
       });
     }
