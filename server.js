@@ -170,11 +170,26 @@ function procesarVuelosLleego(resp) {
     return [];
   }
 
-  return solutions.map(sol => {
+  return solutions.map((sol, solIdx) => {
     try {
       // Cache raw solution + shared data for later use
       const searchToken = resp.token || '';
       lleegoSolutionsCache.set(`lleego_${sol.id}`, { sol, segments, journeys, fares, companies, providers, ports, searchToken });
+      
+      // Log first solution structure for debugging
+      if (solIdx === 0) {
+        console.log('[Lleego] First sol keys:', Object.keys(sol));
+        console.log('[Lleego] First sol.data keys:', Object.keys(sol.data || {}));
+        console.log('[Lleego] First sol.total_price:', JSON.stringify(sol.total_price));
+        if (sol.pax_prices) console.log('[Lleego] First sol.pax_prices:', JSON.stringify(sol.pax_prices).substring(0, 500));
+        if (sol.prices) console.log('[Lleego] First sol.prices:', JSON.stringify(sol.prices).substring(0, 500));
+        const a0 = (sol.data?.associations || [])[0];
+        if (a0) {
+          console.log('[Lleego] First assoc keys:', Object.keys(a0));
+          if (a0.price_detail) console.log('[Lleego] assoc.price_detail:', JSON.stringify(a0.price_detail).substring(0, 500));
+          if (a0.prices) console.log('[Lleego] assoc.prices:', JSON.stringify(a0.prices).substring(0, 500));
+        }
+      }
       // Get associations (ida y vuelta)
       const assocs = sol.data?.associations || [];
       const itinerario = [];
@@ -1882,14 +1897,36 @@ app.get('/detalle-vuelo', async (req, res) => {
     const sol = cached.sol;
     const price = sol.total_price || {};
     
-    // Build desglose from price
+    // Log solution structure for debugging price breakdown
+    console.log('[Lleego] Solution price keys:', Object.keys(price));
+    console.log('[Lleego] Solution data keys:', Object.keys(sol.data || {}));
+    console.log('[Lleego] Sol top keys:', Object.keys(sol));
+    if (sol.pax_prices) console.log('[Lleego] pax_prices:', JSON.stringify(sol.pax_prices).substring(0, 500));
+    if (sol.prices) console.log('[Lleego] prices:', JSON.stringify(sol.prices).substring(0, 500));
+    if (sol.data?.prices) console.log('[Lleego] data.prices:', JSON.stringify(sol.data.prices).substring(0, 500));
+    
+    // Try to extract per-pax pricing from multiple possible locations
     const desglose = [];
-    const paxPrices = sol.pax_prices || [];
-    if (paxPrices.length) {
-      for (const pp of paxPrices) {
+    const paxPrices = sol.pax_prices || sol.prices || sol.data?.prices || [];
+    
+    // Check associations for per-pax price info  
+    const assocs = sol.data?.associations || [];
+    let assocPrices = [];
+    for (const assoc of assocs) {
+      if (assoc.price_detail?.passengers) assocPrices = assoc.price_detail.passengers;
+      if (assoc.passengers) assocPrices = assoc.passengers;
+      if (assoc.prices) assocPrices = assoc.prices;
+      if (assocPrices.length) break;
+    }
+    console.log('[Lleego] assocPrices:', JSON.stringify(assocPrices).substring(0, 500));
+    
+    const priceSource = paxPrices.length ? paxPrices : assocPrices;
+    
+    if (priceSource.length) {
+      for (const pp of priceSource) {
         desglose.push({
-          tipo: pp.pax_type || 'ADT',
-          cantidad: pp.quantity || 1,
+          tipo: pp.pax_type || pp.type || 'ADT',
+          cantidad: pp.quantity || pp.count || 1,
           tarifa: pp.base || pp.fare || 0,
           impuestos: pp.taxes || pp.tax || 0,
           fee: 0, descuento: 0,
@@ -1898,6 +1935,7 @@ app.get('/detalle-vuelo', async (req, res) => {
         });
       }
     } else {
+      // Fallback: single entry - but use search params to guess pax count
       desglose.push({
         tipo: 'ADT', cantidad: 1,
         tarifa: price.base || price.fare || 0,
@@ -1922,9 +1960,15 @@ app.get('/detalle-vuelo', async (req, res) => {
           });
           if (pricingRes.ok) {
             const pricingData = await pricingRes.json();
-            console.log('[Lleego] Pricing response:', JSON.stringify(pricingData).substring(0, 800));
-            // Update desglose from pricing if available
-            const paxBreakdown = pricingData.passengers || pricingData.pax_prices || pricingData.data?.passengers || [];
+            console.log('[Lleego] Pricing response keys:', Object.keys(pricingData));
+            console.log('[Lleego] Pricing full:', JSON.stringify(pricingData).substring(0, 2000));
+            // Update desglose from pricing if available - try many paths
+            const paxBreakdown = pricingData.passengers || pricingData.pax_prices || 
+                                  pricingData.data?.passengers || pricingData.data?.pax_prices ||
+                                  pricingData.prices || pricingData.data?.prices ||
+                                  pricingData.solutions?.[0]?.pax_prices || 
+                                  pricingData.solutions?.[0]?.prices || [];
+            console.log('[Lleego] Pricing paxBreakdown count:', paxBreakdown.length);
             if (paxBreakdown.length) {
               desglose.length = 0;
               for (const pp of paxBreakdown) {
