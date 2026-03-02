@@ -969,17 +969,24 @@ app.post('/reservas/:id/pdf', async (req, res) => {
 
     // Usar storedFaresInformation de la API para desglose por tipo de pasajero
     if (fareInfo && fareInfo.length) {
+      // Si hay neto guardado en DB (con comisiones descontadas), ajustar proporcionalmente
+      const fareTotal = fareInfo.reduce((s, f) => s + f.neto, 0);
+      const dbTotal = reserva.precio_usd || 0;
+      const scale = (dbTotal > 0 && fareTotal > 0) ? dbTotal / fareTotal : 1;
+      if (scale !== 1) console.log(`[PDF] Ajustando netos: fareTotal=${fareTotal}, dbTotal=${dbTotal}, scale=${scale.toFixed(4)}`);
+      
       // Agrupar por tipo de pasajero
       const grouped = {};
       for (const f of fareInfo) {
         const tipo = tipoLabels[f.passengerDiscountType] || 'adulto';
+        const netoAjustado = f.neto * scale;
         if (!grouped[tipo]) {
-          grouped[tipo] = { tipo, cantidad: 0, neto: f.neto, tipo_tarifa: f.tipo_tarifa, comision_over: f.comision_over };
+          grouped[tipo] = { tipo, cantidad: 0, neto: netoAjustado, tipo_tarifa: f.tipo_tarifa, comision_over: f.comision_over };
         }
         grouped[tipo].cantidad++;
       }
       preciosVenta = Object.values(grouped);
-      console.log('[PDF] Usando fareInfo API:', JSON.stringify(preciosVenta));
+      console.log('[PDF] Usando fareInfo API (ajustado):', JSON.stringify(preciosVenta));
     } else if (reserva.precio_usd) {
       // Fallback: usar DB neto total (sin desglose por tipo)
       preciosVenta = [{
