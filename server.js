@@ -1,13 +1,224 @@
 const express = require('express');
 const path = require('path');
+const crypto = require('crypto');
 const app = express();
 app.use(express.json());
+
+// ─── AUTH: Sessions ───
+const sessions = new Map(); // token → { userId, nombre, usuario, rol, expiry }
+const COOKIE_NAME = 'lt_session';
+const SESSION_TTL = 24 * 60 * 60 * 1000; // 24h
+
+function hashPassword(password, salt) {
+  salt = salt || crypto.randomBytes(16).toString('hex');
+  const hash = crypto.pbkdf2Sync(password, salt, 10000, 64, 'sha512').toString('hex');
+  return { salt, hash };
+}
+
+function verifyPassword(password, salt, storedHash) {
+  const { hash } = hashPassword(password, salt);
+  return hash === storedHash;
+}
+
+function createSession(user) {
+  const token = crypto.randomBytes(32).toString('hex');
+  sessions.set(token, { userId: user.id, nombre: user.nombre, usuario: user.usuario, rol: user.rol, expiry: Date.now() + SESSION_TTL });
+  return token;
+}
+
+function parseCookies(req) {
+  const cookies = {};
+  (req.headers.cookie || '').split(';').forEach(c => {
+    const [k, v] = c.trim().split('=');
+    if (k) cookies[k] = v;
+  });
+  return cookies;
+}
+
+// Auth middleware
+function authMiddleware(req, res, next) {
+  // Skip auth for login routes and static assets
+  if (req.path === '/login' || req.path === '/login.html' || req.path === '/api/login' || req.path === '/api/logout') {
+    return next();
+  }
+  // Allow static files (css, js, images, fonts)
+  if (/\.(css|js|png|jpg|svg|ico|woff|ttf|eot)$/i.test(req.path)) return next();
+  
+  const cookies = parseCookies(req);
+  const token = cookies[COOKIE_NAME];
+  if (token && sessions.has(token)) {
+    const session = sessions.get(token);
+    if (Date.now() < session.expiry) {
+      req.user = session;
+      return next();
+    }
+    sessions.delete(token);
+  }
+  // Not authenticated
+  if (req.path.startsWith('/api/') || req.headers.accept?.includes('json')) {
+    return res.status(401).json({ ok: false, error: 'No autenticado' });
+  }
+  return res.redirect('/login.html');
+}
+
+// Serve login page (before auth middleware)
+app.get('/login.html', (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'login.html'));
+});
+app.get('/login', (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'login.html'));
+});
+
+app.use(authMiddleware);
 app.use(express.static('public'));
 
 // Ruta explícita para reservas.html (fallback si static no lo encuentra)
 app.get('/reservas.html', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'reservas.html'));
 });
+
+// ─── AUTH ENDPOINTS ───
+app.post('/api/login', async (req, res) => {
+  const { usuario, password } = req.body;
+  if (!usuario || !password) return res.json({ ok: false, error: 'Usuario y contraseña requeridos' });
+  if (!db) return res.json({ ok: false, error: 'DB no disponible' });
+  try {
+    const r = await db.query('SELECT * FROM usuarios WHERE usuario=$1 AND activo=true', [usuario]);
+    if (!r.rows.length) return res.json({ ok: false, error: 'Usuario o contraseña incorrectos' });
+    const user = r.rows[0];
+    if (!verifyPassword(password, user.password_salt, user.password_hash)) {
+      return res.json({ ok: false, error: 'Usuario o contraseña incorrectos' });
+    }
+    const token = createSession(user);
+    res.setHeader('Set-Cookie', `${COOKIE_NAME}=${token}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${SESSION_TTL/1000}`);
+    res.json({ ok: true, nombre: user.nombre, rol: user.rol });
+  } catch(e) { res.json({ ok: false, error: e.message }); }
+});
+
+app.post('/api/logout', (req, res) => {
+  const cookies = parseCookies(req);
+  const token = cookies[COOKIE_NAME];
+  if (token) sessions.delete(token);
+  res.setHeader('Set-Cookie', `${COOKIE_NAME}=; Path=/; HttpOnly; Max-Age=0`);
+  res.json({ ok: true });
+});
+
+app.get('/api/me', (req, res) => {
+  if (!req.user) return res.status(401).json({ ok: false });
+  res.json({ ok: true, nombre: req.user.nombre, usuario: req.user.usuario, rol: req.user.rol });
+});
+
+// ─── ADMIN: Gestión de usuarios ───
+app.get('/api/usuarios', async (req, res) => {
+  if (req.user?.rol !== 'admin') return res.status(403).json({ ok: false, error: 'Sin permisos' });
+  try {
+    const r = await db.query(`SELECT u.id, u.nombre, u.usuario, u.rol, u.activo, u.created_at,
+      json_agg(json_build_object('proveedor', uc.proveedor, 'cred_user', uc.cred_user, 'activo', uc.activo)) FILTER (WHERE uc.id IS NOT NULL) as credenciales
+      FROM usuarios u LEFT JOIN usuario_credenciales uc ON uc.usuario_id = u.id
+      GROUP BY u.id ORDER BY u.id`);
+    res.json({ ok: true, usuarios: r.rows });
+  } catch(e) { res.json({ ok: false, error: e.message }); }
+});
+
+app.post('/api/usuarios', async (req, res) => {
+  if (req.user?.rol !== 'admin') return res.status(403).json({ ok: false, error: 'Sin permisos' });
+  const { nombre, usuario, password, rol } = req.body;
+  if (!nombre || !usuario || !password) return res.json({ ok: false, error: 'Nombre, usuario y contraseña requeridos' });
+  try {
+    const { salt, hash } = hashPassword(password);
+    const r = await db.query(`INSERT INTO usuarios (nombre, usuario, password_hash, password_salt, rol) VALUES ($1,$2,$3,$4,$5) RETURNING id`,
+      [nombre, usuario, hash, salt, rol || 'vendedor']);
+    res.json({ ok: true, id: r.rows[0].id });
+  } catch(e) {
+    if (e.message.includes('unique')) return res.json({ ok: false, error: 'El usuario ya existe' });
+    res.json({ ok: false, error: e.message });
+  }
+});
+
+app.put('/api/usuarios/:id', async (req, res) => {
+  if (req.user?.rol !== 'admin') return res.status(403).json({ ok: false, error: 'Sin permisos' });
+  const { nombre, password, rol, activo } = req.body;
+  try {
+    if (password) {
+      const { salt, hash } = hashPassword(password);
+      await db.query('UPDATE usuarios SET nombre=COALESCE($1,nombre), password_hash=$2, password_salt=$3, rol=COALESCE($4,rol), activo=COALESCE($5,activo) WHERE id=$6',
+        [nombre, hash, salt, rol, activo, req.params.id]);
+    } else {
+      await db.query('UPDATE usuarios SET nombre=COALESCE($1,nombre), rol=COALESCE($2,rol), activo=COALESCE($3,activo) WHERE id=$4',
+        [nombre, rol, activo, req.params.id]);
+    }
+    res.json({ ok: true });
+  } catch(e) { res.json({ ok: false, error: e.message }); }
+});
+
+// ─── ADMIN: Credenciales por proveedor ───
+app.post('/api/usuarios/:id/credenciales', async (req, res) => {
+  if (req.user?.rol !== 'admin') return res.status(403).json({ ok: false, error: 'Sin permisos' });
+  const { proveedor, cred_user, cred_pass, cred_extra } = req.body;
+  try {
+    await db.query(`INSERT INTO usuario_credenciales (usuario_id, proveedor, cred_user, cred_pass, cred_extra)
+      VALUES ($1,$2,$3,$4,$5) ON CONFLICT (usuario_id, proveedor) DO UPDATE SET cred_user=$3, cred_pass=$4, cred_extra=$5, activo=true`,
+      [req.params.id, proveedor, cred_user, cred_pass, JSON.stringify(cred_extra || {})]);
+    res.json({ ok: true });
+  } catch(e) { res.json({ ok: false, error: e.message }); }
+});
+
+// ─── Per-user credential helpers ───
+async function getUserCredentials(userId, proveedor) {
+  if (!db) return null;
+  const r = await db.query('SELECT * FROM usuario_credenciales WHERE usuario_id=$1 AND proveedor=$2 AND activo=true', [userId, proveedor]);
+  return r.rows[0] || null;
+}
+
+// Per-user token caches
+const userTokenCaches = {}; // userId → { tucano: {token, expiry}, gea: {token, expiry} }
+
+async function getUserTucanoToken(userId) {
+  const cache = userTokenCaches[userId]?.tucano;
+  if (cache?.token && Date.now() < cache.expiry) return cache.token;
+  
+  const cred = await getUserCredentials(userId, 'tucano');
+  if (!cred) return await getToken(); // Fallback to global
+  
+  const body = new URLSearchParams({ mode:'pass', username: cred.cred_user, password: cred.cred_pass, channel:'GWC', defaultWholesalerId: WHOLESALER_ID });
+  const res = await fetch(`${API_BASE}/Account/token`, {
+    method:'POST',
+    headers:{ 'Content-Type':'application/x-www-form-urlencoded', 'Origin':'https://sciweb.tucanotours.com.ar', 'Referer':'https://sciweb.tucanotours.com.ar/' },
+    body: body.toString()
+  });
+  const data = await res.json();
+  const token = data.access_token || data.token || data.Token || data.AccessToken;
+  if (!token) throw new Error('Token Tucano inválido');
+  
+  if (!userTokenCaches[userId]) userTokenCaches[userId] = {};
+  userTokenCaches[userId].tucano = { token, expiry: Date.now() + 50*60*1000 };
+  return token;
+}
+
+async function getUserLleegoToken(userId) {
+  const cache = userTokenCaches[userId]?.gea;
+  if (cache?.token && Date.now() < cache.expiry) return cache.token;
+  
+  const cred = await getUserCredentials(userId, 'gea');
+  if (!cred) return await getLleegoToken(); // Fallback to global
+  
+  const extra = typeof cred.cred_extra === 'string' ? JSON.parse(cred.cred_extra) : (cred.cred_extra || {});
+  const agent = extra.agent || 'GFinkelstein';
+  
+  const authRes = await fetch('https://api-tr.lleego.com/api/v2/auth/login?locale=es-ar', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'x-api-key': LLEEGO_API_KEY },
+    body: JSON.stringify({ username: cred.cred_user, password: cred.cred_pass, agent })
+  });
+  if (!authRes.ok) return await getLleegoToken(); // Fallback
+  const authData = await authRes.json();
+  const token = authData.token;
+  if (!token) return await getLleegoToken();
+  
+  if (!userTokenCaches[userId]) userTokenCaches[userId] = {};
+  userTokenCaches[userId].gea = { token, expiry: Date.now() + 50*60*1000 };
+  return token;
+}
 
 const PORT = process.env.PORT || 3000;
 const SCIWEB_USER = process.env.SCIWEB_USER;
@@ -19,7 +230,7 @@ const WHOLESALER_ID = '538';
 // DB
 const db = require('./db');
 
-// Migración: agregar columnas faltantes
+// Migración: agregar columnas faltantes + tablas de usuarios
 if (db) {
   (async () => {
     try {
@@ -28,6 +239,50 @@ if (db) {
       await db.query(`ALTER TABLE reservas ADD COLUMN IF NOT EXISTS vendedor TEXT`);
       await db.query(`ALTER TABLE reservas ADD COLUMN IF NOT EXISTS precio_venta_usd NUMERIC`);
       await db.query(`ALTER TABLE reservas ADD COLUMN IF NOT EXISTS emision_data JSONB`);
+      await db.query(`ALTER TABLE reservas ADD COLUMN IF NOT EXISTS usuario_id INTEGER`);
+      
+      // Tabla de usuarios
+      await db.query(`CREATE TABLE IF NOT EXISTS usuarios (
+        id SERIAL PRIMARY KEY,
+        nombre TEXT NOT NULL,
+        usuario TEXT UNIQUE NOT NULL,
+        password_hash TEXT NOT NULL,
+        password_salt TEXT NOT NULL,
+        rol TEXT DEFAULT 'vendedor',
+        activo BOOLEAN DEFAULT true,
+        created_at TIMESTAMPTZ DEFAULT NOW()
+      )`);
+      
+      // Tabla de credenciales por proveedor
+      await db.query(`CREATE TABLE IF NOT EXISTS usuario_credenciales (
+        id SERIAL PRIMARY KEY,
+        usuario_id INTEGER REFERENCES usuarios(id),
+        proveedor TEXT NOT NULL,
+        cred_user TEXT,
+        cred_pass TEXT,
+        cred_extra JSONB DEFAULT '{}',
+        activo BOOLEAN DEFAULT true,
+        UNIQUE(usuario_id, proveedor)
+      )`);
+      
+      // Crear admin por defecto si no existe
+      const adminExists = await db.query("SELECT id FROM usuarios WHERE usuario='guido'");
+      if (!adminExists.rows.length) {
+        const { salt, hash } = hashPassword('admin123');
+        await db.query(`INSERT INTO usuarios (nombre, usuario, password_hash, password_salt, rol) VALUES ($1,$2,$3,$4,$5)`,
+          ['Guido Finkelstein', 'guido', hash, salt, 'admin']);
+        console.log('[DB] Usuario admin creado: guido / admin123');
+        
+        // Vincular credenciales actuales al admin
+        const adminUser = await db.query("SELECT id FROM usuarios WHERE usuario='guido'");
+        const adminId = adminUser.rows[0].id;
+        await db.query(`INSERT INTO usuario_credenciales (usuario_id, proveedor, cred_user, cred_pass, cred_extra) VALUES 
+          ($1, 'tucano', $2, $3, '{}'),
+          ($1, 'gea', $4, $5, $6)
+          ON CONFLICT DO NOTHING`,
+          [adminId, SCIWEB_USER, SCIWEB_PASS, LLEEGO_EMAIL, LLEEGO_PASS, JSON.stringify({ agent: LLEEGO_AGENT })]);
+      }
+      
       console.log('[DB] Migración OK');
     } catch(e) { console.warn('[DB] Migración:', e.message); }
   })();
@@ -756,8 +1011,8 @@ app.post('/crear-reserva', async (req, res) => {
           await db.query(`INSERT INTO reservas (
             pnr,order_id,quotation_id,tipo_viaje,origen,destino,fecha_salida,
             aerolinea,precio_usd,moneda,adultos,ninos,infantes,estado,
-            itinerario_json,pasajeros_json,contacto_json,notas)
-            VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18)`,
+            itinerario_json,pasajeros_json,contacto_json,notas,usuario_id,vendedor)
+            VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20)`,
             [pnr, orderId, String(quotationId),
              vueloInfo?.tipo, vueloInfo?.origen, vueloInfo?.destino, vueloInfo?.salida,
              vueloInfo?.aerolinea, vueloInfo?.precioUSD, 'USD',
@@ -768,7 +1023,9 @@ app.post('/crear-reserva', async (req, res) => {
              JSON.stringify(vueloInfo?.itinerario),
              JSON.stringify(pasajeros),
              JSON.stringify(contacto),
-             'Reserva GEA/Lleego']);
+             'Reserva GEA/Lleego',
+             req.user?.userId || null,
+             req.user?.nombre || null]);
           console.log('[DB] Reserva GEA guardada, PNR:', pnr);
         } catch(dbErr) { console.error('[DB] Error:', dbErr.message); }
       }
@@ -907,8 +1164,8 @@ app.post('/crear-reserva', async (req, res) => {
           pnr,order_id,order_number,source,search_id,quotation_id,
           tipo_viaje,origen,destino,fecha_salida,
           aerolinea,precio_usd,moneda,adultos,ninos,infantes,estado,
-          itinerario_json,pasajeros_json,contacto_json)
-          VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20)
+          itinerario_json,pasajeros_json,contacto_json,usuario_id,vendedor)
+          VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22)
           RETURNING id`,
           [data.recordLocator, data.orderId, data.orderNumber, data.source,
            searchId, String(quotationId),
@@ -920,7 +1177,9 @@ app.post('/crear-reserva', async (req, res) => {
            'CREADA',
            JSON.stringify(vueloInfo?.itinerario),
            JSON.stringify(pasajeros),
-           JSON.stringify(contacto)]);
+           JSON.stringify(contacto),
+           req.user?.userId || null,
+           req.user?.nombre || null]);
 
         for (const p of pasajeros) {
           if (p._clienteId) {
@@ -970,6 +1229,11 @@ app.get('/reservas', async (req, res) => {
     let sql = 'SELECT * FROM reservas';
     const params = [];
     const where = [];
+    // Vendedores solo ven sus reservas, admin ve todas
+    if (req.user && req.user.rol !== 'admin') {
+      params.push(req.user.userId);
+      where.push(`usuario_id=$${params.length}`);
+    }
     if (estado && estado !== 'TODAS') {
       params.push(estado);
       where.push(`estado=$${params.length}`);
