@@ -120,7 +120,7 @@ header{background:var(--dark2);border-bottom:1px solid var(--border);padding:14p
 .btn-reservar:hover{background:var(--gold-light);}
 
 /* Acciones debajo del vuelo */
-.vuelo-actions{display:flex;align-items:center;gap:10px;padding:0 18px 12px 18px;border-top:1px solid var(--border);padding-top:10px;margin-top:0;}
+.vuelo-actions{display:flex;align-items:center;justify-content:center;gap:10px;padding:0 18px 12px 18px;border-top:1px solid var(--border);padding-top:10px;margin-top:0;}
 .vuelo-actions .cotizar-check{font-size:12px;color:var(--muted);cursor:pointer;display:flex;align-items:center;gap:4px;}
 .vuelo-actions .btn-detalle{flex:0 0 auto;}
 .vuelo-actions .btn-reservar{flex:0 0 auto;margin-top:0;width:auto;padding:8px 20px;}
@@ -1135,7 +1135,7 @@ async function verDetalle(quotationId, searchId, e) {
       if (!data) return '<tr><td class="cond-label">' + label + '</td><td class="cond-monto">—</td><td><span class="cond-badge no-permite">Sin info</span></td></tr>';
       var permite = data.permite !== false;
       var badge = permite ? '<span class="cond-badge permite">Permite</span>' : '<span class="cond-badge no-permite">No permite</span>';
-      var monto = permite && data.monto > 0 ? (data.moneda + ' ' + data.monto.toLocaleString('es-AR', {minimumFractionDigits:2})) : '';
+      var monto = permite ? (data.moneda + ' ' + (data.monto || 0).toLocaleString('es-AR', {minimumFractionDigits:2})) : '';
       return '<tr><td class="cond-label">' + label + '</td><td class="cond-monto">' + monto + '</td><td>' + badge + '</td></tr>';
     }
     var condHTML = '<table class="cond-table">' +
