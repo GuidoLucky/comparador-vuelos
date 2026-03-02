@@ -573,23 +573,17 @@ app.post('/reservas/:id/verificar', async (req, res) => {
     console.log(`[Verificar] ticketsInformation raw:`, JSON.stringify(data.ticketsInformation || []).substring(0, 500));
     console.log(`[Verificar] passengersInformation tickets:`, JSON.stringify((data.passengersInformation || []).map(p => ({ name: p.lastName, tickets: p.tickets }))).substring(0, 500));
 
-    // Tickets emitidos - buscar con múltiples criterios
+    // Tickets - mapear estados
+    // E = Emitido activo, A = Anulado/VOID, R = Reembolsado, V = Void
     const tickets = (data.ticketsInformation || []).map(t => ({
       numero: t.number,
       carrier: t.validatigCarrierNumericCode || t.validatingCarrierNumericCode,
       status: t.status,
       statusDesc: t.statusDescription || t.statusName || null
     }));
-    // "E" = emitido, pero también considerar status numérico u otros valores
-    const ticketsEmitidos = tickets.filter(t => 
-      t.status === 'E' || t.status === 'Emitido' || t.status === 1 || t.status === '1' || t.status === 'ISSUED'
-    );
-    console.log(`[Verificar] Tickets procesados:`, JSON.stringify(tickets));
-    console.log(`[Verificar] Tickets emitidos: ${ticketsEmitidos.length}`);
-
-    // También chequear orderState: ciertos valores indican emisión
-    // orderState: 0=created, 1=ticketed, 2=cancelled, etc.
-    const emitidoPorOrderState = orderState === 1 || orderState === 'Ticketed';
+    const ticketsEmitidos = tickets.filter(t => t.status === 'E' || t.status === 'Emitido' || t.status === 'ISSUED');
+    const ticketsVoid = tickets.filter(t => t.status === 'A' || t.status === 'V' || t.status === 'VOID');
+    console.log(`[Verificar] Tickets: total=${tickets.length} emitidos=${ticketsEmitidos.length} void=${ticketsVoid.length}`, JSON.stringify(tickets));
 
     // Estado de vuelos
     const vuelos = (data.flightsInformation || []).map(f => ({
@@ -611,14 +605,18 @@ app.post('/reservas/:id/verificar', async (req, res) => {
     let apiEstado = null;
     if (vuelosCancelados.length === vuelos.length && vuelos.length > 0) {
       apiEstado = 'CANCELADA';
-    } else if (ticketsEmitidos.length > 0 || emitidoPorOrderState) {
+    } else if (ticketsEmitidos.length > 0) {
+      // Hay tickets activos emitidos
       apiEstado = 'EMITIDA';
+    } else if (ticketsVoid.length > 0 && ticketsEmitidos.length === 0) {
+      // Todos los tickets fueron voideados → cancelada
+      apiEstado = 'CANCELADA';
     } else if (vuelos.some(v => v.status === 'OK' || v.status === 'HK')) {
       apiEstado = 'CREADA';
     } else {
       apiEstado = 'CREADA';
     }
-    console.log(`[Verificar] Estado determinado: ${apiEstado} (orderState=${orderState}, ticketsEmitidos=${ticketsEmitidos.length}, emitidoPorOS=${emitidoPorOrderState})`);
+    console.log(`[Verificar] Estado: ${apiEstado} (orderState=${orderState}, emitidos=${ticketsEmitidos.length}, void=${ticketsVoid.length})`);
 
     // Actualizar en DB si cambió
     let estadoActualizado = false;
@@ -627,7 +625,7 @@ app.post('/reservas/:id/verificar', async (req, res) => {
       estadoActualizado = true;
     }
 
-    // Si se detectó emisión, guardar datos completos
+    // Si se detectó emisión activa, guardar datos
     if (apiEstado === 'EMITIDA' && !reserva.emision_data) {
       const emisionData = {
         tickets: ticketsEmitidos,
@@ -637,7 +635,6 @@ app.post('/reservas/:id/verificar', async (req, res) => {
         orderState
       };
       await db.query('UPDATE reservas SET emision_data=$1 WHERE id=$2', [JSON.stringify(emisionData), req.params.id]);
-      console.log('[Verificar] Datos de emisión guardados');
     }
 
     res.json({
@@ -649,6 +646,7 @@ app.post('/reservas/:id/verificar', async (req, res) => {
       orderState,
       timeLimit,
       tickets: ticketsEmitidos.map(t => `${t.carrier}-${t.numero}`),
+      ticketsVoid: ticketsVoid.map(t => `${t.carrier}-${t.numero} (VOID)`),
       allTickets: tickets,
       vuelos,
       pasajeros
