@@ -194,6 +194,63 @@ header{background:var(--dark2);border-bottom:1px solid var(--border);padding:14p
 /* VISTA RESERVAS */
 .reservas-view{display:none;padding:20px;}
 .reservas-view.show{display:block;}
+/* Reservas stats */
+.res-stats{display:flex;gap:12px;flex-wrap:wrap;}
+.res-stat{background:var(--dark2);border:1px solid var(--border);border-radius:10px;padding:12px 18px;flex:1;min-width:120px;}
+.res-stat .num{font-size:24px;font-weight:700;}
+.res-stat .lbl{font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:0.5px;}
+.res-stat.creada .num{color:#e67e22;}
+.res-stat.emitida .num{color:#2ecc71;}
+.res-stat.cancelada .num{color:#e74c3c;}
+/* Reservas table dark */
+.res-table{width:100%;border-collapse:collapse;font-size:13px;}
+.res-table th{text-align:left;padding:10px 12px;font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:1px;border-bottom:2px solid var(--border);font-weight:600;}
+.res-table td{padding:10px 12px;border-bottom:1px solid var(--border);vertical-align:middle;}
+.res-table tr{cursor:pointer;transition:background 0.15s;}
+.res-table tr:hover td{background:rgba(255,255,255,0.03);}
+.res-pnr{font-family:'SF Mono',Consolas,monospace;font-weight:700;color:var(--gold);font-size:14px;}
+.res-fecha{font-size:11px;color:var(--muted);}
+.res-ruta{font-weight:600;}
+.res-precio{font-weight:700;}
+.badge-res{display:inline-block;padding:3px 10px;border-radius:20px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.3px;}
+.badge-CREADA{background:rgba(230,126,34,0.15);color:#e67e22;}
+.badge-EMITIDA{background:rgba(46,204,113,0.15);color:#2ecc71;}
+.badge-CANCELADA{background:rgba(231,76,60,0.15);color:#e74c3c;}
+/* Modal detail dark */
+.det-section{margin-bottom:18px;}
+.det-section h3{font-size:11px;text-transform:uppercase;letter-spacing:0.5px;color:var(--muted);margin-bottom:8px;}
+.det-grid{display:grid;grid-template-columns:repeat(auto-fit, minmax(160px, 1fr));gap:10px;}
+.det-item .lbl{font-size:10px;color:var(--muted);text-transform:uppercase;}
+.det-item .val{font-size:14px;font-weight:600;margin-top:2px;}
+.itin-seg{padding:10px 14px;background:var(--dark2);border-radius:8px;margin-bottom:6px;display:flex;align-items:center;gap:12px;border:1px solid var(--border);}
+.itin-seg .idate{font-weight:700;min-width:55px;font-size:12px;color:var(--gold);}
+.itin-seg .iroute{flex:1;}
+.itin-seg .iroute .cities{font-weight:600;font-size:13px;}
+.itin-seg .iroute .fnum{font-size:11px;color:var(--muted);}
+.itin-seg .itimes{font-size:12px;color:var(--muted);white-space:nowrap;}
+.pax-row-det{padding:8px 14px;background:var(--dark2);border-radius:8px;margin-bottom:5px;display:flex;justify-content:space-between;align-items:center;border:1px solid var(--border);}
+.pax-row-det .pname{font-weight:600;font-size:13px;}
+.pax-row-det .ptype{font-size:11px;color:var(--muted);}
+.pax-row-det .pdoc{font-size:12px;color:var(--muted);}
+/* Action buttons dark */
+.btn-act{padding:7px 14px;border:none;border-radius:7px;font-size:12px;font-weight:600;cursor:pointer;font-family:'Sora',sans-serif;transition:opacity 0.2s;}
+.btn-act:hover{opacity:0.85;}
+.btn-act-primary{background:var(--gold);color:#000;}
+.btn-act-outline{background:none;border:1px solid var(--border);color:var(--muted);}
+.btn-act-success{background:#27ae60;color:#fff;}
+.btn-act-danger{background:#e74c3c;color:#fff;}
+.btn-act-blue{background:#1565c0;color:#fff;}
+/* Recotizar/PDF panel dark */
+.recot-panel{background:var(--dark2);border:1px solid var(--border);border-radius:10px;padding:14px;margin-top:14px;}
+.recot-panel h4{font-size:13px;margin-bottom:10px;color:var(--gold);}
+.recot-opts{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:10px;}
+.recot-opts label{font-size:10px;color:var(--muted);text-transform:uppercase;}
+.recot-opts select,.recot-opts input{padding:6px 10px;background:var(--dark3);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:12px;font-family:'Sora',sans-serif;outline:none;}
+.tarifa-card-d{background:var(--dark3);border:1px solid var(--border);border-radius:8px;padding:10px;margin-bottom:8px;}
+.tarifa-card-d .th{font-weight:700;margin-bottom:6px;font-size:13px;}
+.tarifa-card-d .tr{display:flex;justify-content:space-between;font-size:12px;padding:2px 0;}
+.tarifa-card-d .tr.total{font-weight:700;font-size:14px;border-top:1px solid var(--border);padding-top:6px;margin-top:4px;}
+.notas-dark{width:100%;padding:8px;background:var(--dark2);border:1px solid var(--border);border-radius:8px;color:var(--text);font-size:13px;font-family:'Sora',sans-serif;resize:vertical;min-height:50px;outline:none;}
 .nav-tabs{display:flex;gap:6px;margin-bottom:20px;}
 .nav-tab{background:var(--dark2);border:1px solid var(--border);border-radius:8px;color:var(--muted);font-family:'Sora',sans-serif;font-size:13px;font-weight:600;padding:8px 18px;cursor:pointer;transition:all 0.2s;}
 .nav-tab.active{border-color:var(--gold);color:var(--gold);background:rgba(201,168,76,0.1);}
@@ -619,15 +676,6 @@ async function buscar(){
 document.addEventListener('keydown',e=>{if(e.key==='Enter')buscar();});
 </script>
 
-<!-- VISTA RESERVAS -->
-<div id="vistaReservas" class="reservas-view" style="max-width:1100px;margin:0 auto;">
-  <h2 style="font-size:20px;font-weight:700;margin-bottom:6px;">📋 Mis Reservas</h2>
-  <p style="font-size:13px;color:var(--muted);margin-bottom:20px;">Todas las reservas creadas desde el comparador</p>
-  <div id="reservasTabla" style="overflow-x:auto;">
-    <div class="estado"><div class="spinner"></div></div>
-  </div>
-</div>
-
 <!-- MARKUP BAR (se muestra en búsqueda) -->
 <div id="markupBar" class="markup-bar" style="max-width:1100px;margin:0 auto 0;display:none;">
   <label>💰 Tu markup:</label>
@@ -639,34 +687,41 @@ document.addEventListener('keydown',e=>{if(e.key==='Enter')buscar();});
   <span id="markupInfo" style="font-size:12px;color:var(--muted);"></span>
 </div>
 
-<!-- VISTA RESERVAS -->
+<!-- VISTA RESERVAS (completa) -->
 <div id="vistaReservas" style="display:none;max-width:1100px;margin:0 auto;padding:20px 0;">
-  <h2 style="font-size:20px;font-weight:700;margin-bottom:6px;">📋 Mis Reservas</h2>
-  <p style="font-size:13px;color:var(--muted);margin-bottom:20px;">Todas las reservas creadas desde el comparador</p>
+  <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;flex-wrap:wrap;gap:10px;">
+    <h2 style="font-size:20px;font-weight:700;">📋 Mis Reservas</h2>
+    <button onclick="cargarReservas()" style="background:none;border:1px solid var(--border);color:var(--muted);border-radius:6px;padding:6px 14px;font-size:12px;cursor:pointer;font-family:'Sora',sans-serif;">🔄 Actualizar</button>
+  </div>
+  <!-- Stats -->
+  <div id="reservasStats" style="display:flex;gap:12px;margin-bottom:16px;flex-wrap:wrap;"></div>
+  <!-- Filtros -->
+  <div style="display:flex;gap:10px;margin-bottom:16px;flex-wrap:wrap;">
+    <input type="text" id="searchInput" placeholder="🔍 Buscar PNR, pasajero, ruta..." style="flex:1;min-width:200px;padding:8px 12px;background:var(--dark2);border:1px solid var(--border);border-radius:8px;color:var(--text);font-family:'Sora',sans-serif;font-size:13px;outline:none;">
+    <select id="filterEstado" style="padding:8px 12px;background:var(--dark2);border:1px solid var(--border);border-radius:8px;color:var(--text);font-family:'Sora',sans-serif;font-size:13px;outline:none;">
+      <option value="TODAS">Todas</option>
+      <option value="CREADA">Creadas</option>
+      <option value="EMITIDA">Emitidas</option>
+      <option value="CANCELADA">Canceladas</option>
+    </select>
+  </div>
+  <!-- Tabla -->
   <div id="reservasTabla" style="overflow-x:auto;"></div>
 </div>
 
-<!-- MARKUP BAR -->
-<div id="markupBar" class="markup-bar" style="max-width:1100px;margin:0 auto 16px;display:none;">
-  <label>💰 Tu markup:</label>
-  <select id="markupTipo" onchange="guardarMarkup()">
-    <option value="porcentaje">%</option>
-    <option value="fijo">USD fijo</option>
-  </select>
-  <input type="number" id="markupValor" value="0" min="0" step="0.5" oninput="guardarMarkup()" style="width:80px;">
-  <span id="markupInfo" style="font-size:12px;color:var(--muted);"></span>
+<!-- MODAL DETALLE RESERVA -->
+<div id="modalOverlay" class="modal-overlay" style="display:none" onclick="if(event.target===this)cerrarModalRes()">
+  <div class="modal" style="max-width:700px;">
+    <div style="padding:16px 20px;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center;">
+      <h2 id="modalTitle" style="font-size:16px;font-weight:700;">Detalle de Reserva</h2>
+      <button class="modal-close" onclick="cerrarModalRes()">✕</button>
+    </div>
+    <div id="modalBody" style="padding:20px;max-height:70vh;overflow-y:auto;"></div>
+    <div id="modalActions" style="display:flex;gap:8px;padding:12px 20px;border-top:1px solid var(--border);flex-wrap:wrap;"></div>
+  </div>
 </div>
 
-<!-- VISTA RESERVAS -->
-<div id="vistaReservas" style="display:none;max-width:1100px;margin:0 auto;padding:20px 0;">
-  <h2 style="font-size:20px;font-weight:700;margin-bottom:6px;">📋 Mis Reservas</h2>
-  <p style="font-size:13px;color:var(--muted);margin-bottom:20px;">Todas las reservas creadas desde el comparador</p>
-  <div id="reservasTabla" style="overflow-x:auto;"></div>
-</div>
-
-
-
-<!-- MODAL DE RESERVA -->
+<!-- MODAL DE RESERVA (crear reserva desde búsqueda) -->
 <div id="modalReserva" class="modal-overlay" style="display:none">
   <div class="modal">
     <button class="modal-close" onclick="cerrarModal()">✕</button>
@@ -1151,14 +1206,20 @@ function mostrarVista(vista, btn) {
   var searchCard = document.querySelector('.search-card');
   var resultados = document.getElementById('resultados');
   var vistaReservas = document.getElementById('vistaReservas');
+  var markupBar = document.getElementById('markupBar');
+  var cotizarBar = document.getElementById('cotizarBar');
   if (vista === 'buscar') {
     if (searchCard) searchCard.style.display = '';
     if (resultados) resultados.style.display = '';
     vistaReservas.style.display = 'none';
+    if (markupBar) markupBar.style.display = '';
+    if (cotizarBar) cotizarBar.style.display = '';
   } else {
     if (searchCard) searchCard.style.display = 'none';
     if (resultados) resultados.style.display = 'none';
     vistaReservas.style.display = 'block';
+    if (markupBar) markupBar.style.display = 'none';
+    if (cotizarBar) cotizarBar.style.display = 'none';
     cargarReservas();
   }
 }
@@ -1237,33 +1298,274 @@ async function verDetalle(quotationId, searchId, e) {
   }
 }
 
+let reservasData = [];
+let reservaActual = null;
+
 async function cargarReservas() {
   const cont = document.getElementById('reservasTabla');
   cont.innerHTML = '<div class="estado"><div class="spinner"></div><p>Cargando reservas...</p></div>';
+  const estado = document.getElementById('filterEstado')?.value || 'TODAS';
+  const q = document.getElementById('searchInput')?.value?.trim() || '';
+  const params = new URLSearchParams();
+  if (estado !== 'TODAS') params.set('estado', estado);
+  if (q) params.set('q', q);
   try {
-    const reservas = await fetch('/reservas').then(r=>r.json());
-    if (!reservas.length) { cont.innerHTML = '<div class="no-results">📋 No hay reservas todavía</div>'; return; }
-    const rows = reservas.map(r => {
-      const pasajeros = (() => { try { return JSON.parse(r.pasajeros_json||'[]'); } catch(e){ return []; } })();
-      const paxStr = pasajeros.map(p => `${p.apellido}, ${p.nombre}`).join(' · ') || '—';
-      const fecha = r.created_at ? new Date(r.created_at).toLocaleDateString('es-AR') : '—';
-      const estado = r.estado || 'CREADA';
-      const badgeClass = estado==='EMITIDA'?'badge-emitida':estado==='CANCELADA'?'badge-cancelada':'badge-creada';
-      const precio = r.precio_usd ? `USD ${parseFloat(r.precio_usd).toFixed(2)}` : '—';
-      const ruta = [r.origen, r.destino].filter(Boolean).join(' → ') || '—';
-      return `<tr>
-        <td><span class="pnr-code">${r.pnr||'—'}</span></td>
-        <td>${fecha}</td>
-        <td style="font-size:12px">${r.aerolinea||'—'} · ${ruta}</td>
-        <td style="font-size:11px;max-width:180px">${paxStr}</td>
-        <td>${precio}</td>
-        <td><span class="badge ${badgeClass}">${estado}</span></td>
-        <td><button onclick="verDetalleReserva(${r.id})" style="background:none;border:1px solid var(--border);color:var(--muted);border-radius:5px;padding:4px 10px;font-size:11px;cursor:pointer;font-family:'Sora',sans-serif">Ver</button></td>
-      </tr>`;
-    }).join('');
-    cont.innerHTML = `<table class="reservas-table"><thead><tr><th>PNR</th><th>Fecha</th><th>Vuelo</th><th>Pasajeros</th><th>Precio</th><th>Estado</th><th></th></tr></thead><tbody>${rows}</tbody></table>`;
-  } catch(e) { cont.innerHTML = `<div class="no-results">Error: ${e.message}</div>`; }
+    reservasData = await fetch('/reservas?' + params).then(r=>r.json());
+    renderReservasStats();
+    renderReservasTabla();
+  } catch(e) { cont.innerHTML = '<div class="no-results">Error: ' + e.message + '</div>'; }
 }
+
+function renderReservasStats() {
+  const counts = { CREADA:0, EMITIDA:0, CANCELADA:0 };
+  reservasData.forEach(r => { if (counts[r.estado] !== undefined) counts[r.estado]++; });
+  document.getElementById('reservasStats').innerHTML =
+    '<div class="res-stat creada"><div class="num">' + counts.CREADA + '</div><div class="lbl">Creadas</div></div>' +
+    '<div class="res-stat emitida"><div class="num">' + counts.EMITIDA + '</div><div class="lbl">Emitidas</div></div>' +
+    '<div class="res-stat cancelada"><div class="num">' + counts.CANCELADA + '</div><div class="lbl">Canceladas</div></div>';
+}
+
+function renderReservasTabla() {
+  const cont = document.getElementById('reservasTabla');
+  if (!reservasData.length) { cont.innerHTML = '<div class="no-results">📭 No hay reservas</div>'; return; }
+  const rows = reservasData.map(r => {
+    const paxDetail = [];
+    if (r.adultos) paxDetail.push(r.adultos + ' ADT');
+    if (r.ninos) paxDetail.push(r.ninos + ' CHD');
+    if (r.infantes) paxDetail.push(r.infantes + ' INF');
+    const fecha = r.fecha_salida ? new Date(r.fecha_salida).toLocaleDateString('es-AR', { day:'2-digit', month:'short' }) : '-';
+    const creado = r.created_at ? new Date(r.created_at).toLocaleDateString('es-AR', { day:'2-digit', month:'short', hour:'2-digit', minute:'2-digit' }) : '';
+    return '<tr onclick="verDetalleReserva(' + r.id + ')">' +
+      '<td><span class="res-pnr">' + (r.pnr||'-') + '</span><br><span class="res-fecha">' + creado + '</span></td>' +
+      '<td><span class="res-ruta">' + (r.origen||'?') + ' → ' + (r.destino||'?') + '</span></td>' +
+      '<td style="color:var(--muted)">' + (r.aerolinea||'-') + '</td>' +
+      '<td class="res-fecha">' + fecha + '</td>' +
+      '<td>' + (paxDetail.join(', ')||'-') + '</td>' +
+      '<td class="res-precio">USD ' + (r.precio_usd||0).toLocaleString('es-AR',{minimumFractionDigits:0}) + '</td>' +
+      '<td><span class="badge-res badge-' + r.estado + '">' + r.estado + '</span></td>' +
+    '</tr>';
+  }).join('');
+  cont.innerHTML = '<table class="res-table"><thead><tr><th>PNR</th><th>Ruta</th><th>Aerolínea</th><th>Fecha</th><th>Pax</th><th>Precio</th><th>Estado</th></tr></thead><tbody>' + rows + '</tbody></table>';
+}
+
+async function verDetalleReserva(id) {
+  document.getElementById('modalOverlay').style.display = 'flex';
+  document.getElementById('modalBody').innerHTML = '<div style="text-align:center;padding:20px;color:var(--muted)"><div class="spinner"></div><p>Cargando...</p></div>';
+  document.getElementById('modalActions').innerHTML = '';
+  try {
+    const res = await fetch('/reservas/' + id);
+    const data = await res.json();
+    if (!data.ok) throw new Error(data.error);
+    reservaActual = data.reserva;
+    const r = data.reserva;
+    document.getElementById('modalTitle').textContent = 'Reserva ' + (r.pnr || '#' + r.id);
+
+    // Itinerario
+    let itinHtml = '';
+    try {
+      const itin = typeof r.itinerario_json === 'string' ? JSON.parse(r.itinerario_json) : r.itinerario_json;
+      if (Array.isArray(itin)) {
+        itinHtml = itin.map(s => {
+          const salida = s.salida || s.departureDateTime || '';
+          const llegada = s.llegada || s.arrivalDateTime || '';
+          const fecha = s.fecha || (salida.includes('T') ? new Date(salida).toLocaleDateString('es-AR',{day:'2-digit',month:'short'}) : '');
+          const hSal = salida.includes('T') ? new Date(salida).toLocaleTimeString('es-AR',{hour:'2-digit',minute:'2-digit'}) : salida;
+          const hLleg = llegada.includes('T') ? new Date(llegada).toLocaleTimeString('es-AR',{hour:'2-digit',minute:'2-digit'}) : llegada;
+          return '<div class="itin-seg"><div class="idate">' + fecha + '</div><div class="iroute"><div class="cities">' + (s.origen||s.departureAirport||'') + ' → ' + (s.destino||s.arrivalAirport||'') + '</div><div class="fnum">' + (s.numero_vuelo||s.flightNumber||'') + '</div></div><div class="itimes">' + hSal + ' → ' + hLleg + '</div></div>';
+        }).join('');
+      }
+    } catch(e) {}
+
+    // Pasajeros
+    let paxHtml = '';
+    const paxList = r.pasajeros_detalle || [];
+    if (paxList.length) {
+      paxHtml = paxList.map(p => '<div class="pax-row-det"><div><span class="pname">' + (p.apellido||'') + ', ' + (p.nombre||'') + '</span> <span class="ptype">(' + (p.tipo==='ADT'?'Adulto':p.tipo==='CHD'?'Menor':'Bebé') + ')</span></div><span class="pdoc">' + (p.doc_tipo||'') + ' ' + (p.doc_numero||'') + '</span></div>').join('');
+    } else {
+      try {
+        const pj = typeof r.pasajeros_json === 'string' ? JSON.parse(r.pasajeros_json) : r.pasajeros_json;
+        if (Array.isArray(pj)) paxHtml = pj.map(p => '<div class="pax-row-det"><div><span class="pname">' + (p.apellido||'') + ', ' + (p.nombre||'') + '</span> <span class="ptype">(' + (p.tipo==='ADT'?'Adulto':p.tipo==='CHD'?'Menor':'Bebé') + ')</span></div><span class="pdoc">' + (p.docTipo||'') + ' ' + (p.docNumero||'') + '</span></div>').join('');
+      } catch(e) {}
+    }
+
+    // Contacto
+    let contactoHtml = '';
+    try { const c = typeof r.contacto_json === 'string' ? JSON.parse(r.contacto_json) : r.contacto_json; if (c) contactoHtml = (c.nombre||'') + ' ' + (c.apellido||'') + ' · ' + (c.email||'') + ' · ' + (c.telefono1||''); } catch(e) {}
+
+    const creado = r.created_at ? new Date(r.created_at).toLocaleString('es-AR') : '-';
+
+    // Tickets
+    let ticketsHtml = '';
+    if (r.estado === 'EMITIDA' || r.emision_data) {
+      let ed = null;
+      try { ed = typeof r.emision_data === 'string' ? JSON.parse(r.emision_data) : r.emision_data; } catch(e) {}
+      if (ed && ed.tickets && ed.tickets.length) {
+        ticketsHtml = '<div class="det-section"><h3>🎫 Tickets</h3>' + ed.tickets.map(t => '<span style="display:inline-block;background:rgba(46,204,113,0.15);padding:5px 12px;border-radius:6px;margin:3px;font-family:monospace;font-size:12px;border:1px solid rgba(46,204,113,0.3);color:#2ecc71;">🎫 ' + (t.carrier||'') + '-' + (t.numero||t.number||'') + '</span>').join('') + (ed.emitidoEn ? '<p style="font-size:10px;color:var(--muted);margin-top:6px;">Emitido: ' + new Date(ed.emitidoEn).toLocaleString('es-AR') + '</p>' : '') + '</div>';
+      } else if (r.estado === 'EMITIDA') {
+        ticketsHtml = '<div class="det-section"><h3>🎫 Tickets</h3><p style="color:var(--muted);font-size:11px;">Sin datos. Hacé click en "Verificar estado" para sincronizar.</p></div>';
+      }
+    }
+
+    document.getElementById('modalBody').innerHTML =
+      '<div class="det-section"><h3>Información general</h3><div class="det-grid">' +
+      '<div class="det-item"><div class="lbl">PNR</div><div class="val" style="color:var(--gold)">' + (r.pnr||'-') + '</div></div>' +
+      '<div class="det-item"><div class="lbl">Order</div><div class="val">' + (r.order_id ? '<a href="https://sciweb.tucanotours.com.ar/FlightOrders/Details/' + r.order_id + '" target="_blank" style="color:#42a5f5;text-decoration:none;">' + (r.order_number||r.order_id.substring(0,8)) + ' 🔗</a>' : (r.order_number||'-')) + '</div></div>' +
+      '<div class="det-item"><div class="lbl">Estado</div><div class="val"><span class="badge-res badge-' + r.estado + '">' + r.estado + '</span></div></div>' +
+      '<div class="det-item"><div class="lbl">Aerolínea</div><div class="val">' + (r.aerolinea||'-') + '</div></div>' +
+      '<div class="det-item"><div class="lbl">Precio neto</div><div class="val">USD ' + (r.precio_usd||0).toLocaleString('es-AR') + '</div></div>' +
+      '<div class="det-item"><div class="lbl">Creada</div><div class="val">' + creado + '</div></div>' +
+      '</div></div>' +
+      (itinHtml ? '<div class="det-section"><h3>✈ Itinerario</h3>' + itinHtml + '</div>' : '') +
+      (paxHtml ? '<div class="det-section"><h3>👥 Pasajeros</h3>' + paxHtml + '</div>' : '') +
+      (contactoHtml ? '<div class="det-section"><h3>📞 Contacto</h3><p style="color:var(--muted);font-size:13px;">' + contactoHtml + '</p></div>' : '') +
+      ticketsHtml +
+      '<div class="det-section"><h3>📝 Notas</h3><textarea class="notas-dark" id="notasArea" placeholder="Agregar notas...">' + (r.notas||'') + '</textarea></div>';
+
+    // Actions
+    let act = '<button class="btn-act btn-act-primary" onclick="verificarEstadoRes()">🔍 Verificar estado</button>';
+    act += '<button class="btn-act btn-act-outline" onclick="guardarNotasRes()">💾 Notas</button>';
+    act += '<button class="btn-act btn-act-outline" onclick="mostrarPdfOptsRes()">📄 PDF</button>';
+    if (r.estado === 'CREADA') {
+      act += '<button class="btn-act btn-act-success" onclick="mostrarRecotizarRes()">💲 Recotizar</button>';
+      act += '<button class="btn-act btn-act-blue" onclick="confirmarEmisionRes()">✈️ Emitir</button>';
+      act += '<button class="btn-act btn-act-success" onclick="cambiarEstadoRes(\'EMITIDA\')">✅ Emitida</button>';
+      act += '<button class="btn-act btn-act-danger" onclick="cambiarEstadoRes(\'CANCELADA\')">❌ Cancelar</button>';
+    } else if (r.estado === 'EMITIDA') {
+      act += '<button class="btn-act btn-act-danger" onclick="cambiarEstadoRes(\'CANCELADA\')">❌ Cancelar</button>';
+    }
+    document.getElementById('modalActions').innerHTML = act;
+  } catch(e) {
+    document.getElementById('modalBody').innerHTML = '<div class="no-results">Error: ' + e.message + '</div>';
+  }
+}
+
+function cerrarModalRes() { document.getElementById('modalOverlay').style.display = 'none'; reservaActual = null; }
+
+function mostrarPdfOptsRes() {
+  if (document.getElementById('pdfPanel')) { document.getElementById('pdfPanel').remove(); return; }
+  const panel = document.createElement('div'); panel.id = 'pdfPanel'; panel.className = 'recot-panel';
+  panel.innerHTML = '<h4>📄 Generar PDF</h4><div class="recot-opts"><div><label>Vendedor</label><select id="pdfVendedor"><option value="guido">Guido Finkelstein</option><option value="julieta">Julieta Zubeldia</option><option value="ruthy">Ruthy Tuchsznajder</option></select></div><div><label>&nbsp;</label><button class="btn-act btn-act-primary" onclick="generarPdfRes()" id="btnPdfRes" style="width:100%">📄 Descargar</button></div></div>';
+  document.getElementById('modalBody').appendChild(panel);
+}
+
+async function generarPdfRes() {
+  if (!reservaActual) return;
+  const btn = document.getElementById('btnPdfRes'); btn.textContent = '⏳...'; btn.disabled = true;
+  try {
+    const res = await fetch('/reservas/' + reservaActual.id + '/pdf', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({vendedor:document.getElementById('pdfVendedor').value}) });
+    if (!res.ok) throw new Error((await res.json()).error);
+    const blob = await res.blob(); const url = URL.createObjectURL(blob);
+    const a = document.createElement('a'); a.href = url; a.download = 'Reserva_' + reservaActual.pnr + '.pdf'; a.click(); URL.revokeObjectURL(url);
+  } catch(e) { alert('Error: ' + e.message); } finally { btn.textContent = '📄 Descargar'; btn.disabled = false; }
+}
+
+function mostrarRecotizarRes() {
+  if (document.getElementById('recotPanel')) { document.getElementById('recotPanel').remove(); return; }
+  const panel = document.createElement('div'); panel.id = 'recotPanel'; panel.className = 'recot-panel';
+  panel.innerHTML = '<h4>💲 Recotizar reserva</h4><div class="recot-opts"><div><label>Moneda</label><select id="recotMoneda"><option value="">Auto</option><option value="USD">USD</option><option value="ARS">ARS</option></select></div><div><label>Tipo tarifa</label><select id="recotFareType"><option value="0">No forzar</option><option value="1">Públicas</option><option value="2">Privadas</option></select></div><div><label>Validadora</label><input type="text" id="recotCarrier" placeholder="Ej: UX, AR..." maxlength="3"></div><div><label>Nacionalidad</label><input type="text" id="recotNationality" placeholder="Ej: ARG" maxlength="3"></div></div><button class="btn-act btn-act-primary" onclick="ejecutarRecotizarRes()" id="btnRecot">📊 Obtener tarifa actual</button><div id="recotResult"></div>';
+  document.getElementById('modalBody').appendChild(panel);
+}
+
+async function ejecutarRecotizarRes() {
+  if (!reservaActual) return;
+  const btn = document.getElementById('btnRecot'); const rd = document.getElementById('recotResult');
+  btn.textContent = '⏳ Consultando...'; btn.disabled = true; rd.innerHTML = '';
+  try {
+    const opts = { moneda:document.getElementById('recotMoneda').value||null, fareType:parseInt(document.getElementById('recotFareType').value)||0, overrideCarrier:document.getElementById('recotCarrier').value||null, nationality:document.getElementById('recotNationality').value||null };
+    const res = await fetch('/reservas/' + reservaActual.id + '/recotizar', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(opts) });
+    const data = await res.json(); if (!data.ok) throw new Error(data.error);
+    if (data.tarifas && data.tarifas.length) {
+      let html = ''; let grandTotal = 0; let grandNeto = 0;
+      data.tarifas.forEach(t => {
+        grandTotal += t.total;
+        const comMonto = (t.comisionObtenida?.valueApplied||0) + (t.comisionCedida?.valueApplied||0);
+        const overMonto = t.overComision?.ceded?.valueApplied || t.overComision?.obtained?.valueApplied || t.overComision?.valueApplied || t.overComision?.amount || 0;
+        const neto = t.total + (t.fee||0) - comMonto - overMonto; grandNeto += neto;
+        html += '<div class="tarifa-card-d"><div class="th">' + t.tipo + ' × 1</div>' +
+          '<div class="tr"><span>Tarifa base</span><span>' + t.monedaBase + ' ' + t.tarifaBase.toFixed(2) + '</span></div>' +
+          '<div class="tr"><span>Impuestos</span><span>' + t.monedaImpuestos + ' ' + t.impuestos.toFixed(2) + '</span></div>' +
+          (t.fee ? '<div class="tr"><span>Fee</span><span>' + t.monedaFee + ' ' + t.fee.toFixed(2) + '</span></div>' : '') +
+          (comMonto ? '<div class="tr" style="color:#2ecc71"><span>Comisión</span><span>-' + t.monedaTotal + ' ' + comMonto.toFixed(2) + '</span></div>' : '') +
+          (overMonto ? '<div class="tr" style="color:#2ecc71"><span>Over</span><span>-' + t.monedaTotal + ' ' + overMonto.toFixed(2) + '</span></div>' : '') +
+          '<div class="tr total"><span>NETO</span><span>' + t.monedaTotal + ' ' + neto.toFixed(2) + '</span></div></div>';
+      });
+      const mon = data.tarifas[0]?.monedaTotal || 'USD';
+      html += '<div class="tarifa-card-d" style="border-color:var(--gold)"><div class="tr total"><span>TOTAL NETO</span><span style="color:var(--gold)">' + mon + ' ' + grandNeto.toFixed(2) + '</span></div></div>';
+      if (data.pricingId) {
+        window._lastPricing = { pricingId:data.pricingId, segmentIds:data.segmentIds, netoTotal:grandNeto, moneda:mon };
+        html += '<button class="btn-act btn-act-success" onclick="guardarTarifaRes()" style="margin-top:8px">💾 Guardar tarifa</button>';
+      }
+      rd.innerHTML = html;
+    } else { rd.innerHTML = '<p style="color:var(--muted);font-size:12px">Sin tarifas disponibles</p>'; }
+  } catch(e) { rd.innerHTML = '<p style="color:#e74c3c;font-size:12px">' + e.message + '</p>'; } finally { btn.textContent = '📊 Obtener tarifa actual'; btn.disabled = false; }
+}
+
+async function guardarTarifaRes() {
+  if (!reservaActual || !window._lastPricing) return;
+  if (!confirm('¿Guardar esta tarifa?')) return;
+  try {
+    const res = await fetch('/reservas/' + reservaActual.id + '/guardar-tarifa', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(window._lastPricing) });
+    const data = await res.json(); if (!data.ok) throw new Error(data.error);
+    alert('✅ ' + data.mensaje); cerrarModalRes(); cargarReservas();
+  } catch(e) { alert('Error: ' + e.message); }
+}
+
+async function verificarEstadoRes() {
+  if (!reservaActual) return;
+  try {
+    const res = await fetch('/reservas/' + reservaActual.id + '/verificar', { method:'POST', headers:{'Content-Type':'application/json'} });
+    const data = await res.json(); if (!data.ok) throw new Error(data.error);
+    let msg = 'PNR: ' + data.pnr + '\n';
+    if (data.estadoActualizado) msg += '\n⚡ ESTADO: ' + data.estadoAnterior + ' → ' + data.estadoAPI + '\n';
+    else msg += '\n✅ Estado: ' + data.estadoAPI + ' (sin cambios)\n';
+    if (data.timeLimit) { const tl = new Date(data.timeLimit); msg += '\n⏰ Límite: ' + tl.toLocaleDateString('es-AR') + ' ' + tl.toLocaleTimeString('es-AR',{hour:'2-digit',minute:'2-digit'}) + '\n'; }
+    if (data.tickets?.length) { msg += '\n🎫 Tickets:\n'; data.tickets.forEach(t => msg += '   ' + t + '\n'); }
+    if (data.vuelos?.length) { msg += '\n✈️ Vuelos:\n'; data.vuelos.forEach(v => msg += '   ' + v.vuelo + ' ' + v.ruta + ' [' + v.status + ']\n'); }
+    if (data.mensaje) msg += '\nℹ️ ' + data.mensaje;
+    alert(msg);
+    if (data.estadoActualizado) { cerrarModalRes(); cargarReservas(); }
+  } catch(e) { alert('Error: ' + e.message); }
+}
+
+async function cambiarEstadoRes(estado) {
+  if (!reservaActual) return;
+  if (!confirm('¿Marcar como ' + estado.toLowerCase() + '?')) return;
+  try {
+    const res = await fetch('/reservas/' + reservaActual.id + '/estado', { method:'PUT', headers:{'Content-Type':'application/json'}, body:JSON.stringify({estado}) });
+    const data = await res.json(); if (data.ok) { cerrarModalRes(); cargarReservas(); } else alert('Error: ' + data.error);
+  } catch(e) { alert('Error: ' + e.message); }
+}
+
+async function guardarNotasRes() {
+  if (!reservaActual) return;
+  try {
+    const res = await fetch('/reservas/' + reservaActual.id + '/notas', { method:'PUT', headers:{'Content-Type':'application/json'}, body:JSON.stringify({notas:document.getElementById('notasArea').value}) });
+    if ((await res.json()).ok) alert('✅ Notas guardadas');
+  } catch(e) { alert('Error: ' + e.message); }
+}
+
+async function confirmarEmisionRes() {
+  if (!reservaActual || reservaActual.estado !== 'CREADA') return;
+  try {
+    const resp = await fetch('/reservas/' + reservaActual.id + '/emitir', { method:'POST', headers:{'Content-Type':'application/json'} });
+    const data = await resp.json(); if (!data.ok) { alert('Error: ' + data.error); return; }
+    if (data.sciweb_url && confirm('Emitir reserva ' + data.pnr + '\n\nSe abrirá SCIWeb. Después volvé y hacé "Verificar estado".\n\n¿Abrir?')) {
+      window.open(data.sciweb_url, '_blank');
+      const reminder = document.createElement('div');
+      reminder.style.cssText = 'margin-top:14px;padding:14px;background:rgba(21,101,192,0.15);border:1px solid rgba(21,101,192,0.3);border-radius:10px;text-align:center;';
+      reminder.innerHTML = '<p style="font-size:13px;color:#42a5f5;">✈️ SCIWeb abierto — después de emitir:</p><button class="btn-act btn-act-primary" onclick="verificarEstadoRes()" style="margin-top:6px">🔄 Verificar estado</button>';
+      document.getElementById('modalBody').appendChild(reminder);
+    }
+  } catch(e) { alert('Error: ' + e.message); }
+}
+
+// Filtros con debounce
+let searchTimerRes;
+document.getElementById('searchInput')?.addEventListener('input', () => { clearTimeout(searchTimerRes); searchTimerRes = setTimeout(cargarReservas, 400); });
+document.getElementById('filterEstado')?.addEventListener('change', cargarReservas);
+
+// Cerrar modal con Escape
+document.addEventListener('keydown', e => { if (e.key === 'Escape') { cerrarModalRes(); cerrarModal(); } });
 
 // ─── COTIZACIÓN ───
 let vuelosCotizar = []; // [{quotationId, searchId}]
@@ -1336,7 +1638,7 @@ async function generarCotizacion() {
   }
 }
 
-function verDetalleReserva(id) { alert('Detalle de reserva #' + id + ' — próximamente'); }
+// (verDetalleReserva is defined above with full functionality)
 
 cargarMarkup();
 
