@@ -1137,7 +1137,7 @@ async function confirmarReserva(searchId, quotationId) {
   const v = vueloSeleccionado;
   const vueloInfo = {
     tipo: 'vuelo', origen: v.itinerario[0]?.origen, destino: v.itinerario[v.itinerario.length-1]?.destino,
-    salida: v.itinerario[0]?.salida, aerolinea: v.aerolinea,
+    salida: v.itinerario[0]?.salida, aerolinea: v.aerolineaDesc || v.aerolinea,
     precioUSD: v.precioUSD, moneda: 'USD', itinerario: v.itinerario
   };
 
