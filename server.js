@@ -41,6 +41,10 @@ const LLEEGO_PASS = process.env.LLEEGO_PASS || 't7pmgrxr0V';
 const LLEEGO_AGENT = process.env.LLEEGO_AGENT || 'GFinkelstein';
 const LLEEGO_API_KEY = 'RD7dLSjYqT18InSheQfKLvpANUzNVvEG';
 let lleegoTokenCache = { token: null, expiry: 0 };
+// Cache de soluciones Lleego para Ver precio / Reservar
+const lleegoSolutionsCache = new Map(); // key: lleego_SOLID → raw solution data
+// Limpiar cache cada 30 min (las soluciones expiran)
+setInterval(() => { if (lleegoSolutionsCache.size > 500) lleegoSolutionsCache.clear(); }, 30*60*1000);
 
 async function getLleegoToken() {
   if (lleegoTokenCache.token && Date.now() < lleegoTokenCache.expiry) return lleegoTokenCache.token;
@@ -168,6 +172,8 @@ function procesarVuelosLleego(resp) {
 
   return solutions.map(sol => {
     try {
+      // Cache raw solution + shared data for later use
+      lleegoSolutionsCache.set(`lleego_${sol.id}`, { sol, segments, journeys, fares, companies, providers, ports });
       // Get associations (ida y vuelta)
       const assocs = sol.data?.associations || [];
       const itinerario = [];
@@ -510,6 +516,12 @@ function procesarVuelos(data, stopsFilter) {
 // Verificar disponibilidad
 app.post('/check-availability', async (req, res) => {
   const { searchId, quotationId } = req.body;
+  
+  // GEA: no availability check needed, solution is valid from search
+  if (String(quotationId).startsWith('lleego_')) {
+    return res.json({ ok: true, hasDifferences: false });
+  }
+  
   try {
     const token = await getToken();
     const r = await fetch(`${API_BASE}/FlightItinerary/CheckAvailabilityRemake`, {
@@ -548,6 +560,121 @@ app.get('/document-countries', async (req, res) => {
 // Crear reserva
 app.post('/crear-reserva', async (req, res) => {
   const { searchId, quotationId, pasajeros, contacto, vueloInfo } = req.body;
+  
+  // ─── GEA / Lleego booking ───
+  if (String(quotationId).startsWith('lleego_')) {
+    try {
+      const cached = lleegoSolutionsCache.get(quotationId);
+      if (!cached) throw new Error('Solución GEA expirada. Buscá de nuevo.');
+      
+      const llToken = await getLleegoToken();
+      if (!llToken) throw new Error('No se pudo autenticar con Lleego/GEA');
+      
+      const sol = cached.sol;
+      
+      // Build passengers for Lleego
+      const llPax = pasajeros.map(p => {
+        const genderMap = { '0': 'M', '1': 'F', 0: 'M', 1: 'F' };
+        return {
+          name: p.nombre?.toUpperCase() || '',
+          surname: p.apellido?.toUpperCase() || '',
+          gender: genderMap[p.genero] || 'M',
+          date_of_birth: `${p.fechaNacAnio}-${String(p.fechaNacMes).padStart(2,'0')}-${String(p.fechaNacDia).padStart(2,'0')}`,
+          type: p.tipo === 'ADT' ? 'adult' : p.tipo === 'CHD' ? 'child' : 'infant',
+          document: {
+            type: 'PASSPORT',
+            number: p.docNumero || '',
+            expiry_date: p.docVencAnio ? `${p.docVencAnio}-${String(p.docVencMes).padStart(2,'0')}-${String(p.docVencDia).padStart(2,'0')}` : null,
+            nationality: 'AR'
+          }
+        };
+      });
+      
+      const bookBody = {
+        solution_id: sol.id,
+        source_id: sol.source_id,
+        passengers: llPax,
+        contact: {
+          email: contacto.email || '',
+          phone: contacto.telefono1 || ''
+        }
+      };
+      
+      console.log('[Lleego] Book request:', JSON.stringify(bookBody).substring(0, 500));
+      
+      const bookRes = await fetch('https://api-tr.lleego.com/api/v2/transport/book?locale=es-ar', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${llToken}`,
+          'Content-Type': 'application/json',
+          'x-api-key': LLEEGO_API_KEY,
+          'lang': 'es-ar'
+        },
+        body: JSON.stringify(bookBody)
+      });
+      
+      const bookText = await bookRes.text();
+      console.log(`[Lleego] Book response ${bookRes.status}:`, bookText.substring(0, 500));
+      
+      let bookData;
+      try { bookData = JSON.parse(bookText); } catch(e) { throw new Error('Respuesta inválida de Lleego: ' + bookText.substring(0, 200)); }
+      
+      if (!bookRes.ok) {
+        throw new Error(`Lleego booking error ${bookRes.status}: ${bookData.message || bookData.error || bookText.substring(0, 200)}`);
+      }
+      
+      // Extract PNR from response
+      const pnr = bookData.pnr || bookData.record_locator || bookData.locator || bookData.data?.pnr || bookData.data?.record_locator || 'GEA-' + sol.id.substring(0, 8);
+      const orderId = bookData.order_id || bookData.id || sol.id;
+      
+      // Guardar en DB
+      if (db) {
+        try {
+          for (const p of pasajeros) {
+            const ex = await db.query('SELECT id FROM clientes WHERE doc_numero=$1 AND doc_tipo=$2', [p.docNumero, p.docTipo||'DNI']);
+            if (ex.rows.length) {
+              p._clienteId = ex.rows[0].id;
+            } else {
+              const ins = await db.query(`INSERT INTO clientes (apellido,nombre,email,genero,
+                fecha_nac_dia,fecha_nac_mes,fecha_nac_anio,doc_tipo,doc_numero,nacionalidad)
+                VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) RETURNING id`,
+                [p.apellido,p.nombre,p.email,p.genero,p.fechaNacDia,p.fechaNacMes,p.fechaNacAnio,p.docTipo||'DNI',p.docNumero,'AR']);
+              p._clienteId = ins.rows[0].id;
+            }
+          }
+          
+          const resIns = await db.query(`INSERT INTO reservas (
+            pnr,order_id,order_number,source,search_id,quotation_id,
+            tipo_viaje,origen,destino,fecha_salida,
+            aerolinea,precio_usd,moneda,adultos,ninos,infantes,estado,
+            itinerario_json,pasajeros_json,contacto_json)
+            VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20)
+            RETURNING id`,
+            [pnr, orderId, null, 'GEA',
+             null, String(quotationId),
+             vueloInfo?.tipo, vueloInfo?.origen, vueloInfo?.destino, vueloInfo?.salida,
+             vueloInfo?.aerolinea, vueloInfo?.precioUSD, vueloInfo?.moneda,
+             pasajeros.filter(p=>p.tipo==='ADT').length,
+             pasajeros.filter(p=>p.tipo==='CHD').length,
+             pasajeros.filter(p=>p.tipo==='INF').length,
+             'CREADA',
+             JSON.stringify(vueloInfo?.itinerario),
+             JSON.stringify(pasajeros),
+             JSON.stringify(contacto)]);
+          console.log('[DB] Reserva GEA guardada, PNR:', pnr);
+        } catch(dbErr) {
+          console.error('[DB] Error guardando reserva GEA:', dbErr.message);
+        }
+      }
+      
+      return res.json({ ok: true, pnr, orderNumber: orderId, orderId, fuente: 'GEA' });
+    } catch(e) {
+      console.error('[Lleego] Book error:', e.message);
+      return res.json({ ok: false, error: e.message });
+    }
+  }
+  
+  // ─── GLAS / Tucano booking ───
   try {
     const token = await getToken();
 
@@ -1627,6 +1754,82 @@ app.listen(PORT, () => console.log(`✅ Puerto ${PORT}`));
 // ─── DETALLE DE VUELO (desglose de precio) ───
 app.get('/detalle-vuelo', async (req, res) => {
   const { searchId, quotationId } = req.query;
+  
+  // ─── GEA / Lleego: return cached price data ───
+  if (String(quotationId).startsWith('lleego_')) {
+    const cached = lleegoSolutionsCache.get(quotationId);
+    if (!cached) return res.json({ ok: false, error: 'Solución GEA expirada. Buscá de nuevo.' });
+    
+    const sol = cached.sol;
+    const price = sol.total_price || {};
+    const priceDetail = sol.price_detail || sol.data?.price_detail || {};
+    
+    // Build desglose from price breakdown
+    const desglose = [];
+    const breakdown = priceDetail.breakdown || sol.data?.breakdown || [];
+    if (breakdown.length) {
+      for (const b of breakdown) {
+        desglose.push({
+          tipo: b.pax_type === 'ADT' ? 'ADT' : b.pax_type === 'CHD' ? 'CHD' : b.pax_type || 'ADT',
+          cantidad: b.quantity || 1,
+          tarifa: b.base || b.fare || 0,
+          impuestos: b.taxes || b.tax || 0,
+          fee: 0,
+          descuento: 0,
+          total: b.total || (b.base||0) + (b.taxes||0),
+          detImpuestos: []
+        });
+      }
+    } else {
+      // Fallback: single entry from total_price
+      desglose.push({
+        tipo: 'ADT', cantidad: 1,
+        tarifa: price.base || price.fare || 0,
+        impuestos: price.taxes || price.tax || (price.total||0) - (price.base||price.fare||0),
+        fee: 0, descuento: 0,
+        total: price.total || 0,
+        detImpuestos: []
+      });
+    }
+    
+    // Penalidades from first association
+    const assocs = sol.data?.associations || [];
+    let penalidades = { cambio_antes: null, cambio_durante: null, devolucion_antes: null, devolucion_durante: null, cambio: null, cancelacion: null };
+    if (assocs[0]) {
+      const firstSegRef = Object.values(assocs[0].segment_references || {})[0] || {};
+      const penalties = firstSegRef.penalties || [];
+      for (const p of penalties) {
+        const permite = p.allowed !== false;
+        const monto = p.amount || 0;
+        const moneda = p.currency || price.currency || 'USD';
+        if (p.type === 'change' || p.type === 'CHANGE') {
+          if (p.applicability === 'before' || !p.applicability) penalidades.cambio_antes = { permite, monto, moneda };
+          if (p.applicability === 'after' || p.applicability === 'during') penalidades.cambio_durante = { permite, monto, moneda };
+          if (!penalidades.cambio) penalidades.cambio = { permite, monto, moneda };
+        }
+        if (p.type === 'refund' || p.type === 'REFUND' || p.type === 'cancel' || p.type === 'CANCEL') {
+          if (p.applicability === 'before' || !p.applicability) penalidades.devolucion_antes = { permite, monto, moneda };
+          if (p.applicability === 'after' || p.applicability === 'during') penalidades.devolucion_durante = { permite, monto, moneda };
+          if (!penalidades.cancelacion) penalidades.cancelacion = { permite, monto, moneda };
+        }
+      }
+    }
+    
+    return res.json({
+      ok: true,
+      tarifa: price.base || price.fare || 0,
+      impuestos: price.taxes || price.tax || 0,
+      fee: 0,
+      total: price.total || 0,
+      moneda: price.currency || 'USD',
+      desglose,
+      penalidades,
+      reglas: [],
+      fuente: 'GEA'
+    });
+  }
+  
+  // ─── GLAS / Tucano ───
   try {
     const token = await getToken();
     const r = await fetch(`${API_BASE}/FlightSearch/ItineraryDetailRemake?searchId=${searchId}&quotationId=${quotationId}`, {
