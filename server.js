@@ -151,16 +151,22 @@ async function buscarLleego({ tipo, origen, destino, salida, regreso, adultos, n
 }
 
 function procesarVuelosLleego(resp) {
-  const d = resp.data || {};
-  if (!d.solutions || !d.segments) return [];
-  const segments = d.segments || {};
-  const ports = d.port || {};
-  const companies = d.company || {};
-  const providers = d.provider || {};
-  const fares = d.fares || {};
-  const journeys = d.journeys || {};
+  // Top-level: solutions, segments, journeys, fares
+  // Under resp.data: port, currency, company, provider
+  const solutions = resp.solutions || [];
+  const segments = resp.segments || {};
+  const journeys = resp.journeys || {};
+  const fares = resp.fares || {};
+  const companies = resp.data?.company || {};
+  const ports = resp.data?.port || {};
+  const providers = resp.data?.provider || {};
 
-  return d.solutions.map(sol => {
+  if (!solutions.length || !Object.keys(segments).length) {
+    console.log(`[Lleego] No solutions or segments to process`);
+    return [];
+  }
+
+  return solutions.map(sol => {
     try {
       // Get associations (ida y vuelta)
       const assocs = sol.data?.associations || [];
@@ -170,8 +176,6 @@ function procesarVuelosLleego(resp) {
       for (const assoc of assocs) {
         const journeyRefs = assoc.journey_references || [];
         const segRefs = assoc.segment_references || {};
-        // Each journey is an option (e.g. 3 departure options), pick first for display
-        // Actually journeys are alternatives for same leg, we show all segments
         for (const jRef of journeyRefs) {
           const journey = journeys[jRef];
           if (!journey) continue;
@@ -179,26 +183,28 @@ function procesarVuelosLleego(resp) {
           const escalas = journey.layovers || 0;
           if (escalas > maxEscalas) maxEscalas = escalas;
           
-          for (const segId of jSegs) {
-            const seg = segments[segId];
-            if (!seg) continue;
-            const depDt = new Date(seg.departure_date);
-            const arrDt = new Date(seg.arrival_date);
-            itinerario.push({
-              legId: segId,
-              origen: seg.departure,
-              destino: seg.arrival,
-              salida: seg.departure_date,
-              llegada: seg.arrival_date,
-              duracionMin: Math.round(seg.duration / 60),
-              duracion: `${Math.floor(seg.duration/3600)}h ${Math.round((seg.duration%3600)/60)}m`,
-              escalas,
-              ciudadesEscala: [],
-              tripDays: 0,
-              vuelo: `${seg.marketing_company}${seg.transport_number}`,
-              equipo: seg.transport_model || ''
-            });
-          }
+          // One itinerario entry per journey (ida/vuelta), not per segment
+          const firstSeg = segments[jSegs[0]];
+          const lastSeg = segments[jSegs[jSegs.length - 1]] || firstSeg;
+          if (!firstSeg) continue;
+
+          const ciudadesEscala = jSegs.length > 1 
+            ? jSegs.slice(0, -1).map(sid => segments[sid]?.arrival).filter(Boolean) 
+            : [];
+
+          itinerario.push({
+            legId: jRef,
+            origen: firstSeg.departure,
+            destino: lastSeg.arrival,
+            salida: firstSeg.departure_date,
+            llegada: lastSeg.arrival_date,
+            duracionMin: Math.round((journey.duration || 0) / 60),
+            duracion: `${Math.floor((journey.duration||0)/3600)}h ${Math.round(((journey.duration||0)%3600)/60)}m`,
+            escalas,
+            ciudadesEscala,
+            tripDays: 0,
+            vuelo: `${firstSeg.marketing_company}${firstSeg.transport_number}`
+          });
           break; // Solo primer journey por association (ida o vuelta)
         }
       }
