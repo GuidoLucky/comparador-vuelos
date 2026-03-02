@@ -119,11 +119,11 @@ header{background:var(--dark2);border-bottom:1px solid var(--border);padding:14p
 .btn-reservar{background:var(--gold);color:#000;border:none;border-radius:7px;font-family:'Sora',sans-serif;font-size:12px;font-weight:700;padding:8px 16px;cursor:pointer;transition:all 0.2s;}
 .btn-reservar:hover{background:var(--gold-light);}
 
-/* Acciones debajo del vuelo */
-.vuelo-actions{display:flex;align-items:center;justify-content:center;gap:10px;padding:0 18px 12px 18px;border-top:1px solid var(--border);padding-top:10px;margin-top:0;}
-.vuelo-actions .cotizar-check{font-size:12px;color:var(--muted);cursor:pointer;display:flex;align-items:center;gap:4px;}
-.vuelo-actions .btn-detalle{flex:0 0 auto;}
-.vuelo-actions .btn-reservar{flex:0 0 auto;margin-top:0;width:auto;padding:8px 20px;}
+/* Acciones debajo del vuelo - misma grilla que vuelo-main */
+.vuelo-actions{display:grid;grid-template-columns:88px 1fr 180px;gap:16px;padding:8px 18px 12px 18px;border-top:1px solid var(--border);align-items:center;}
+.vuelo-actions .cotizar-check{font-size:12px;color:var(--muted);cursor:pointer;display:flex;align-items:center;gap:4px;justify-content:center;}
+.vuelo-actions .btn-detalle{width:100%;}
+.vuelo-actions .btn-reservar{margin-top:0;width:100%;padding:8px 16px;}
 
 /* MODAL */
 .modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,0.8);z-index:1000;display:flex;align-items:flex-start;justify-content:center;padding:20px;overflow-y:auto;}
