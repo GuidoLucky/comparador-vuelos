@@ -785,15 +785,27 @@ app.post('/reservas/:id/recotizar', async (req, res) => {
     if (!pricingId) console.log('[Recotizar] Full response keys search:', JSON.stringify(prData).substring(0, 500));
     const segRefIdsForSave = segments.map((s, i) => String(i + 1));
 
-    // Extraer penalidades del pricing o de la reserva
-    const prPenalties = prData.penalties || prData.penaltiesInformation || rrData.penaltiesInformation || rrData.penalties || [];
+    // Extraer penalidades - buscar en pricing response y en reserva
+    const prPenalties = prData.penalties || prData.penaltiesInformation || [];
+    const rrPenalties = rrData.penaltiesInformation || rrData.penalties || [];
+    const allPenalties = prPenalties.length ? prPenalties : rrPenalties;
+    console.log('[Recotizar] prData penalty keys:', Object.keys(prData).filter(k => k.toLowerCase().includes('penal') || k.toLowerCase().includes('rule')).join(','));
+    console.log('[Recotizar] rrData penalty keys:', Object.keys(rrData).filter(k => k.toLowerCase().includes('penal') || k.toLowerCase().includes('rule')).join(','));
+    console.log('[Recotizar] Penalties raw:', JSON.stringify(allPenalties).substring(0, 300));
+    
+    // También buscar en storedFares
+    const storedFares = prData.storedFares || prData.fares || [];
+    if (storedFares.length && storedFares[0].penalties) {
+      console.log('[Recotizar] Fare penalties:', JSON.stringify(storedFares[0].penalties).substring(0, 300));
+    }
+    
     let penalidades = null;
-    if (prPenalties.length) {
-      const cambioP = prPenalties.find(p => (p.type === 0 || p.penaltyType === 0) && p.enabled !== false);
-      const cancelP = prPenalties.find(p => (p.type === 1 || p.penaltyType === 1) && p.enabled !== false);
+    if (allPenalties.length) {
+      const cambioP = allPenalties.find(p => p.type === 0) || allPenalties.find(p => (p.penaltyType || '').toString().toLowerCase().includes('chang'));
+      const cancelP = allPenalties.find(p => p.type === 1) || allPenalties.find(p => (p.penaltyType || '').toString().toLowerCase().includes('cancel'));
       penalidades = {
-        cambio: cambioP ? { monto: cambioP.amount, moneda: cambioP.currency } : null,
-        cancelacion: cancelP ? { monto: cancelP.amount, moneda: cancelP.currency } : null
+        cambio: cambioP ? { monto: cambioP.amount || cambioP.penaltyAmount || 0, moneda: cambioP.currency || cambioP.penaltyCurrency || 'USD' } : null,
+        cancelacion: cancelP ? { monto: cancelP.amount || cancelP.penaltyAmount || 0, moneda: cancelP.currency || cancelP.penaltyCurrency || 'USD' } : null
       };
     }
     console.log('[Recotizar] Penalties found:', JSON.stringify(penalidades));
@@ -1020,12 +1032,14 @@ app.post('/reservas/:id/pdf', async (req, res) => {
           
           // Extraer penalidades si las hay
           const rrPenalties = rrData.penaltiesInformation || rrData.penalties || [];
+          console.log(`[PDF] Penalty keys in rrData:`, Object.keys(rrData).filter(k => k.toLowerCase().includes('penal') || k.toLowerCase().includes('rule')).join(','));
+          console.log(`[PDF] Penalties raw count: ${rrPenalties.length}`, rrPenalties.length ? JSON.stringify(rrPenalties).substring(0, 300) : 'none');
           if (rrPenalties.length) {
-            const cambioP = rrPenalties.find(p => (p.type === 0 || p.penaltyType === 0) && p.enabled !== false);
-            const cancelP = rrPenalties.find(p => (p.type === 1 || p.penaltyType === 1) && p.enabled !== false);
+            const cambioP = rrPenalties.find(p => p.type === 0) || rrPenalties.find(p => (p.penaltyType || '').toString().toLowerCase().includes('chang'));
+            const cancelP = rrPenalties.find(p => p.type === 1) || rrPenalties.find(p => (p.penaltyType || '').toString().toLowerCase().includes('cancel'));
             penalidades = {
-              cambio: cambioP ? { monto: cambioP.amount, moneda: cambioP.currency } : null,
-              cancelacion: cancelP ? { monto: cancelP.amount, moneda: cancelP.currency } : null
+              cambio: cambioP ? { monto: cambioP.amount || cambioP.penaltyAmount || 0, moneda: cambioP.currency || cambioP.penaltyCurrency || 'USD' } : null,
+              cancelacion: cancelP ? { monto: cancelP.amount || cancelP.penaltyAmount || 0, moneda: cancelP.currency || cancelP.penaltyCurrency || 'USD' } : null
             };
           }
           // También chequear fareRulesInformation
@@ -1756,12 +1770,15 @@ app.post('/generar-cotizacion', async (req, res) => {
 
       // Penalidades
       const penalties = q.penalties || [];
-      const cambio = penalties.find(p => p.type === 0 && p.applicability === 0 && p.enabled);
-      const cancelacion = penalties.find(p => p.type === 1 && p.applicability === 0 && p.enabled);
+      console.log(`[Cotizacion] Penalties raw count: ${penalties.length}`, penalties.length ? JSON.stringify(penalties.slice(0, 3)) : 'none');
+      // type: 0=cambio, 1=cancelacion. applicability: 0=antes, 1=despues
+      const cambio = penalties.find(p => p.type === 0) || penalties.find(p => (p.penaltyType || '').toString().toLowerCase().includes('chang'));
+      const cancelacion = penalties.find(p => p.type === 1) || penalties.find(p => (p.penaltyType || '').toString().toLowerCase().includes('cancel'));
       const penalidades = {
-        cambio: cambio ? { monto: cambio.amount, moneda: cambio.currency } : null,
-        cancelacion: cancelacion ? { monto: cancelacion.amount, moneda: cancelacion.currency } : null
+        cambio: cambio ? { monto: cambio.amount || cambio.penaltyAmount || 0, moneda: cambio.currency || cambio.penaltyCurrency || 'USD' } : null,
+        cancelacion: cancelacion ? { monto: cancelacion.amount || cancelacion.penaltyAmount || 0, moneda: cancelacion.currency || cancelacion.penaltyCurrency || 'USD' } : null
       };
+      console.log(`[Cotizacion] Penalidades: ${JSON.stringify(penalidades)}`);
 
       return {
         aerolinea: d.airlinesDictionary?.[q.validatingCarrier] || q.validatingCarrier,
@@ -1773,7 +1790,8 @@ app.post('/generar-cotizacion', async (req, res) => {
     console.log('[Cotizacion] Opciones:', JSON.stringify(opcionesCompletas.map(o => ({
       aerolinea: o.aerolinea,
       vuelos: o.vuelos.length,
-      pasajeros: o.pasajeros.map(p => `${p.cantidad}x ${p.tipo} neto=${p.neto}`)
+      pasajeros: o.pasajeros.map(p => `${p.cantidad}x ${p.tipo} neto=${p.neto}`),
+      penalidades: o.penalidades
     }))));
     res.set({ 'Content-Type': 'application/pdf', 'Content-Disposition': 'attachment; filename="cotizacion_lucky_tour.pdf"' });
     res.send(pdfBuffer);
