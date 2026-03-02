@@ -289,47 +289,45 @@ header{background:var(--dark2);border-bottom:1px solid var(--border);padding:14p
     <div class="logo-sub">Comparador de Vuelos</div>
   </div>
   <div style="margin-left:auto;display:flex;align-items:center;gap:10px;">
-    <span id="userInfo" style="font-size:11px;color:#8b949e;"></span>
+    <span id="userInfo" style="font-size:12px;color:#8b949e;"></span>
+    <span id="userRolBadge" style="display:none;font-size:10px;padding:2px 8px;border-radius:4px;background:rgba(212,175,55,0.2);color:#d4af37;font-weight:600;text-transform:uppercase;letter-spacing:0.06em;">Admin</span>
     <button onclick="logout()" style="background:none;border:1px solid #30363d;color:#8b949e;padding:4px 12px;border-radius:6px;font-size:11px;cursor:pointer;font-family:'Sora',sans-serif;">Salir</button>
   </div>
 </header>
 <script>
-// Auth: override fetch para incluir token automáticamente
-const _originalFetch = window.fetch;
-window.fetch = function(url, opts = {}) {
-  const token = localStorage.getItem('lt_session');
-  if (token) {
-    opts.headers = opts.headers || {};
-    if (opts.headers instanceof Headers) {
-      opts.headers.set('X-Session-Token', token);
+let currentUser = null;
+// Cargar info del usuario al inicio
+(async function loadUser() {
+  try {
+    const r = await fetch('/api/me');
+    const d = await r.json();
+    if (d.ok) {
+      currentUser = d;
+      document.getElementById('userInfo').textContent = d.nombre;
+      if (d.rol === 'admin') {
+        document.getElementById('userRolBadge').style.display = 'inline';
+        // Mostrar tab de admin
+        const adminTab = document.getElementById('adminTab');
+        if (adminTab) adminTab.style.display = 'inline-flex';
+      }
     } else {
-      opts.headers['X-Session-Token'] = token;
-    }
-  }
-  return _originalFetch(url, opts).then(res => {
-    if (res.status === 401 && !url.includes('/api/login') && !url.includes('/api/session')) {
-      localStorage.removeItem('lt_session');
       window.location.href = '/login.html';
     }
-    return res;
-  });
-};
+  } catch(e) {
+    window.location.href = '/login.html';
+  }
+})();
+
 function logout() {
   fetch('/api/logout', { method: 'POST' }).catch(()=>{});
-  localStorage.removeItem('lt_session');
-  localStorage.removeItem('lt_vendedor');
-  localStorage.removeItem('lt_nombre');
-  localStorage.removeItem('lt_email');
   window.location.href = '/login.html';
 }
-// Mostrar info del usuario
-const _ltNombre = localStorage.getItem('lt_nombre');
-if (_ltNombre) document.getElementById('userInfo').textContent = _ltNombre;
 </script>
 <div class="container">
   <div class="nav-tabs">
     <button class="nav-tab active" onclick="mostrarVista('buscar',this)">🔍 Buscar vuelos</button>
     <button class="nav-tab" onclick="mostrarVista('reservas',this)">📋 Mis reservas</button>
+    <button class="nav-tab" id="adminTab" style="display:none" onclick="mostrarVista('admin',this)">⚙️ Usuarios</button>
   </div>
   <div class="search-card">
     <div class="tipo-tabs">
@@ -722,6 +720,57 @@ document.addEventListener('keydown',e=>{if(e.key==='Enter')buscar();});
   </div>
   <!-- Tabla -->
   <div id="reservasTabla" style="overflow-x:auto;"></div>
+</div>
+
+<!-- VISTA ADMIN (gestión de usuarios) -->
+<div id="vistaAdmin" style="display:none;max-width:900px;margin:0 auto;padding:20px 0;">
+  <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px;">
+    <h2 style="font-size:20px;font-weight:700;">⚙️ Gestión de Usuarios</h2>
+    <button onclick="mostrarFormNuevoUsuario()" style="background:linear-gradient(135deg,#d4af37,#c5a028);color:#0d1117;border:none;border-radius:8px;padding:8px 18px;font-size:13px;font-weight:700;cursor:pointer;font-family:'Sora',sans-serif;">+ Nuevo vendedor</button>
+  </div>
+  
+  <!-- Form nuevo usuario (oculto) -->
+  <div id="formNuevoUsuario" style="display:none;background:var(--dark2);border:1px solid var(--border);border-radius:12px;padding:20px;margin-bottom:20px;">
+    <h3 style="font-size:15px;font-weight:700;margin-bottom:14px;">Nuevo Usuario</h3>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+      <div><label style="font-size:11px;color:var(--muted);display:block;margin-bottom:4px;">Nombre completo</label>
+        <input type="text" id="nuNombre" placeholder="Juan Pérez" style="width:100%;padding:8px 12px;background:var(--dark1);border:1px solid var(--border);border-radius:8px;color:var(--text);font-family:'Sora',sans-serif;font-size:13px;outline:none;">
+      </div>
+      <div><label style="font-size:11px;color:var(--muted);display:block;margin-bottom:4px;">Usuario</label>
+        <input type="text" id="nuUsuario" placeholder="jperez" style="width:100%;padding:8px 12px;background:var(--dark1);border:1px solid var(--border);border-radius:8px;color:var(--text);font-family:'Sora',sans-serif;font-size:13px;outline:none;">
+      </div>
+      <div><label style="font-size:11px;color:var(--muted);display:block;margin-bottom:4px;">Contraseña</label>
+        <input type="password" id="nuPassword" placeholder="••••••" style="width:100%;padding:8px 12px;background:var(--dark1);border:1px solid var(--border);border-radius:8px;color:var(--text);font-family:'Sora',sans-serif;font-size:13px;outline:none;">
+      </div>
+      <div><label style="font-size:11px;color:var(--muted);display:block;margin-bottom:4px;">Rol</label>
+        <select id="nuRol" style="width:100%;padding:8px 12px;background:var(--dark1);border:1px solid var(--border);border-radius:8px;color:var(--text);font-family:'Sora',sans-serif;font-size:13px;outline:none;">
+          <option value="vendedor">Vendedor</option>
+          <option value="admin">Admin</option>
+        </select>
+      </div>
+    </div>
+    <h4 style="font-size:13px;font-weight:600;margin:16px 0 10px;color:var(--muted);">Credenciales de proveedores (opcional)</h4>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+      <div style="background:var(--dark1);border:1px solid var(--border);border-radius:8px;padding:12px;">
+        <div style="font-size:12px;font-weight:600;color:#4fc3f7;margin-bottom:8px;">🔹 Tucano (SCIWeb)</div>
+        <input type="text" id="nuTucanoUser" placeholder="Usuario Tucano" style="width:100%;padding:6px 10px;background:rgba(255,255,255,0.04);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:12px;margin-bottom:6px;outline:none;font-family:inherit;">
+        <input type="password" id="nuTucanoPass" placeholder="Contraseña Tucano" style="width:100%;padding:6px 10px;background:rgba(255,255,255,0.04);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:12px;outline:none;font-family:inherit;">
+      </div>
+      <div style="background:var(--dark1);border:1px solid var(--border);border-radius:8px;padding:12px;">
+        <div style="font-size:12px;font-weight:600;color:#66bb6a;margin-bottom:8px;">🔹 GEA (Lleego)</div>
+        <input type="text" id="nuGeaUser" placeholder="Email GEA" style="width:100%;padding:6px 10px;background:rgba(255,255,255,0.04);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:12px;margin-bottom:6px;outline:none;font-family:inherit;">
+        <input type="password" id="nuGeaPass" placeholder="Contraseña GEA" style="width:100%;padding:6px 10px;background:rgba(255,255,255,0.04);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:12px;margin-bottom:6px;outline:none;font-family:inherit;">
+        <input type="text" id="nuGeaAgent" placeholder="Agente (ej: GFinkelstein)" style="width:100%;padding:6px 10px;background:rgba(255,255,255,0.04);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:12px;outline:none;font-family:inherit;">
+      </div>
+    </div>
+    <div style="display:flex;gap:10px;margin-top:14px;justify-content:flex-end;">
+      <button onclick="document.getElementById('formNuevoUsuario').style.display='none'" style="background:none;border:1px solid var(--border);color:var(--muted);border-radius:8px;padding:8px 16px;font-size:12px;cursor:pointer;font-family:'Sora',sans-serif;">Cancelar</button>
+      <button onclick="crearUsuario()" style="background:#238636;color:#fff;border:none;border-radius:8px;padding:8px 18px;font-size:12px;font-weight:600;cursor:pointer;font-family:'Sora',sans-serif;">Crear usuario</button>
+    </div>
+  </div>
+  
+  <!-- Tabla de usuarios -->
+  <div id="usuariosTabla" style="overflow-x:auto;"></div>
 </div>
 
 <!-- MODAL DETALLE RESERVA -->
@@ -1221,20 +1270,27 @@ function mostrarVista(vista, btn) {
   var searchCard = document.querySelector('.search-card');
   var resultados = document.getElementById('resultados');
   var vistaReservas = document.getElementById('vistaReservas');
+  var vistaAdmin = document.getElementById('vistaAdmin');
   var markupBar = document.getElementById('markupBar');
   var cotizarBar = document.getElementById('cotizarBar');
+  // Hide all first
+  if (searchCard) searchCard.style.display = 'none';
+  if (resultados) resultados.style.display = 'none';
+  if (vistaReservas) vistaReservas.style.display = 'none';
+  if (vistaAdmin) vistaAdmin.style.display = 'none';
+  if (markupBar) markupBar.style.display = 'none';
+  if (cotizarBar) cotizarBar.style.display = 'none';
+  
   if (vista === 'buscar') {
     if (searchCard) searchCard.style.display = '';
     if (resultados) resultados.style.display = '';
-    vistaReservas.style.display = 'none';
     if (markupBar) markupBar.style.display = '';
     if (cotizarBar) cotizarBar.style.display = '';
+  } else if (vista === 'admin') {
+    if (vistaAdmin) vistaAdmin.style.display = 'block';
+    cargarUsuarios();
   } else {
-    if (searchCard) searchCard.style.display = 'none';
-    if (resultados) resultados.style.display = 'none';
-    vistaReservas.style.display = 'block';
-    if (markupBar) markupBar.style.display = 'none';
-    if (cotizarBar) cotizarBar.style.display = 'none';
+    if (vistaReservas) vistaReservas.style.display = 'block';
     cargarReservas();
   }
 }
@@ -1683,10 +1739,136 @@ cargarMarkup();
 </div>
 <script>
 // Auto-seleccionar vendedor desde sesión
-const _ltVendedor = localStorage.getItem('lt_vendedor');
-if (_ltVendedor) {
+if (currentUser?.nombre) {
   const sel = document.getElementById('cotizarVendedor');
-  if (sel) sel.value = _ltVendedor;
+  if (sel) sel.value = currentUser.nombre;
+}
+
+// ─── ADMIN: Gestión de Usuarios ───
+function mostrarFormNuevoUsuario() {
+  document.getElementById('formNuevoUsuario').style.display = 'block';
+  document.getElementById('nuNombre').focus();
+}
+
+async function cargarUsuarios() {
+  try {
+    const r = await fetch('/api/usuarios');
+    const d = await r.json();
+    if (!d.ok) return;
+    const container = document.getElementById('usuariosTabla');
+    if (!d.usuarios.length) {
+      container.innerHTML = '<p style="color:var(--muted);text-align:center;padding:40px;">No hay usuarios</p>';
+      return;
+    }
+    let html = '<table style="width:100%;border-collapse:collapse;font-size:13px;">';
+    html += '<thead><tr style="border-bottom:1px solid var(--border);">';
+    html += '<th style="text-align:left;padding:10px 8px;color:var(--muted);font-size:11px;font-weight:600;">NOMBRE</th>';
+    html += '<th style="text-align:left;padding:10px 8px;color:var(--muted);font-size:11px;font-weight:600;">USUARIO</th>';
+    html += '<th style="text-align:left;padding:10px 8px;color:var(--muted);font-size:11px;font-weight:600;">ROL</th>';
+    html += '<th style="text-align:left;padding:10px 8px;color:var(--muted);font-size:11px;font-weight:600;">PROVEEDORES</th>';
+    html += '<th style="text-align:left;padding:10px 8px;color:var(--muted);font-size:11px;font-weight:600;">ESTADO</th>';
+    html += '<th style="text-align:center;padding:10px 8px;color:var(--muted);font-size:11px;font-weight:600;">ACCIONES</th>';
+    html += '</tr></thead><tbody>';
+    for (const u of d.usuarios) {
+      const creds = u.credenciales || [];
+      const hasTucano = creds.some(c => c.proveedor === 'tucano' && c.activo);
+      const hasGea = creds.some(c => c.proveedor === 'gea' && c.activo);
+      const rolBadge = u.rol === 'admin' 
+        ? '<span style="background:rgba(212,175,55,0.2);color:#d4af37;padding:2px 8px;border-radius:4px;font-size:10px;font-weight:600;">ADMIN</span>'
+        : '<span style="background:rgba(79,195,247,0.15);color:#4fc3f7;padding:2px 8px;border-radius:4px;font-size:10px;font-weight:600;">VENDEDOR</span>';
+      const estadoBadge = u.activo
+        ? '<span style="color:#66bb6a;font-size:12px;">● Activo</span>'
+        : '<span style="color:#f85149;font-size:12px;">● Inactivo</span>';
+      const provs = [];
+      if (hasTucano) provs.push('<span style="background:rgba(79,195,247,0.12);color:#4fc3f7;padding:2px 6px;border-radius:4px;font-size:10px;">Tucano</span>');
+      if (hasGea) provs.push('<span style="background:rgba(102,187,106,0.12);color:#66bb6a;padding:2px 6px;border-radius:4px;font-size:10px;">GEA</span>');
+      
+      html += '<tr style="border-bottom:1px solid rgba(255,255,255,0.04);">';
+      html += '<td style="padding:10px 8px;font-weight:600;">' + u.nombre + '</td>';
+      html += '<td style="padding:10px 8px;color:var(--muted);">' + u.usuario + '</td>';
+      html += '<td style="padding:10px 8px;">' + rolBadge + '</td>';
+      html += '<td style="padding:10px 8px;">' + (provs.length ? provs.join(' ') : '<span style="color:#484f58;font-size:11px;">Sin vincular</span>') + '</td>';
+      html += '<td style="padding:10px 8px;">' + estadoBadge + '</td>';
+      html += '<td style="padding:10px 8px;text-align:center;">';
+      html += '<button onclick="editarUsuario(' + u.id + ')" style="background:none;border:1px solid var(--border);color:var(--muted);border-radius:6px;padding:4px 10px;font-size:11px;cursor:pointer;margin-right:4px;font-family:inherit;">✏️ Editar</button>';
+      if (u.activo) {
+        html += '<button onclick="toggleUsuario(' + u.id + ',false)" style="background:none;border:1px solid rgba(248,81,73,0.3);color:#f85149;border-radius:6px;padding:4px 10px;font-size:11px;cursor:pointer;font-family:inherit;">Desactivar</button>';
+      } else {
+        html += '<button onclick="toggleUsuario(' + u.id + ',true)" style="background:none;border:1px solid rgba(102,187,106,0.3);color:#66bb6a;border-radius:6px;padding:4px 10px;font-size:11px;cursor:pointer;font-family:inherit;">Activar</button>';
+      }
+      html += '</td></tr>';
+    }
+    html += '</tbody></table>';
+    container.innerHTML = html;
+  } catch(e) { console.error('Error cargando usuarios:', e); }
+}
+
+async function crearUsuario() {
+  const nombre = document.getElementById('nuNombre').value.trim();
+  const usuario = document.getElementById('nuUsuario').value.trim();
+  const password = document.getElementById('nuPassword').value;
+  const rol = document.getElementById('nuRol').value;
+  if (!nombre || !usuario || !password) { alert('Completá nombre, usuario y contraseña'); return; }
+  
+  try {
+    const r = await fetch('/api/usuarios', {
+      method: 'POST', headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({ nombre, usuario, password, rol })
+    });
+    const d = await r.json();
+    if (!d.ok) { alert('Error: ' + d.error); return; }
+    
+    // Guardar credenciales de proveedores
+    const tucanoUser = document.getElementById('nuTucanoUser').value.trim();
+    const tucanoPass = document.getElementById('nuTucanoPass').value.trim();
+    const geaUser = document.getElementById('nuGeaUser').value.trim();
+    const geaPass = document.getElementById('nuGeaPass').value.trim();
+    const geaAgent = document.getElementById('nuGeaAgent').value.trim();
+    
+    if (tucanoUser && tucanoPass) {
+      await fetch('/api/usuarios/' + d.id + '/credenciales', {
+        method: 'POST', headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({ proveedor: 'tucano', cred_user: tucanoUser, cred_pass: tucanoPass })
+      });
+    }
+    if (geaUser && geaPass) {
+      await fetch('/api/usuarios/' + d.id + '/credenciales', {
+        method: 'POST', headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({ proveedor: 'gea', cred_user: geaUser, cred_pass: geaPass, cred_extra: { agent: geaAgent } })
+      });
+    }
+    
+    // Limpiar form
+    document.getElementById('formNuevoUsuario').style.display = 'none';
+    ['nuNombre','nuUsuario','nuPassword','nuTucanoUser','nuTucanoPass','nuGeaUser','nuGeaPass','nuGeaAgent'].forEach(id => document.getElementById(id).value = '');
+    cargarUsuarios();
+    alert('✅ Usuario "' + usuario + '" creado');
+  } catch(e) { alert('Error: ' + e.message); }
+}
+
+async function toggleUsuario(id, activo) {
+  if (!confirm(activo ? '¿Activar este usuario?' : '¿Desactivar este usuario?')) return;
+  try {
+    await fetch('/api/usuarios/' + id, {
+      method: 'PUT', headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({ activo })
+    });
+    cargarUsuarios();
+  } catch(e) { alert('Error: ' + e.message); }
+}
+
+async function editarUsuario(id) {
+  const newPass = prompt('Nueva contraseña (dejar vacío para no cambiar):');
+  if (newPass === null) return; // Cancelled
+  if (newPass) {
+    try {
+      await fetch('/api/usuarios/' + id, {
+        method: 'PUT', headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({ password: newPass })
+      });
+      alert('✅ Contraseña actualizada');
+    } catch(e) { alert('Error: ' + e.message); }
+  }
 }
 </script>
 </body>
