@@ -1424,7 +1424,7 @@ async function verDetalleReserva(id) {
     document.getElementById('modalBody').innerHTML =
       '<div class="det-section"><h3>Información general</h3><div class="det-grid">' +
       '<div class="det-item"><div class="lbl">PNR</div><div class="val" style="color:var(--gold)">' + (r.pnr||'-') + '</div></div>' +
-      '<div class="det-item"><div class="lbl">Order</div><div class="val">' + (r.order_id ? '<a href="https://sciweb.tucanotours.com.ar/FlightOrders/Details/' + r.order_id + '" target="_blank" style="color:#42a5f5;text-decoration:none;">' + (r.order_number||r.order_id.substring(0,8)) + ' 🔗</a>' : (r.order_number||'-')) + '</div></div>' +
+      '<div class="det-item"><div class="lbl">Order</div><div class="val">' + (r.order_id ? (((r.quotation_id||'').startsWith('lleego_') || (r.notas||'').includes('GEA')) ? '<a href="https://app.lleego.com/transport/voucher/' + r.order_id + '" target="_blank" style="color:#42a5f5;text-decoration:none;">' + r.order_id.substring(0,12) + ' 🔗 GEA</a>' : '<a href="https://sciweb.tucanotours.com.ar/FlightOrders/Details/' + r.order_id + '" target="_blank" style="color:#42a5f5;text-decoration:none;">' + (r.order_number||r.order_id.substring(0,8)) + ' 🔗</a>') : (r.order_number||'-')) + '</div></div>' +
       '<div class="det-item"><div class="lbl">Estado</div><div class="val"><span class="badge-res badge-' + r.estado + '">' + r.estado + '</span></div></div>' +
       '<div class="det-item"><div class="lbl">Aerolínea</div><div class="val">' + (r.aerolinea||'-') + '</div></div>' +
       '<div class="det-item"><div class="lbl">Precio neto</div><div class="val">USD ' + (r.precio_usd||0).toLocaleString('es-AR') + '</div></div>' +
@@ -1564,11 +1564,12 @@ async function confirmarEmisionRes() {
   try {
     const resp = await fetch('/reservas/' + reservaActual.id + '/emitir', { method:'POST', headers:{'Content-Type':'application/json'} });
     const data = await resp.json(); if (!data.ok) { alert('Error: ' + data.error); return; }
-    if (data.sciweb_url && confirm('Emitir reserva ' + data.pnr + '\n\nSe abrirá SCIWeb. Después volvé y hacé "Verificar estado".\n\n¿Abrir?')) {
+    const plataforma = data.isGEA ? 'Lleego/GEA' : 'SCIWeb';
+    if (data.sciweb_url && confirm('Emitir reserva ' + data.pnr + '\n\nSe abrirá ' + plataforma + '. Después volvé y hacé "Verificar estado".\n\n¿Abrir?')) {
       window.open(data.sciweb_url, '_blank');
       const reminder = document.createElement('div');
       reminder.style.cssText = 'margin-top:14px;padding:14px;background:rgba(21,101,192,0.15);border:1px solid rgba(21,101,192,0.3);border-radius:10px;text-align:center;';
-      reminder.innerHTML = '<p style="font-size:13px;color:#42a5f5;">✈️ SCIWeb abierto — después de emitir:</p><button class="btn-act btn-act-primary" onclick="verificarEstadoRes()" style="margin-top:6px">🔄 Verificar estado</button>';
+      reminder.innerHTML = '<p style="font-size:13px;color:#42a5f5;">✈️ ' + plataforma + ' abierto — después de emitir:</p><button class="btn-act btn-act-primary" onclick="verificarEstadoRes()" style="margin-top:6px">🔄 Verificar estado</button>';
       document.getElementById('modalBody').appendChild(reminder);
     }
   } catch(e) { alert('Error: ' + e.message); }
