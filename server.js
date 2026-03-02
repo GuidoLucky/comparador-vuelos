@@ -1852,9 +1852,10 @@ app.post('/generar-cotizacion', async (req, res) => {
       };
       console.log(`[Cotizacion] Penalidades: ${JSON.stringify(penalidades)}`);
 
-      // Equipaje - misma lógica que procesarVuelos
-      const bagLeg = q.legsWithBaggageAllowance?.[0]?.baggageAllowance;
-      let equipaje = null;
+      // Equipaje - intentar desde API, sino usar lo que mandó el frontend
+      const bagLeg = q.legsWithBaggageAllowance?.[0]?.baggageAllowance 
+                  || d.legsWithBaggageAllowance?.[0]?.baggageAllowance;
+      let equipaje = op.equipaje || null; // Fallback del frontend
       if (bagLeg) {
         const handOnList = bagLeg.handOn || [];
         const handOnIncluido = handOnList.some(b => b.chargeType === 1 && b.pieces >= 1);
