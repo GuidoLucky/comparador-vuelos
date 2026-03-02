@@ -1943,16 +1943,14 @@ app.get('/detalle-vuelo', async (req, res) => {
       for (const fare of fareList) {
         const tipo = (fare.passenger_type_normalized || fare.passenger_type || 'ADT').toUpperCase();
         const qty = fare.quantity || 1;
-        const basePerPax = fare.base || 0;
-        const taxPerPax = fare.total_taxes || 0;
-        const totalPerPax = fare.total || fare.amount || (basePerPax + taxPerPax);
+        // fare_list values are PER PASSENGER (total_price = sum of per_pax * qty)
         desglose.push({
           tipo,
           cantidad: qty,
-          tarifa: Math.round((basePerPax / qty) * 100) / 100,
-          impuestos: Math.round((taxPerPax / qty) * 100) / 100,
+          tarifa: fare.base || 0,
+          impuestos: fare.total_taxes || 0,
           fee: 0, descuento: 0,
-          total: Math.round((totalPerPax / qty) * 100) / 100,
+          total: fare.total || fare.amount || ((fare.base||0) + (fare.total_taxes||0)),
           detImpuestos: []
         });
       }
@@ -2407,10 +2405,10 @@ app.post('/generar-cotizacion', async (req, res) => {
           for (const fare of fareList) {
             const t = (fare.passenger_type_normalized || fare.passenger_type || 'ADT').toUpperCase();
             const qty = fare.quantity || 1;
-            const totalPerPax = (fare.total || fare.amount || 0) / qty;
+            // fare_list values are per passenger
             pasajeros.push({
               tipo: t === 'ADT' ? 'adulto' : t === 'CHD' || t === 'CNN' ? 'menor' : 'bebé',
-              cantidad: qty, neto: Math.round(totalPerPax * 100) / 100,
+              cantidad: qty, neto: fare.total || fare.amount || 0,
               tipo_tarifa: 'PUB', comision_over: 0
             });
           }
