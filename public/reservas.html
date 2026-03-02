@@ -155,7 +155,6 @@
       <option value="TODAS">Todos los estados</option>
       <option value="CREADA">Creada</option>
       <option value="EMITIDA">Emitida</option>
-      <option value="COMPLETADA">Completada</option>
       <option value="CANCELADA">Cancelada</option>
     </select>
     <button class="btn btn-outline" onclick="cargarReservas()">🔄 Actualizar</button>
@@ -217,12 +216,11 @@ async function cargarReservas() {
 }
 
 function renderStats() {
-  const counts = { CREADA:0, EMITIDA:0, COMPLETADA:0, CANCELADA:0 };
+  const counts = { CREADA:0, EMITIDA:0, CANCELADA:0 };
   reservas.forEach(r => { if (counts[r.estado] !== undefined) counts[r.estado]++; });
   document.getElementById('stats').innerHTML = `
     <div class="stat-card creada"><div class="num">${counts.CREADA}</div><div class="label">Creadas</div></div>
     <div class="stat-card emitida"><div class="num">${counts.EMITIDA}</div><div class="label">Emitidas</div></div>
-    <div class="stat-card completada"><div class="num">${counts.COMPLETADA}</div><div class="label">Completadas</div></div>
     <div class="stat-card cancelada"><div class="num">${counts.CANCELADA}</div><div class="label">Canceladas</div></div>
   `;
 }
@@ -361,6 +359,21 @@ async function verDetalle(id) {
       ${paxHtml ? `<div class="detail-section"><h3>👥 Pasajeros</h3>${paxHtml}</div>` : ''}
       ${contactoHtml ? `<div class="detail-section"><h3>📞 Contacto</h3><p>${contactoHtml}</p></div>` : ''}
       
+      ${r.estado === 'EMITIDA' || r.emision_data ? (() => {
+        let ed = null;
+        try { ed = typeof r.emision_data === 'string' ? JSON.parse(r.emision_data) : r.emision_data; } catch(e) {}
+        if (ed && ed.tickets && ed.tickets.length) {
+          const tickHtml = ed.tickets.map(t => 
+            '<div style="display:inline-block;background:#e8f5e9;padding:6px 14px;border-radius:6px;margin:4px;font-family:monospace;font-size:13px;border:1px solid #c8e6c9;">' +
+            '🎫 ' + (t.carrier || '') + '-' + (t.numero || t.number || '') + '</div>'
+          ).join('');
+          return '<div class="detail-section"><h3>🎫 Tickets</h3>' + tickHtml + 
+            (ed.emitidoEn ? '<p style="font-size:11px;color:#999;margin-top:8px;">Emitido: ' + new Date(ed.emitidoEn).toLocaleString('es-AR') + '</p>' : '') +
+            '</div>';
+        }
+        return r.estado === 'EMITIDA' ? '<div class="detail-section"><h3>🎫 Tickets</h3><p style="color:#999;font-size:12px;">Sin datos de tickets. Hacé click en "Verificar estado" para sincronizar.</p></div>' : '';
+      })() : ''}
+      
       <div class="detail-section">
         <h3>📝 Notas</h3>
         <textarea class="notas-area" id="notasArea" placeholder="Agregar notas sobre esta reserva...">${r.notas || ''}</textarea>
@@ -377,7 +390,6 @@ async function verDetalle(id) {
       actionsHtml += `<button class="btn btn-success" onclick="cambiarEstado('EMITIDA')">✅ Marcar como Emitida</button>`;
       actionsHtml += `<button class="btn btn-danger" onclick="cambiarEstado('CANCELADA')">❌ Cancelar</button>`;
     } else if (r.estado === 'EMITIDA') {
-      actionsHtml += `<button class="btn btn-primary" onclick="cambiarEstado('COMPLETADA')">🏁 Marcar Completada</button>`;
       actionsHtml += `<button class="btn btn-danger" onclick="cambiarEstado('CANCELADA')">❌ Cancelar</button>`;
     }
     document.getElementById('modalActions').innerHTML = actionsHtml;
@@ -699,7 +711,7 @@ async function verificarEstado() {
 
 async function cambiarEstado(estado) {
   if (!reservaActual) return;
-  const label = { EMITIDA: 'emitida', COMPLETADA: 'completada', CANCELADA: 'cancelada' }[estado];
+  const label = { EMITIDA: 'emitida', CANCELADA: 'cancelada' }[estado];
   if (!confirm(`¿Marcar como ${label}?`)) return;
   try {
     const res = await fetch('/reservas/' + reservaActual.id + '/estado', {
