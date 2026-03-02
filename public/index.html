@@ -271,6 +271,34 @@ header{background:var(--dark2);border-bottom:1px solid var(--border);padding:14p
       </div>
       <button class="btn-buscar" id="btnBuscar" onclick="buscar()">⚡ Buscar</button>
     </div>
+    <!-- Búsqueda avanzada -->
+    <div style="margin-top:12px;border-top:1px solid var(--border);padding-top:10px;">
+      <button onclick="document.getElementById('advSearch').style.display=document.getElementById('advSearch').style.display==='none'?'flex':'none';this.querySelector('.adv-arrow').textContent=document.getElementById('advSearch').style.display==='none'?'▸':'▾'" style="background:none;border:none;color:var(--gold);font-family:'Sora',sans-serif;font-size:12px;font-weight:600;cursor:pointer;padding:0;display:flex;align-items:center;gap:4px;"><span class="adv-arrow">▸</span> Búsqueda avanzada</button>
+      <div id="advSearch" style="display:none;gap:10px;flex-wrap:wrap;margin-top:10px;align-items:flex-end;">
+        <div class="field" style="min-width:160px;">
+          <label>Aerolíneas</label>
+          <input type="text" id="advAirlines" placeholder="AR,AA,LA,DL..." maxlength="50" style="text-transform:uppercase" oninput="this.value=this.value.toUpperCase()">
+        </div>
+        <div class="field" style="min-width:140px;">
+          <label>Cabina</label>
+          <select id="advCabin">
+            <option value="">Todas</option>
+            <option value="0">Economy (EC)</option>
+            <option value="2">Business (BU)</option>
+            <option value="1">First (FI)</option>
+            <option value="3">Premium Economy (PE)</option>
+          </select>
+        </div>
+        <div class="field" style="min-width:140px;">
+          <label>Tipo de vuelo</label>
+          <select id="advFlightType">
+            <option value="">Todos</option>
+            <option value="1">Non Stop</option>
+            <option value="2">Directo</option>
+          </select>
+        </div>
+      </div>
+    </div>
   </div>
   <div id="mainContent">
     <div class="estado"><div style="font-size:48px">✈️</div><h3>Buscá tu vuelo</h3><p>Elegí el tipo de viaje, completá los datos y buscá</p></div>
@@ -508,6 +536,13 @@ async function buscar(){
   const infantes=document.getElementById('infantes').value;
   const stops=document.getElementById('stops').value;
   let body={tipo:tipoActual,adultos,ninos,infantes,stops:stops||undefined};
+  // Búsqueda avanzada
+  const advAirlines = (document.getElementById('advAirlines').value || '').trim();
+  const advCabin = document.getElementById('advCabin').value;
+  const advFlightType = document.getElementById('advFlightType').value;
+  if (advAirlines) body.airlines = advAirlines.split(',').map(a => a.trim()).filter(Boolean);
+  if (advCabin) body.cabinType = parseInt(advCabin);
+  if (advFlightType) body.flightType = parseInt(advFlightType);
   if(tipoActual==='multidestino'){
     const tramosEls=document.getElementById('tramos-container').querySelectorAll('.tramo-row-multi');
     const tramos=[];
