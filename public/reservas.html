@@ -749,7 +749,10 @@ async function confirmarEmision() {
     const emitirMsg = document.createElement('div');
     emitirMsg.id = 'emitirStatus';
     emitirMsg.style.cssText = 'margin-top:16px;padding:16px;background:#fff3e0;border:2px solid #ff9800;border-radius:10px;text-align:center;';
-    emitirMsg.innerHTML = '<p style="font-size:16px;margin:0;">✈️ Emitiendo tickets...</p><p style="color:#666;margin:4px 0 0;">Esto puede tardar unos segundos</p>';
+    emitirMsg.innerHTML = `<p style="font-size:16px;margin:0;">✈️ Emitiendo tickets...</p>
+      <p style="color:#666;margin:4px 0 0;font-size:12px;">Procesando 7 pasos de emisión. Puede tardar 15-30 segundos.</p>
+      <div style="margin-top:8px;height:4px;background:#ffe0b2;border-radius:2px;overflow:hidden"><div style="width:20%;height:100%;background:#ff9800;animation:progress 15s ease-in-out forwards"></div></div>
+      <style>@keyframes progress{0%{width:5%}50%{width:60%}90%{width:85%}100%{width:95%}}</style>`;
     statusDiv.appendChild(emitirMsg);
     
     const resp = await fetch('/reservas/' + reservaActual.id + '/emitir', { method: 'POST', headers: {'Content-Type':'application/json'} });
@@ -762,13 +765,14 @@ async function confirmarEmision() {
       if (data.tickets && data.tickets.length) {
         ticketsHtml = '<div style="margin-top:8px">' + data.tickets.map(t => `<span style="display:inline-block;background:#fff;padding:4px 10px;border-radius:4px;margin:2px;font-family:monospace;">${t.carrier}-${t.numero}</span>`).join('') + '</div>';
       }
-      emitirMsg.innerHTML = `<p style="font-size:16px;margin:0;color:#2e7d32;">✅ ${data.mensaje}</p>${ticketsHtml}`;
-      // Actualizar lista
+      const stepsHtml = data.steps ? `<div style="margin-top:8px;font-size:11px;color:#666">${data.steps.join(' → ')}</div>` : '';
+      emitirMsg.innerHTML = `<p style="font-size:16px;margin:0;color:#2e7d32;">✅ ${data.mensaje}</p>${ticketsHtml}${stepsHtml}`;
       setTimeout(cargarReservas, 1000);
     } else {
       emitirMsg.style.borderColor = '#f44336';
       emitirMsg.style.background = '#ffebee';
-      emitirMsg.innerHTML = `<p style="font-size:14px;margin:0;color:#c62828;">❌ Error: ${data.error}</p>`;
+      const stepsHtml = data.steps ? `<div style="margin-top:8px;font-size:11px;color:#666">${data.steps.join(' → ')}</div>` : '';
+      emitirMsg.innerHTML = `<p style="font-size:14px;margin:0;color:#c62828;">❌ Error: ${data.error}</p>${stepsHtml}`;
     }
   } catch(e) {
     alert('Error de conexión: ' + e.message);
