@@ -557,7 +557,7 @@ function renderVuelo(v){
         <input type="checkbox" onchange="toggleCotizar('${v.id}','${searchIdActual}',this.checked)"> Cotizar
       </label>
       <button class="btn-detalle" onclick="verDetalle('${v.id}','${searchIdActual}',event)">📊 Ver precio</button>
-      <button class="btn-reservar" onclick="abrirReserva('${v.id}','${searchIdActual}',event)">✈ Reservar</button>
+      <button class="btn-reservar" onclick="abrirReserva('${v.id}','${searchIdActual}',event)">${v.fuente==='GEA'?'🔗 Reservar en Lleego':'✈ Reservar'}</button>
     </div>
     <div class="detalle-panel" data-detalle="${v.id}"></div>
   </div>`;
@@ -796,6 +796,32 @@ async function abrirReserva(quotationId, searchId, e) {
   vueloSeleccionado = todosLosVuelos.find(v=>v.id==quotationId);
   if (!vueloSeleccionado) return;
 
+  // GEA: abrir Lleego directamente (sin form de pasajeros)
+  if (vueloSeleccionado.fuente === 'GEA') {
+    if (!confirm('Se abrirá Lleego/GEA para completar la reserva.\n\n¿Abrir Lleego?')) return;
+    try {
+      const v = vueloSeleccionado;
+      const res = await fetch('/crear-reserva', {
+        method:'POST', headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({
+          searchId, quotationId: String(quotationId),
+          pasajeros: [], contacto: {},
+          vueloInfo: {
+            tipo:'vuelo', origen:v.itinerario[0]?.origen, destino:v.itinerario[v.itinerario.length-1]?.destino,
+            salida:v.itinerario[0]?.salida, aerolinea:v.aerolinea, precioUSD:v.precioUSD, moneda:'USD', itinerario:v.itinerario
+          }
+        })
+      }).then(r=>r.json());
+      if (res.lleegoUrl) {
+        window.open(res.lleegoUrl, '_blank');
+      } else if (!res.ok) {
+        alert('Error: ' + res.error);
+      }
+    } catch(err) { alert('Error: ' + err.message); }
+    return;
+  }
+
+  // Tucano: flujo normal con form de pasajeros
   document.getElementById('modalReserva').style.display = 'flex';
   document.getElementById('modalContenido').innerHTML = '<div class="estado"><div class="spinner"></div><h3>Verificando disponibilidad...</h3></div>';
 
