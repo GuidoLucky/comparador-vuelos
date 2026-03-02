@@ -841,11 +841,26 @@ app.post('/reservas/:id/recotizar', async (req, res) => {
     
     let penalidades = null;
     if (allPenalties.length) {
-      const cambioP = allPenalties.find(p => p.type === 0) || allPenalties.find(p => (p.penaltyType || '').toString().toLowerCase().includes('chang'));
-      const cancelP = allPenalties.find(p => p.type === 1) || allPenalties.find(p => (p.penaltyType || '').toString().toLowerCase().includes('cancel'));
+      const extractPen = (type, applicability) => {
+        const p = allPenalties.find(pen => pen.type === type && pen.applicability === applicability);
+        if (!p) {
+          // Fallback: buscar solo por type sin applicability
+          if (applicability === 0) {
+            const fb = allPenalties.find(pen => pen.type === type) || allPenalties.find(pen => (pen.penaltyType || '').toString().toLowerCase().includes(type === 0 ? 'chang' : 'cancel'));
+            if (fb) return { monto: fb.amount || fb.penaltyAmount || 0, moneda: fb.currency || fb.penaltyCurrency || 'USD', permite: !!fb.enabled };
+          }
+          return null;
+        }
+        return { monto: p.amount || p.penaltyAmount || 0, moneda: p.currency || p.penaltyCurrency || 'USD', permite: !!p.enabled };
+      };
       penalidades = {
-        cambio: cambioP ? { monto: cambioP.amount || cambioP.penaltyAmount || 0, moneda: cambioP.currency || cambioP.penaltyCurrency || 'USD' } : null,
-        cancelacion: cancelP ? { monto: cancelP.amount || cancelP.penaltyAmount || 0, moneda: cancelP.currency || cancelP.penaltyCurrency || 'USD' } : null
+        cambio_antes: extractPen(0, 0),
+        cambio_durante: extractPen(0, 1),
+        devolucion_antes: extractPen(1, 0),
+        devolucion_durante: extractPen(1, 1),
+        // Compatibilidad
+        cambio: extractPen(0, 0),
+        cancelacion: extractPen(1, 0)
       };
     }
     console.log('[Recotizar] Penalties found:', JSON.stringify(penalidades));
@@ -986,11 +1001,24 @@ app.post('/reservas/:id/pdf', async (req, res) => {
           console.log(`[PDF] Penalty keys in rrData:`, Object.keys(rrData).filter(k => k.toLowerCase().includes('penal') || k.toLowerCase().includes('rule')).join(','));
           console.log(`[PDF] Penalties raw count: ${rrPenalties.length}`, rrPenalties.length ? JSON.stringify(rrPenalties).substring(0, 300) : 'none');
           if (rrPenalties.length) {
-            const cambioP = rrPenalties.find(p => p.type === 0) || rrPenalties.find(p => (p.penaltyType || '').toString().toLowerCase().includes('chang'));
-            const cancelP = rrPenalties.find(p => p.type === 1) || rrPenalties.find(p => (p.penaltyType || '').toString().toLowerCase().includes('cancel'));
+            const extractPen = (type, applicability) => {
+              const p = rrPenalties.find(pen => pen.type === type && pen.applicability === applicability);
+              if (!p) {
+                if (applicability === 0) {
+                  const fb = rrPenalties.find(pen => pen.type === type) || rrPenalties.find(pen => (pen.penaltyType || '').toString().toLowerCase().includes(type === 0 ? 'chang' : 'cancel'));
+                  if (fb) return { monto: fb.amount || fb.penaltyAmount || 0, moneda: fb.currency || fb.penaltyCurrency || 'USD', permite: !!fb.enabled };
+                }
+                return null;
+              }
+              return { monto: p.amount || p.penaltyAmount || 0, moneda: p.currency || p.penaltyCurrency || 'USD', permite: !!p.enabled };
+            };
             penalidades = {
-              cambio: cambioP ? { monto: cambioP.amount || cambioP.penaltyAmount || 0, moneda: cambioP.currency || cambioP.penaltyCurrency || 'USD' } : null,
-              cancelacion: cancelP ? { monto: cancelP.amount || cancelP.penaltyAmount || 0, moneda: cancelP.currency || cancelP.penaltyCurrency || 'USD' } : null
+              cambio_antes: extractPen(0, 0),
+              cambio_durante: extractPen(0, 1),
+              devolucion_antes: extractPen(1, 0),
+              devolucion_durante: extractPen(1, 1),
+              cambio: extractPen(0, 0),
+              cancelacion: extractPen(1, 0)
             };
           }
           // También chequear fareRulesInformation
@@ -1233,15 +1261,27 @@ app.post('/reservas/:id/pdf', async (req, res) => {
         doc.font(BOLD).fontSize(11).fillColor(NAVY).text(linea, LEFT, y);
         y = doc.y + 4;
       }
-      // Penalidades
-      if (penalidades && (penalidades.cambio || penalidades.cancelacion)) {
-        y += 4;
-        doc.font(REGULAR).fontSize(8).fillColor('#666666');
-        const parts = [];
-        if (penalidades.cambio) parts.push(`Cambio: ${penalidades.cambio.moneda} ${penalidades.cambio.monto}`);
-        if (penalidades.cancelacion) parts.push(`Cancelación: ${penalidades.cancelacion.moneda} ${penalidades.cancelacion.monto}`);
-        doc.text(`Penalidades: ${parts.join('  |  ')}`, LEFT, y);
-        y = doc.y + 4;
+      // Condiciones
+      const pen = penalidades;
+      if (pen && (pen.cambio_antes || pen.cambio_durante || pen.devolucion_antes || pen.devolucion_durante || pen.cambio || pen.cancelacion)) {
+        y += 6;
+        doc.font(BOLD).fontSize(8).fillColor(NAVY).text('Condiciones:', LEFT, y);
+        y = doc.y + 3;
+        doc.font(REGULAR).fontSize(7.5).fillColor('#555555');
+        const condiciones = [
+          { label: 'Cambio (antes del viaje)', data: pen.cambio_antes || pen.cambio },
+          { label: 'Cambio (durante el viaje)', data: pen.cambio_durante },
+          { label: 'Devolución (antes del viaje)', data: pen.devolucion_antes || pen.cancelacion },
+          { label: 'Devolución (durante el viaje)', data: pen.devolucion_durante }
+        ];
+        for (const cond of condiciones) {
+          if (cond.data) {
+            const estado = cond.data.permite !== false ? 'Permite' : 'No permite';
+            const montoStr = cond.data.permite !== false && cond.data.monto > 0 ? ` — ${cond.data.moneda} ${cond.data.monto}` : '';
+            doc.text(`  • ${cond.label}: ${estado}${montoStr}`, LEFT, y);
+            y = doc.y + 2;
+          }
+        }
       }
     }
 
@@ -1307,9 +1347,24 @@ app.get('/detalle-vuelo', async (req, res) => {
       detImpuestos: r.taxDetails || []
     }));
 
-    // Penalidades
-    const cambio = penalties.find(p => p.type === 0 && p.applicability === 0 && p.enabled);
-    const cancelacion = penalties.find(p => p.type === 1 && p.applicability === 0 && p.enabled);
+    // Penalidades - extraer las 4 combinaciones (cambio/devolución × antes/durante)
+    const extractPenalty = (type, applicability) => {
+      const p = penalties.find(pen => pen.type === type && pen.applicability === applicability);
+      if (!p) return null;
+      return { monto: p.amount || 0, moneda: p.currency || 'USD', permite: !!p.enabled };
+    };
+
+    const penalidades = {
+      cambio_antes: extractPenalty(0, 0),
+      cambio_durante: extractPenalty(0, 1),
+      devolucion_antes: extractPenalty(1, 0),
+      devolucion_durante: extractPenalty(1, 1),
+      // Mantener compatibilidad con formato viejo
+      cambio: extractPenalty(0, 0),
+      cancelacion: extractPenalty(1, 0)
+    };
+    console.log('[Detalle] Penalties raw:', JSON.stringify(penalties).substring(0, 500));
+    console.log('[Detalle] Penalidades parsed:', JSON.stringify(penalidades));
 
     res.json({
       ok: true,
@@ -1319,10 +1374,7 @@ app.get('/detalle-vuelo', async (req, res) => {
       total: amounts.sellingPriceAmount || 0,
       moneda: amounts.fareCurrency || 'USD',
       desglose,
-      penalidades: {
-        cambio: cambio ? { monto: cambio.amount, moneda: cambio.currency } : null,
-        cancelacion: cancelacion ? { monto: cancelacion.amount, moneda: cancelacion.currency } : null
-      },
+      penalidades,
       reglas: q.rulesInformation?.filter(r => ['F','C'].includes(r.type)) || []
     });
   } catch(e) {
@@ -1566,20 +1618,30 @@ function generarPDFBuffer(opciones, vendedor, nombreCliente) {
         doc.moveDown(0.3);
       }
 
-      // ── PENALIDADES ──
+      // ── PENALIDADES / CONDICIONES ──
       console.log(`[PDF-Cotizacion] Penalidades para opción: ${JSON.stringify(op.penalidades)}`);
-      if (op.penalidades && (op.penalidades.cambio || op.penalidades.cancelacion)) {
+      const pen = op.penalidades;
+      if (pen && (pen.cambio_antes || pen.cambio_durante || pen.devolucion_antes || pen.devolucion_durante || pen.cambio || pen.cancelacion)) {
         doc.moveDown(0.5);
-        doc.fontSize(8).font(REGULAR).fillColor('#888888');
-        const parts = [];
-        if (op.penalidades.cambio) {
-          parts.push(`Cambio: ${op.penalidades.cambio.moneda} ${op.penalidades.cambio.monto}`);
+        doc.fontSize(8).font(BOLD).fillColor(NAVY).text('Condiciones:', PAGE_LEFT);
+        doc.moveDown(0.2);
+        doc.font(REGULAR).fontSize(7.5).fillColor('#555555');
+        const condiciones = [
+          { label: 'Cambio (antes del viaje)', data: pen.cambio_antes || pen.cambio },
+          { label: 'Cambio (durante el viaje)', data: pen.cambio_durante },
+          { label: 'Devolución (antes del viaje)', data: pen.devolucion_antes || pen.cancelacion },
+          { label: 'Devolución (durante el viaje)', data: pen.devolucion_durante }
+        ];
+        for (const cond of condiciones) {
+          if (cond.data) {
+            const estado = cond.data.permite !== false ? 'Permite' : 'No permite';
+            const montoStr = cond.data.permite !== false && cond.data.monto > 0 ? ` — ${cond.data.moneda} ${cond.data.monto}` : '';
+            doc.text(`  • ${cond.label}: ${estado}${montoStr}`, PAGE_LEFT);
+          } else {
+            doc.text(`  • ${cond.label}: No disponible`, PAGE_LEFT);
+          }
         }
-        if (op.penalidades.cancelacion) {
-          parts.push(`Cancelacion: ${op.penalidades.cancelacion.moneda} ${op.penalidades.cancelacion.monto}`);
-        }
-        doc.text(`Penalidades: ${parts.join('  |  ')}`, PAGE_LEFT);
-        console.log(`[PDF-Cotizacion] Renderizado: Penalidades: ${parts.join(' | ')}`);
+        console.log(`[PDF-Cotizacion] Renderizado: Condiciones completas`);
       }
     }
 
@@ -1730,12 +1792,20 @@ app.post('/generar-cotizacion', async (req, res) => {
       // Penalidades
       const penalties = q.penalties || [];
       console.log(`[Cotizacion] Penalties raw count: ${penalties.length}`, penalties.length ? JSON.stringify(penalties.slice(0, 3)) : 'none');
-      // type: 0=cambio, 1=cancelacion. applicability: 0=antes, 1=despues
-      const cambio = penalties.find(p => p.type === 0) || penalties.find(p => (p.penaltyType || '').toString().toLowerCase().includes('chang'));
-      const cancelacion = penalties.find(p => p.type === 1) || penalties.find(p => (p.penaltyType || '').toString().toLowerCase().includes('cancel'));
+      // type: 0=cambio, 1=cancelacion/devolución. applicability: 0=antes, 1=durante
+      const extractPen = (type, applicability) => {
+        const p = penalties.find(pen => pen.type === type && pen.applicability === applicability);
+        if (!p) return null;
+        return { monto: p.amount || p.penaltyAmount || 0, moneda: p.currency || p.penaltyCurrency || 'USD', permite: !!p.enabled };
+      };
       const penalidades = {
-        cambio: cambio ? { monto: cambio.amount || cambio.penaltyAmount || 0, moneda: cambio.currency || cambio.penaltyCurrency || 'USD' } : null,
-        cancelacion: cancelacion ? { monto: cancelacion.amount || cancelacion.penaltyAmount || 0, moneda: cancelacion.currency || cancelacion.penaltyCurrency || 'USD' } : null
+        cambio_antes: extractPen(0, 0),
+        cambio_durante: extractPen(0, 1),
+        devolucion_antes: extractPen(1, 0),
+        devolucion_durante: extractPen(1, 1),
+        // Compatibilidad
+        cambio: extractPen(0, 0),
+        cancelacion: extractPen(1, 0)
       };
       console.log(`[Cotizacion] Penalidades: ${JSON.stringify(penalidades)}`);
 
