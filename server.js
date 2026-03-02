@@ -748,7 +748,8 @@ app.post('/reservas/:id/recotizar', async (req, res) => {
     if (Array.isArray(fares)) {
       for (const fare of fares) {
         console.log('[Recotizar] Fare keys:', Object.keys(fare).join(','), 'passengerDiscountType:', fare.passengerDiscountType);
-        console.log('[Recotizar] Commission:', JSON.stringify(fare.commissionRule), 'OverComm:', JSON.stringify(fare.overCommissionRule), 'Selling:', JSON.stringify(fare.sellingFareValues), 'Fees:', JSON.stringify(fare.feeValues));
+        console.log('[Recotizar] Commission:', JSON.stringify(fare.commissionRule));
+        console.log('[Recotizar] OverComm:', JSON.stringify(fare.overCommissionRule));
         const fv = fare.fareValues || fare;
         tarifas.push({
           pasajero: fare.compiledPassenger || fare.compiledPassengerList?.[0] || '',
