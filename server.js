@@ -41,6 +41,33 @@ const LLEEGO_PASS = process.env.LLEEGO_PASS || 't7pmgrxr0V';
 const LLEEGO_AGENT = process.env.LLEEGO_AGENT || 'GFinkelstein';
 const LLEEGO_API_KEY = 'RD7dLSjYqT18InSheQfKLvpANUzNVvEG';
 let lleegoTokenCache = { token: null, expiry: 0 };
+
+// Mapa global de códigos IATA → ciudades (para normalizar nombres de aeropuertos)
+const AIRPORT_CITY_MAP = {
+  'EZE':'Buenos Aires','AEP':'Buenos Aires','MIA':'Miami','MAD':'Madrid','BCN':'Barcelona',
+  'FCO':'Roma','CDG':'París','ORY':'París','LHR':'Londres','LGW':'Londres','FRA':'Frankfurt',
+  'AMS':'Amsterdam','IST':'Estambul','SAW':'Estambul','DXB':'Dubai','DOH':'Doha',
+  'TLV':'Tel Aviv','ADD':'Addis Abeba','GRU':'San Pablo','GIG':'Río de Janeiro',
+  'SCL':'Santiago','LIM':'Lima','BOG':'Bogotá','PTY':'Panamá','CUN':'Cancún',
+  'MEX':'México DF','JFK':'Nueva York','EWR':'Nueva York','LAX':'Los Ángeles',
+  'ORD':'Chicago','ATL':'Atlanta','DFW':'Dallas','CLT':'Charlotte','PHL':'Filadelfia',
+  'MVD':'Montevideo','ASU':'Asunción','COR':'Córdoba','MDZ':'Mendoza','BRC':'Bariloche',
+  'IGR':'Iguazú','FTE':'El Calafate','USH':'Ushuaia','NQN':'Neuquén','ROS':'Rosario',
+  'SLA':'Salta','TUC':'Tucumán','JUJ':'Jujuy','PMC':'Puerto Montt','PUQ':'Punta Arenas',
+  'SSA':'Salvador','REC':'Recife','FOR':'Fortaleza','FLN':'Florianópolis',
+  'SDU':'Río de Janeiro','CNF':'Belo Horizonte','CWB':'Curitiba','POA':'Porto Alegre',
+  'VCP':'Campinas','BSB':'Brasilia','MXP':'Milán','LIN':'Milán','MUC':'Múnich',
+  'ZRH':'Zúrich','VIE':'Viena','CPH':'Copenhague','OSL':'Oslo','ARN':'Estocolmo',
+  'HEL':'Helsinki','WAW':'Varsovia','PRG':'Praga','BUD':'Budapest','OTP':'Bucarest',
+  'ATH':'Atenas','LIS':'Lisboa','OPO':'Oporto','DUB':'Dublín','EDI':'Edimburgo',
+  'BRU':'Bruselas','GVA':'Ginebra','NCE':'Niza','MRS':'Marsella','LYS':'Lyon',
+  'NRT':'Tokio','HND':'Tokio','ICN':'Seúl','PEK':'Pekín','PVG':'Shanghái',
+  'HKG':'Hong Kong','SIN':'Singapur','BKK':'Bangkok','DEL':'Delhi','BOM':'Bombay',
+  'SYD':'Sídney','MEL':'Melbourne','AKL':'Auckland','JNB':'Johannesburgo',
+  'CAI':'El Cairo','CMN':'Casablanca','NBO':'Nairobi','CPT':'Ciudad del Cabo',
+  'SFO':'San Francisco','BOS':'Boston','SEA':'Seattle','DEN':'Denver','MSP':'Minneapolis',
+  'DTW':'Detroit','IAH':'Houston','FLL':'Fort Lauderdale','MCO':'Orlando','TPA':'Tampa',
+};
 // Cache de soluciones Lleego para Ver precio / Reservar
 const lleegoSolutionsCache = new Map(); // key: lleego_SOLID → raw solution data
 // Limpiar cache cada 30 min (las soluciones expiran)
@@ -229,8 +256,8 @@ function procesarVuelosLleego(resp, paxCounts = { adultos: 1, ninos: 0, infantes
             return {
               origen: seg.departure,
               destino: seg.arrival,
-              origenCiudad: depPort.city_name || depPort.name || '',
-              destinoCiudad: arrPort.city_name || arrPort.name || '',
+              origenCiudad: AIRPORT_CITY_MAP[seg.departure] || depPort.city_name || depPort.name || '',
+              destinoCiudad: AIRPORT_CITY_MAP[seg.arrival] || arrPort.city_name || arrPort.name || '',
               salida: seg.departure_date,
               llegada: seg.arrival_date,
               vuelo: `${seg.marketing_company}${seg.transport_number}`,
@@ -242,8 +269,8 @@ function procesarVuelosLleego(resp, paxCounts = { adultos: 1, ninos: 0, infantes
             legId: jRef,
             origen: firstSeg.departure,
             destino: lastSeg.arrival,
-            origenCiudad: ports[firstSeg.departure]?.city_name || ports[firstSeg.departure]?.name || '',
-            destinoCiudad: ports[lastSeg.arrival]?.city_name || ports[lastSeg.arrival]?.name || '',
+            origenCiudad: AIRPORT_CITY_MAP[firstSeg.departure] || ports[firstSeg.departure]?.city_name || ports[firstSeg.departure]?.name || '',
+            destinoCiudad: AIRPORT_CITY_MAP[lastSeg.arrival] || ports[lastSeg.arrival]?.city_name || ports[lastSeg.arrival]?.name || '',
             salida: firstSeg.departure_date,
             llegada: lastSeg.arrival_date,
             duracionMin: Math.round((journey.duration || 0) / 60),
@@ -1645,13 +1672,15 @@ app.post('/reservas/:id/pdf', async (req, res) => {
         }
         vuelos = expanded;
         
-        // Build airportsInfo from city names in itinerario
+        // Build airportsInfo from city names in itinerario + global map
         for (const v of vuelos) {
-          if (v._depCity && v.departureAirportCode && !airportsInfo[v.departureAirportCode]) {
-            airportsInfo[v.departureAirportCode] = { cityName: v._depCity };
+          if (v.departureAirportCode && !airportsInfo[v.departureAirportCode]) {
+            const city = v._depCity || AIRPORT_CITY_MAP[v.departureAirportCode] || '';
+            if (city) airportsInfo[v.departureAirportCode] = { cityName: city };
           }
-          if (v._arrCity && v.arrivalAirportCode && !airportsInfo[v.arrivalAirportCode]) {
-            airportsInfo[v.arrivalAirportCode] = { cityName: v._arrCity };
+          if (v.arrivalAirportCode && !airportsInfo[v.arrivalAirportCode]) {
+            const city = v._arrCity || AIRPORT_CITY_MAP[v.arrivalAirportCode] || '';
+            if (city) airportsInfo[v.arrivalAirportCode] = { cityName: city };
           }
         }
       } catch(e) { console.log('[PDF] Error parsing itinerario:', e.message); }
@@ -1816,8 +1845,8 @@ app.post('/reservas/:id/pdf', async (req, res) => {
         llegada = `${String(at.getHours()).padStart(2,'0')}.${String(at.getMinutes()).padStart(2,'0')}`;
       } catch(e) {}
 
-      const depCityRaw = airportsInfo[dep]?.cityName || '';
-      const arrCityRaw = airportsInfo[arr]?.cityName || '';
+      const depCityRaw = airportsInfo[dep]?.cityName || AIRPORT_CITY_MAP[dep] || '';
+      const arrCityRaw = airportsInfo[arr]?.cityName || AIRPORT_CITY_MAP[arr] || '';
       const depCity = depCityRaw ? `${titleCase(depCityRaw)} (${dep})` : dep;
       const arrCity = arrCityRaw ? `${titleCase(arrCityRaw)} (${arr})` : arr;
 
@@ -2443,8 +2472,8 @@ app.post('/generar-cotizacion', async (req, res) => {
               const seg = cached.segments[sid]; if (!seg) continue;
               const depPort = cached.ports[seg.departure] || {};
               const arrPort = cached.ports[seg.arrival] || {};
-              const depCity = depPort.city_name || depPort.name || AIRPORT_CITY[seg.departure] || '';
-              const arrCity = arrPort.city_name || arrPort.name || AIRPORT_CITY[seg.arrival] || '';
+              const depCity = AIRPORT_CITY[seg.departure] || depPort.city_name || '';
+              const arrCity = AIRPORT_CITY[seg.arrival] || arrPort.city_name || '';
               const dep = new Date(seg.departure_date);
               const arr = new Date(seg.arrival_date);
               
