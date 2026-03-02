@@ -90,11 +90,14 @@ app.get('/health', (req, res) => res.json({ ok:true }));
 
 // ─── BÚSQUEDA DE VUELOS ───
 app.post('/buscar-vuelos', async (req, res) => {
-  const { tipo, origen, destino, salida, regreso, adultos, ninos, infantes, stops, tramos, moneda } = req.body;
+  const { tipo, origen, destino, salida, regreso, adultos, ninos, infantes, stops, tramos, moneda, airlines, cabinType, flightType } = req.body;
   try {
     const token = await getToken();
     const stopsFilter = (stops !== undefined && stops !== '') ? parseInt(stops) : null;
     const currencyCode = moneda === 'ARS' ? null : 'USD';
+    const airlinesArr = Array.isArray(airlines) && airlines.length ? airlines : [];
+    const cabinVal = (cabinType !== undefined && cabinType !== null && cabinType !== '') ? cabinType : null;
+    const flightTypeVal = (flightType !== undefined && flightType !== null && flightType !== '') ? flightType : null;
 
     let payload, endpoint, addSearchPayload;
 
@@ -104,8 +107,8 @@ app.post('/buscar-vuelos', async (req, res) => {
         DepartCode: origen, ArrivalCode: destino,
         DepartDate: `${salida}T00:00:00`, DepartTime: null,
         Adults: parseInt(adultos), Childs: parseInt(ninos), Infants: parseInt(infantes),
-        CabinType: null, Stops: null, Airlines: [],
-        TypeOfFlightAllowedInItinerary: null, SortByGLASAlgorithm: "",
+        CabinType: cabinVal, Stops: stopsFilter, Airlines: airlinesArr,
+        TypeOfFlightAllowedInItinerary: flightTypeVal, SortByGLASAlgorithm: "",
         AlternateCurrencyCode: currencyCode, CorporationCodeGlas: null, IncludeFiltersOptions: true
       };
       addSearchPayload = { SearchTravelType: 2, OneWayModel: payload, MultipleLegsModel: null, RoundTripModel: null };
@@ -116,8 +119,8 @@ app.post('/buscar-vuelos', async (req, res) => {
         DepartDate: `${salida}T00:00:00`, ArrivalDate: `${regreso}T00:00:00`,
         ArrivalTime: null, DepartTime: null,
         Adults: parseInt(adultos), Childs: parseInt(ninos), Infants: parseInt(infantes),
-        CabinType: null, Stops: null, Airlines: [],
-        TypeOfFlightAllowedInItinerary: null, SortByGLASAlgorithm: "",
+        CabinType: cabinVal, Stops: stopsFilter, Airlines: airlinesArr,
+        TypeOfFlightAllowedInItinerary: flightTypeVal, SortByGLASAlgorithm: "",
         AlternateCurrencyCode: currencyCode, CorporationCodeGlas: null, IncludeFiltersOptions: true
       };
       addSearchPayload = { SearchTravelType: 1, OneWayModel: null, MultipleLegsModel: null, RoundTripModel: payload };
@@ -126,11 +129,11 @@ app.post('/buscar-vuelos', async (req, res) => {
       const legs = tramos.map((t, i) => ({
         LegNumber: i+1, DepartCode: t.origen, ArrivalCode: t.destino,
         DepartDate: `${t.salida}T00:00:00`, DepartTime: null,
-        CabinType: null, Stops: null, Airlines: []
+        CabinType: cabinVal, Stops: stopsFilter, Airlines: airlinesArr
       }));
       payload = {
         Legs: legs, Adults: parseInt(adultos), Childs: parseInt(ninos), Infants: parseInt(infantes),
-        TypeOfFlightAllowedInItinerary: null, SortByGLASAlgorithm: "",
+        TypeOfFlightAllowedInItinerary: flightTypeVal, SortByGLASAlgorithm: "",
         AlternateCurrencyCode: currencyCode, CorporationCodeGlas: null, IncludeFiltersOptions: true
       };
       addSearchPayload = { SearchTravelType: 3, OneWayModel: null, MultipleLegsModel: payload, RoundTripModel: null };
@@ -140,6 +143,7 @@ app.post('/buscar-vuelos', async (req, res) => {
       method:'POST', headers: getHeaders(token), body: JSON.stringify(addSearchPayload)
     }).catch(()=>{});
 
+    console.log(`[Vuelos] Búsqueda: airlines=${airlinesArr.join(',')}, cabin=${cabinVal}, flightType=${flightTypeVal}, stops=${stopsFilter}`);
     const searchRes = await fetch(endpoint, {
       method:'POST', headers: getHeaders(token), body: JSON.stringify(payload)
     });
