@@ -1954,53 +1954,10 @@ app.get('/detalle-vuelo', async (req, res) => {
     const sol = cached.sol;
     const price = sol.total_price || {};
     
-    // Try to extract per-pax pricing from multiple possible locations
+    // Try to extract per-pax pricing from Lleego pricing API
     const desglose = [];
     const { adultos = 1, ninos = 0, infantes = 0 } = cached.paxCounts || {};
-    const totalPax = adultos + ninos + infantes;
-    
-    console.log('[Lleego] PaxCounts:', adultos, 'ADT', ninos, 'CHD', infantes, 'INF');
-    
-    // For now, Lleego only gives total_price for all pax combined
-    // Show per-type breakdown using total / pax count as approximation
-    if (adultos > 0) {
-      // Adult fare = total / totalPax (approximation since Lleego doesn't give per-pax)
-      const adtTotal = price.total ? (price.total / totalPax) : 0;
-      const adtBase = price.base ? (price.base / totalPax) : 0;
-      const adtTax = adtTotal - adtBase;
-      desglose.push({
-        tipo: 'ADT', cantidad: adultos,
-        tarifa: Math.round(adtBase * 100) / 100,
-        impuestos: Math.round(adtTax * 100) / 100,
-        fee: 0, descuento: 0,
-        total: Math.round(adtTotal * 100) / 100,
-        detImpuestos: []
-      });
-    }
-    if (ninos > 0) {
-      const chdTotal = price.total ? (price.total / totalPax) : 0;
-      const chdBase = price.base ? (price.base / totalPax) : 0;
-      desglose.push({
-        tipo: 'CHD', cantidad: ninos,
-        tarifa: Math.round(chdBase * 100) / 100,
-        impuestos: Math.round((chdTotal - chdBase) * 100) / 100,
-        fee: 0, descuento: 0,
-        total: Math.round(chdTotal * 100) / 100,
-        detImpuestos: []
-      });
-    }
-    if (infantes > 0) {
-      const infTotal = price.total ? (price.total / totalPax) : 0;
-      const infBase = price.base ? (price.base / totalPax) : 0;
-      desglose.push({
-        tipo: 'INF', cantidad: infantes,
-        tarifa: Math.round(infBase * 100) / 100,
-        impuestos: Math.round((infTotal - infBase) * 100) / 100,
-        fee: 0, descuento: 0,
-        total: Math.round(infTotal * 100) / 100,
-        detImpuestos: []
-      });
-    }
+    console.log('[Lleego] DetVuelo v2 | PaxCounts:', adultos, 'ADT', ninos, 'CHD', infantes, 'INF', '| solId:', sol.id);
     
     // Try to fetch conditions from Lleego policy endpoint
     let reglas = [];
@@ -2008,41 +1965,124 @@ app.get('/detalle-vuelo', async (req, res) => {
     try {
       const llToken = await getLleegoToken();
       if (llToken && cached.searchToken) {
-        // Fetch pricing for detailed breakdown
+        // 1. Fetch pricing for per-pax breakdown
         try {
           const pricingUrl = `https://api-tr.lleego.com/api/v2/transport/pricing?format=json&solutionID0=${sol.id}&token=${cached.searchToken}&locale=es-ar`;
+          console.log('[Lleego] Pricing URL:', pricingUrl);
           const pricingRes = await fetch(pricingUrl, {
             headers: { 'Authorization': `Bearer ${llToken}`, 'x-api-key': LLEEGO_API_KEY, 'lang': 'es-ar' }
           });
           if (pricingRes.ok) {
             const pricingData = await pricingRes.json();
-            console.log('[Lleego] Pricing response keys:', Object.keys(pricingData));
-            console.log('[Lleego] Pricing full:', JSON.stringify(pricingData).substring(0, 2000));
-            // Update desglose from pricing if available - try many paths
-            const paxBreakdown = pricingData.passengers || pricingData.pax_prices || 
-                                  pricingData.data?.passengers || pricingData.data?.pax_prices ||
-                                  pricingData.prices || pricingData.data?.prices ||
-                                  pricingData.solutions?.[0]?.pax_prices || 
-                                  pricingData.solutions?.[0]?.prices || [];
-            console.log('[Lleego] Pricing paxBreakdown count:', paxBreakdown.length);
-            if (paxBreakdown.length) {
-              desglose.length = 0;
-              for (const pp of paxBreakdown) {
-                desglose.push({
-                  tipo: pp.pax_type || pp.type || 'ADT',
-                  cantidad: pp.quantity || pp.count || 1,
-                  tarifa: pp.base || pp.fare || pp.base_amount || 0,
-                  impuestos: pp.taxes || pp.tax || pp.tax_amount || 0,
-                  fee: pp.fee || 0, descuento: 0,
-                  total: pp.total || pp.total_amount || ((pp.base||0) + (pp.taxes||0)),
-                  detImpuestos: pp.tax_details || pp.taxes_detail || []
-                });
+            console.log('[Lleego] Pricing FULL response:', JSON.stringify(pricingData).substring(0, 3000));
+            
+            // Try to find per-pax breakdown in response - check many possible paths
+            let paxFound = false;
+            
+            // Try solutions[0] path
+            const pSol = pricingData.solutions?.[0] || pricingData;
+            const pAssocs = pSol.data?.associations || pSol.associations || [];
+            
+            if (pAssocs.length) {
+              for (const a of pAssocs) {
+                // Check segment_references for per-pax pricing
+                const segRefs = a.segment_references || {};
+                for (const [key, segRef] of Object.entries(segRefs)) {
+                  if (segRef.prices && Array.isArray(segRef.prices)) {
+                    console.log('[Lleego] Found prices in segRef:', JSON.stringify(segRef.prices).substring(0, 500));
+                    for (const p of segRef.prices) {
+                      desglose.push({
+                        tipo: (p.pax_type || p.type || 'ADT').toUpperCase(),
+                        cantidad: p.quantity || p.count || 1,
+                        tarifa: p.base || p.fare || 0,
+                        impuestos: p.taxes || p.tax || 0,
+                        fee: 0, descuento: 0,
+                        total: p.total || ((p.base||0) + (p.taxes||0)),
+                        detImpuestos: p.tax_details || []
+                      });
+                    }
+                    paxFound = true;
+                    break;
+                  }
+                }
+                if (paxFound) break;
+                
+                // Check association-level prices
+                if (a.prices) {
+                  console.log('[Lleego] Found prices in assoc:', JSON.stringify(a.prices).substring(0, 500));
+                }
               }
             }
+            
+            // Try pax_prices / passengers at solution level
+            if (!paxFound) {
+              const paxBreakdown = pSol.pax_prices || pSol.passengers || pSol.prices || 
+                                    pricingData.pax_prices || pricingData.passengers || [];
+              if (paxBreakdown.length) {
+                for (const pp of paxBreakdown) {
+                  desglose.push({
+                    tipo: (pp.pax_type || pp.type || 'ADT').toUpperCase(),
+                    cantidad: pp.quantity || pp.count || 1,
+                    tarifa: pp.base || pp.fare || pp.base_amount || 0,
+                    impuestos: pp.taxes || pp.tax || pp.tax_amount || 0,
+                    fee: pp.fee || 0, descuento: 0,
+                    total: pp.total || pp.total_amount || ((pp.base||0) + (pp.taxes||0)),
+                    detImpuestos: pp.tax_details || pp.taxes_detail || []
+                  });
+                }
+                paxFound = true;
+              }
+            }
+            
+            // Try total_price with pax-level breakdown
+            if (!paxFound) {
+              const tp = pSol.total_price || pricingData.total_price || {};
+              if (tp.pax_prices || tp.passengers || tp.breakdown) {
+                const bk = tp.pax_prices || tp.passengers || tp.breakdown || [];
+                for (const pp of bk) {
+                  desglose.push({
+                    tipo: (pp.pax_type || pp.type || 'ADT').toUpperCase(),
+                    cantidad: pp.quantity || 1,
+                    tarifa: pp.base || 0,
+                    impuestos: pp.taxes || 0,
+                    fee: 0, descuento: 0,
+                    total: pp.total || 0,
+                    detImpuestos: []
+                  });
+                }
+                paxFound = true;
+              }
+            }
+            
+            console.log('[Lleego] Pricing paxFound:', paxFound, 'desglose count:', desglose.length);
           }
-        } catch(pricingErr) { console.log('[Lleego] Pricing error (non-fatal):', pricingErr.message); }
+        } catch(pricingErr) { console.log('[Lleego] Pricing error:', pricingErr.message); }
+        
+        // 2. If no per-pax data from pricing, try standalonecatalogue
+        if (!desglose.length) {
+          try {
+            const catUrl = `https://api-tr.lleego.com/api/v2/transport/standalonecatalogue?format=json&solutionID0=${sol.id}&token=${cached.searchToken}&locale=es-ar`;
+            console.log('[Lleego] Catalogue URL:', catUrl);
+            const catRes = await fetch(catUrl, {
+              headers: { 'Authorization': `Bearer ${llToken}`, 'x-api-key': LLEEGO_API_KEY, 'lang': 'es-ar' }
+            });
+            if (catRes.ok) {
+              const catData = await catRes.json();
+              console.log('[Lleego] Catalogue FULL:', JSON.stringify(catData).substring(0, 3000));
+            }
+          } catch(catErr) { console.log('[Lleego] Catalogue error:', catErr.message); }
+        }
 
-        // Fetch conditions from policy endpoint
+        // 3. Fallback: use total_price divided proportionally
+        if (!desglose.length) {
+          console.log('[Lleego] Using total_price fallback with pax counts:', adultos, ninos, infantes);
+          const totalPax = adultos + ninos + infantes;
+          const perPax = price.total ? (price.total / totalPax) : 0;
+          const perPaxBase = price.base ? (price.base / totalPax) : 0;
+          if (adultos > 0) desglose.push({ tipo: 'ADT', cantidad: adultos, tarifa: Math.round(perPaxBase*100)/100, impuestos: Math.round((perPax-perPaxBase)*100)/100, fee: 0, descuento: 0, total: Math.round(perPax*100)/100, detImpuestos: [] });
+          if (ninos > 0) desglose.push({ tipo: 'CHD', cantidad: ninos, tarifa: Math.round(perPaxBase*100)/100, impuestos: Math.round((perPax-perPaxBase)*100)/100, fee: 0, descuento: 0, total: Math.round(perPax*100)/100, detImpuestos: [] });
+          if (infantes > 0) desglose.push({ tipo: 'INF', cantidad: infantes, tarifa: Math.round(perPaxBase*100)/100, impuestos: Math.round((perPax-perPaxBase)*100)/100, fee: 0, descuento: 0, total: Math.round(perPax*100)/100, detImpuestos: [] });
+        }
         const policyUrl = `https://api-tr.lleego.com/api/v2/transport/policy?token=${cached.searchToken}&solutionID0=${sol.id}&locale=es-ar`;
         console.log('[Lleego] Policy URL:', policyUrl);
         const policyRes = await fetch(policyUrl, {
