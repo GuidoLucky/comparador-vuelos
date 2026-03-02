@@ -227,7 +227,44 @@ header{background:var(--dark2);border-bottom:1px solid var(--border);padding:14p
     <div class="logo-text"><span>Lucky</span> Tour</div>
     <div class="logo-sub">Comparador de Vuelos</div>
   </div>
+  <div style="margin-left:auto;display:flex;align-items:center;gap:10px;">
+    <span id="userInfo" style="font-size:11px;color:#8b949e;"></span>
+    <button onclick="logout()" style="background:none;border:1px solid #30363d;color:#8b949e;padding:4px 12px;border-radius:6px;font-size:11px;cursor:pointer;font-family:'Sora',sans-serif;">Salir</button>
+  </div>
 </header>
+<script>
+// Auth: override fetch para incluir token automáticamente
+const _originalFetch = window.fetch;
+window.fetch = function(url, opts = {}) {
+  const token = localStorage.getItem('lt_session');
+  if (token) {
+    opts.headers = opts.headers || {};
+    if (opts.headers instanceof Headers) {
+      opts.headers.set('X-Session-Token', token);
+    } else {
+      opts.headers['X-Session-Token'] = token;
+    }
+  }
+  return _originalFetch(url, opts).then(res => {
+    if (res.status === 401 && !url.includes('/api/login') && !url.includes('/api/session')) {
+      localStorage.removeItem('lt_session');
+      window.location.href = '/login.html';
+    }
+    return res;
+  });
+};
+function logout() {
+  fetch('/api/logout', { method: 'POST' }).catch(()=>{});
+  localStorage.removeItem('lt_session');
+  localStorage.removeItem('lt_vendedor');
+  localStorage.removeItem('lt_nombre');
+  localStorage.removeItem('lt_email');
+  window.location.href = '/login.html';
+}
+// Mostrar info del usuario
+const _ltNombre = localStorage.getItem('lt_nombre');
+if (_ltNombre) document.getElementById('userInfo').textContent = _ltNombre;
+</script>
 <div class="container">
   <div class="nav-tabs">
     <button class="nav-tab active" onclick="mostrarVista('buscar',this)">🔍 Buscar vuelos</button>
@@ -1230,10 +1267,14 @@ async function cargarReservas() {
 
 // ─── COTIZACIÓN ───
 let vuelosCotizar = []; // [{quotationId, searchId}]
+const equipajeMap = {}; // quotationId → equipaje data
 
 function toggleCotizar(quotationId, searchId, checked) {
   if (checked) {
     if (!vuelosCotizar.find(v => v.quotationId === quotationId)) {
+      // Buscar equipaje del vuelo en todosLosVuelos
+      const vuelo = todosLosVuelos.find(v => v.id === quotationId);
+      if (vuelo?.equipaje) equipajeMap[quotationId] = vuelo.equipaje;
       vuelosCotizar.push({ quotationId, searchId });
     }
   } else {
@@ -1266,10 +1307,14 @@ async function generarCotizacion() {
   btn.textContent = '⏳ Generando...';
   try {
     const vendedor = document.getElementById('cotizarVendedor').value;
+    const opcionesConEquipaje = vuelosCotizar.map(v => ({
+      ...v,
+      equipaje: equipajeMap[v.quotationId] || null
+    }));
     const r = await fetch('/generar-cotizacion', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ opciones: vuelosCotizar, vendedor })
+      body: JSON.stringify({ opciones: opcionesConEquipaje, vendedor })
     });
     if (!r.ok) {
       const err = await r.json();
@@ -1309,5 +1354,13 @@ cargarMarkup();
   <button class="btn-cotizar-gen" id="btnGenerarCot" onclick="generarCotizacion()">📄 Generar PDF</button>
   <button class="btn-cotizar-cancel" onclick="limpiarCotizacion()">✕ Cancelar</button>
 </div>
+<script>
+// Auto-seleccionar vendedor desde sesión
+const _ltVendedor = localStorage.getItem('lt_vendedor');
+if (_ltVendedor) {
+  const sel = document.getElementById('cotizarVendedor');
+  if (sel) sel.value = _ltVendedor;
+}
+</script>
 </body>
 </html>
