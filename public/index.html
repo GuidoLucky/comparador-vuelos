@@ -70,7 +70,11 @@ header{background:var(--dark2);border-bottom:1px solid var(--border);padding:14p
 .aero-col{text-align:center;}
 .aero-code{font-size:20px;font-weight:700;color:var(--gold);}
 .aero-name{font-size:10px;color:var(--muted);margin-top:2px;line-height:1.3;}
-.aero-source{font-size:9px;color:var(--muted);margin-top:3px;background:var(--dark3);border-radius:3px;padding:1px 5px;display:inline-block;}
+.aero-source{font-size:9px;color:var(--muted);margin-top:3px;display:flex;gap:4px;flex-wrap:wrap;}
+.badge-fuente{font-size:8px;font-weight:700;padding:1px 6px;border-radius:3px;letter-spacing:0.3px;}
+.badge-tucano{background:rgba(46,204,113,0.15);color:#2ecc71;}
+.badge-gea{background:rgba(66,165,245,0.15);color:#42a5f5;}
+.badge-gds{background:var(--dark3);color:var(--muted);padding:1px 5px;border-radius:3px;font-size:8px;}
 .tramo{padding:2px 0;}
 .tramo-label{font-size:9px;color:var(--muted);text-transform:uppercase;letter-spacing:1px;margin-bottom:5px;font-weight:600;}
 .tramo-row{display:flex;align-items:center;gap:10px;}
@@ -410,7 +414,7 @@ let tipoActual='roundtrip';
 let monedaActual='USD';
 let tcUsdArs=1200;
 let todosLosVuelos=[];
-let filtros={escalas:-1,maxPrecioUSD:null,aerolineas:[],ordenar:'precio'};
+let filtros={escalas:-1,maxPrecioUSD:null,aerolineas:[],ordenar:'precio',fuente:''};
 
 // Cargar tipo de cambio al iniciar
 fetch('/tipo-cambio').then(r=>r.json()).then(d=>{
@@ -536,7 +540,7 @@ function renderVuelo(v){
       <div class="aero-col">
         <div class="aero-code">${v.aerolinea}</div>
         <div class="aero-name">${v.aerolineaDesc}</div>
-        <div class="aero-source">${v.source}</div>
+        <div class="aero-source">${v.fuente?`<span class="badge-fuente badge-${v.fuente==='GEA'?'gea':'tucano'}">${v.fuente}</span>`:''}${v.gds?`<span class="badge-gds">${v.gds}</span>`:''}</div>
       </div>
       <div>${tramosHTML}</div>
       <div class="precio-col">
@@ -552,8 +556,10 @@ function renderVuelo(v){
       <label class="cotizar-check">
         <input type="checkbox" onchange="toggleCotizar('${v.id}','${searchIdActual}',this.checked)"> Cotizar
       </label>
-      <button class="btn-detalle" onclick="verDetalle('${v.id}','${searchIdActual}',event)">📊 Ver precio</button>
-      <button class="btn-reservar" onclick="abrirReserva('${v.id}','${searchIdActual}',event)">✈ Reservar</button>
+      ${v.fuente==='GEA'
+        ?'<span style="font-size:11px;color:var(--muted);padding:6px 0">Reservar desde Lleego</span>'
+        :`<button class="btn-detalle" onclick="verDetalle('${v.id}','${searchIdActual}',event)">📊 Ver precio</button>
+      <button class="btn-reservar" onclick="abrirReserva('${v.id}','${searchIdActual}',event)">✈ Reservar</button>`}
     </div>
     <div class="detalle-panel" data-detalle="${v.id}"></div>
   </div>`;
@@ -564,6 +570,7 @@ function aplicarFiltrosYRender(){
   if(filtros.escalas>=0)vuelos=vuelos.filter(v=>v.escalas===filtros.escalas);
   if(filtros.aerolineas.length>0)vuelos=vuelos.filter(v=>filtros.aerolineas.includes(v.aerolinea));
   if(filtros.maxPrecioUSD)vuelos=vuelos.filter(v=>v.precioUSD<=filtros.maxPrecioUSD);
+  if(filtros.fuente)vuelos=vuelos.filter(v=>v.fuente===filtros.fuente);
   if(filtros.ordenar==='precio')vuelos.sort((a,b)=>a.precioUSD-b.precioUSD);
   else if(filtros.ordenar==='duracion')vuelos.sort((a,b)=>(a.itinerario[0]?.duracionMin||999)-(b.itinerario[0]?.duracionMin||999));
   else if(filtros.ordenar==='salida')vuelos.sort((a,b)=>new Date(a.itinerario[0]?.salida)-new Date(b.itinerario[0]?.salida));
@@ -572,6 +579,9 @@ function aplicarFiltrosYRender(){
   todosLosVuelos.forEach(v=>{cuentas[Math.min(v.escalas,2)]++;});
   const aerosMap={};
   todosLosVuelos.forEach(v=>{aerosMap[v.aerolinea]=v.aerolineaDesc;});
+  const fuenteCounts={Tucano:0,GEA:0};
+  todosLosVuelos.forEach(v=>{if(v.fuente&&fuenteCounts[v.fuente]!==undefined)fuenteCounts[v.fuente]++;});
+  const hayMultiFuente=fuenteCounts.Tucano>0&&fuenteCounts.GEA>0;
   const precioMinUSD=Math.min(...todosLosVuelos.map(v=>v.precioUSD));
   const precioMaxUSD=Math.max(...todosLosVuelos.map(v=>v.precioUSD));
   const currentMaxUSD=filtros.maxPrecioUSD||precioMaxUSD;
@@ -602,6 +612,12 @@ function aplicarFiltrosYRender(){
           <div class="filtro-grupo-title">Aerolínea</div>
           ${Object.entries(aerosMap).map(([code,name])=>`<button class="filtro-btn ${filtros.aerolineas.includes(code)?'active':''}" onclick="toggleAero('${code}')"><span style="font-weight:700;color:var(--gold)">${code}</span> ${name}</button>`).join('')}
         </div>
+        ${hayMultiFuente?`<div class="filtro-grupo">
+          <div class="filtro-grupo-title">Fuente</div>
+          <button class="filtro-btn ${filtros.fuente===''?'active':''}" onclick="setFuente('')"><div class="filtro-dot" style="background:var(--blue)"></div>Todas<span class="filtro-count">${todosLosVuelos.length}</span></button>
+          <button class="filtro-btn ${filtros.fuente==='Tucano'?'active':''}" onclick="setFuente('Tucano')"><div class="filtro-dot" style="background:#2ecc71"></div>Tucano<span class="filtro-count">${fuenteCounts.Tucano}</span></button>
+          <button class="filtro-btn ${filtros.fuente==='GEA'?'active':''}" onclick="setFuente('GEA')"><div class="filtro-dot" style="background:#42a5f5"></div>GEA<span class="filtro-count">${fuenteCounts.GEA}</span></button>
+        </div>`:''}
         <button class="btn-limpiar" onclick="limpiarFiltros()">✕ Limpiar filtros</button>
       </div>
       <div>
@@ -622,7 +638,8 @@ function setFE(n){filtros.escalas=n;aplicarFiltrosYRender();}
 function setFP(v){filtros.maxPrecioUSD=parseFloat(v);aplicarFiltrosYRender();}
 function toggleAero(code){filtros.aerolineas.includes(code)?filtros.aerolineas=filtros.aerolineas.filter(a=>a!==code):filtros.aerolineas.push(code);aplicarFiltrosYRender();}
 function setOrden(v){filtros.ordenar=v;aplicarFiltrosYRender();}
-function limpiarFiltros(){filtros={escalas:-1,maxPrecioUSD:null,aerolineas:[],ordenar:'precio'};aplicarFiltrosYRender();}
+function setFuente(v){filtros.fuente=v;aplicarFiltrosYRender();}
+function limpiarFiltros(){filtros={escalas:-1,maxPrecioUSD:null,aerolineas:[],ordenar:'precio',fuente:''};aplicarFiltrosYRender();}
 
 async function buscar(){
   const adultos=document.getElementById('adultos').value;
@@ -666,7 +683,7 @@ async function buscar(){
     if(!data.ok){document.getElementById('mainContent').innerHTML=`<div class="estado"><div style="font-size:40px">⚠️</div><h3>Error</h3><p>${data.error}</p></div>`;return;}
     todosLosVuelos=data.vuelos||[];
     if(todosLosVuelos.length) document.getElementById('markupBar').style.display='flex';
-    filtros={escalas:-1,maxPrecioUSD:null,aerolineas:[],ordenar:'precio'};
+    filtros={escalas:-1,maxPrecioUSD:null,aerolineas:[],ordenar:'precio',fuente:''};
     if(!todosLosVuelos.length){document.getElementById('mainContent').innerHTML=`<div class="estado"><div style="font-size:40px">🔍</div><h3>Sin resultados</h3><p>Probá otras fechas o destinos</p></div>`;return;}
     aplicarFiltrosYRender();
   }catch(err){
