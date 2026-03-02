@@ -536,6 +536,7 @@ async function ejecutarRecotizar() {
             <div class="tarifa-row" style="border-top:1px solid #eee;padding-top:4px;"><span>Subtotal tarifa</span><span>${t.monedaTotal} ${t.total.toLocaleString('es-AR', {minimumFractionDigits:2})}</span></div>
             ${t.fee ? `<div class="tarifa-row"><span>Fee Tucano</span><span>${t.monedaFee} ${t.fee.toLocaleString('es-AR', {minimumFractionDigits:2})}</span></div>` : ''}
             ${t.comisionObtenida?.valueApplied ? `<div class="tarifa-row" style="color:#2e7d32"><span>Comisión</span><span>${t.comisionObtenida.displayValue || ''} - ${t.monedaTotal} ${Number(t.comisionObtenida.valueApplied).toLocaleString('es-AR', {minimumFractionDigits:2})}</span></div>` : ''}
+            ${t.comisionCedida?.valueApplied ? `<div class="tarifa-row" style="color:#2e7d32"><span>Comisión cedida</span><span>${t.comisionCedida.displayValue || ''} - ${t.monedaTotal} ${Number(t.comisionCedida.valueApplied).toLocaleString('es-AR', {minimumFractionDigits:2})}</span></div>` : ''}
             ${overMonto ? `<div class="tarifa-row" style="color:#2e7d32"><span>Over</span><span>- ${t.monedaTotal} ${Number(overMonto).toLocaleString('es-AR', {minimumFractionDigits:2})}</span></div>` : ''}
             <div class="tarifa-row total"><span>NETO a pagar</span><span>${t.monedaTotal} ${neto.toLocaleString('es-AR', {minimumFractionDigits:2})}</span></div>
           </div>
