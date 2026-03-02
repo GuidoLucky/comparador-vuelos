@@ -568,19 +568,34 @@ app.post('/reservas/:id/verificar', async (req, res) => {
     const orderState = data.orderState; // numérico
     const timeLimit = data.limitDateTimeCTZ || data.lastTicketingDateCTZ || data.expiringDateTimeCTZ;
 
-    // Tickets emitidos
+    // Log completo de tickets y orderState
+    console.log(`[Verificar] orderState: ${orderState}, ticketsInformation count: ${(data.ticketsInformation || []).length}`);
+    console.log(`[Verificar] ticketsInformation raw:`, JSON.stringify(data.ticketsInformation || []).substring(0, 500));
+    console.log(`[Verificar] passengersInformation tickets:`, JSON.stringify((data.passengersInformation || []).map(p => ({ name: p.lastName, tickets: p.tickets }))).substring(0, 500));
+
+    // Tickets emitidos - buscar con múltiples criterios
     const tickets = (data.ticketsInformation || []).map(t => ({
       numero: t.number,
-      carrier: t.validatigCarrierNumericCode,
-      status: t.status // "E" = emitido
+      carrier: t.validatigCarrierNumericCode || t.validatingCarrierNumericCode,
+      status: t.status,
+      statusDesc: t.statusDescription || t.statusName || null
     }));
-    const ticketsEmitidos = tickets.filter(t => t.status === 'E');
+    // "E" = emitido, pero también considerar status numérico u otros valores
+    const ticketsEmitidos = tickets.filter(t => 
+      t.status === 'E' || t.status === 'Emitido' || t.status === 1 || t.status === '1' || t.status === 'ISSUED'
+    );
+    console.log(`[Verificar] Tickets procesados:`, JSON.stringify(tickets));
+    console.log(`[Verificar] Tickets emitidos: ${ticketsEmitidos.length}`);
+
+    // También chequear orderState: ciertos valores indican emisión
+    // orderState: 0=created, 1=ticketed, 2=cancelled, etc.
+    const emitidoPorOrderState = orderState === 1 || orderState === 'Ticketed';
 
     // Estado de vuelos
     const vuelos = (data.flightsInformation || []).map(f => ({
       vuelo: f.flightNumber,
       ruta: `${f.departureAirportCode} → ${f.arrivalAirportCode}`,
-      status: f.status // "OK", "XX" (cancelado), etc.
+      status: f.status
     }));
     const vuelosCancelados = vuelos.filter(v => v.status === 'XX' || v.status === 'UC' || v.status === 'UN');
 
@@ -588,26 +603,41 @@ app.post('/reservas/:id/verificar', async (req, res) => {
     const pasajeros = (data.passengersInformation || []).map(p => ({
       nombre: `${p.lastName}, ${p.firstName}`,
       tipo: p.typeCode,
-      ticketStatus: p.tickets?.[0]?.status || null // "Emitido", "Reservado", etc.
+      ticketStatus: p.tickets?.[0]?.status || null,
+      ticketNumber: p.tickets?.[0]?.number || null
     }));
 
     // Determinar estado
     let apiEstado = null;
     if (vuelosCancelados.length === vuelos.length && vuelos.length > 0) {
       apiEstado = 'CANCELADA';
-    } else if (ticketsEmitidos.length > 0) {
+    } else if (ticketsEmitidos.length > 0 || emitidoPorOrderState) {
       apiEstado = 'EMITIDA';
     } else if (vuelos.some(v => v.status === 'OK' || v.status === 'HK')) {
-      apiEstado = 'CREADA'; // confirmada pero no emitida
+      apiEstado = 'CREADA';
     } else {
       apiEstado = 'CREADA';
     }
+    console.log(`[Verificar] Estado determinado: ${apiEstado} (orderState=${orderState}, ticketsEmitidos=${ticketsEmitidos.length}, emitidoPorOS=${emitidoPorOrderState})`);
 
     // Actualizar en DB si cambió
     let estadoActualizado = false;
     if (apiEstado && apiEstado !== reserva.estado) {
       await db.query('UPDATE reservas SET estado=$1, updated_at=NOW() WHERE id=$2', [apiEstado, req.params.id]);
       estadoActualizado = true;
+    }
+
+    // Si se detectó emisión, guardar datos completos
+    if (apiEstado === 'EMITIDA' && !reserva.emision_data) {
+      const emisionData = {
+        tickets: ticketsEmitidos,
+        vuelos,
+        pasajeros,
+        emitidoEn: new Date().toISOString(),
+        orderState
+      };
+      await db.query('UPDATE reservas SET emision_data=$1 WHERE id=$2', [JSON.stringify(emisionData), req.params.id]);
+      console.log('[Verificar] Datos de emisión guardados');
     }
 
     res.json({
@@ -619,6 +649,7 @@ app.post('/reservas/:id/verificar', async (req, res) => {
       orderState,
       timeLimit,
       tickets: ticketsEmitidos.map(t => `${t.carrier}-${t.numero}`),
+      allTickets: tickets,
       vuelos,
       pasajeros
     });
@@ -887,6 +918,7 @@ app.post('/reservas/:id/guardar-tarifa', async (req, res) => {
 });
 
 // ─── EMITIR TICKETS ───
+// La emisión se hace desde SCIWeb. Este endpoint abre el link o marca manualmente.
 app.post('/reservas/:id/emitir', async (req, res) => {
   if (!db) return res.json({ ok: false, error: 'Sin DB' });
   try {
@@ -895,163 +927,14 @@ app.post('/reservas/:id/emitir', async (req, res) => {
     const reserva = r.rows[0];
     if (!reserva.order_id) return res.json({ ok: false, error: 'Sin orderId' });
 
-    const token = await getToken();
-    const hdrs = getHeaders(token);
-    const orderId = reserva.order_id;
-    const steps = [];
-
-    // ═══ PASO 1: RetrieveReservation ═══
-    console.log('[Emitir] === PASO 1: RetrieveReservation ===');
-    const rrResp = await fetch(`${API_BASE}/FlightReservation/RetrieveReservation`, {
-      method: 'POST', headers: hdrs,
-      body: JSON.stringify({ OrderId: orderId })
-    });
-    if (!rrResp.ok) return res.json({ ok: false, error: 'No se pudo cargar la reserva', paso: 1 });
-    const rrData = JSON.parse(await rrResp.text());
-    steps.push('RetrieveReservation OK');
-
-    // Verificar stored fares
-    const storedFares = rrData.storedFaresInformation || [];
-    if (!storedFares.length) {
-      return res.json({ ok: false, error: 'No hay tarifa guardada. Primero recotizá y guardá la tarifa.' });
-    }
-    const numberInPNR = storedFares[0].numberInPNR || 1;
-
-    // ═══ PASO 2: RetrieveAllowedFormsOfPaymentsByStoredFare ═══
-    console.log('[Emitir] === PASO 2: RetrieveAllowedFormsOfPayments ===');
-    let fopResp = await fetch(`${API_BASE}/FlightReservationTicketing/RetrieveAllowedFormsOfPaymentsByStoredFare`, {
-      method: 'POST', headers: hdrs,
-      body: JSON.stringify({ OrderId: orderId, NumberInPNR: numberInPNR })
-    });
-    if (!fopResp.ok) {
-      // Intentar variante sin NumberInPNR
-      fopResp = await fetch(`${API_BASE}/FlightReservationTicketing/RetrieveAllowedFormsOfPaymentsByStoredFare`, {
-        method: 'POST', headers: hdrs,
-        body: JSON.stringify({ OrderId: orderId })
-      });
-    }
-    const fopText = await fopResp.text();
-    console.log(`[Emitir] FOP HTTP ${fopResp.status}: ${fopText.substring(0, 300)}`);
-    let fopData;
-    try { fopData = JSON.parse(fopText); } catch(e) { fopData = {}; }
-    steps.push(`RetrieveAllowedFOP ${fopResp.status}`);
-
-    // ═══ PASO 3: AddFormOfPaymentCashV2 (CASH) ═══
-    console.log('[Emitir] === PASO 3: AddFormOfPaymentCashV2 ===');
-    const cashPayload = {
-      OrderId: orderId,
-      NumberInPNR: numberInPNR
-    };
-    console.log('[Emitir] Cash payload:', JSON.stringify(cashPayload));
-    const cashResp = await fetch(`${API_BASE}/FlightReservationTicketing/AddFormOfPaymentCashV2`, {
-      method: 'POST', headers: hdrs,
-      body: JSON.stringify(cashPayload)
-    });
-    const cashText = await cashResp.text();
-    console.log(`[Emitir] Cash HTTP ${cashResp.status}: ${cashText.substring(0, 300)}`);
-    steps.push(`AddFormOfPaymentCash ${cashResp.status}`);
-
-    // ═══ PASO 4: FlightOrderTicketingInformation ═══
-    console.log('[Emitir] === PASO 4: FlightOrderTicketingInformation ===');
-    const tickInfoResp = await fetch(`${API_BASE}/FlightReservationTicketing/FlightOrderTicketingInformation?orderId=${orderId}`, {
-      method: 'GET', headers: hdrs
-    });
-    const tickInfoText = await tickInfoResp.text();
-    console.log(`[Emitir] TicketingInfo HTTP ${tickInfoResp.status}: ${tickInfoText.substring(0, 300)}`);
-    steps.push(`FlightOrderTicketingInfo ${tickInfoResp.status}`);
-
-    // ═══ PASO 5: TicketingFlowInformation ═══
-    console.log('[Emitir] === PASO 5: TicketingFlowInformation ===');
-    const flowResp = await fetch(`${API_BASE}/FlightReservationTicketing/TicketingFlowInformation`, {
-      method: 'POST', headers: hdrs,
-      body: JSON.stringify({ OrderId: orderId, NumberInPNR: numberInPNR })
-    });
-    const flowText = await flowResp.text();
-    console.log(`[Emitir] Flow HTTP ${flowResp.status}: ${flowText.substring(0, 300)}`);
-    steps.push(`TicketingFlowInfo ${flowResp.status}`);
-
-    // ═══ PASO 6: RequestTicketing ═══
-    console.log('[Emitir] === PASO 6: RequestTicketing ===');
-    const ticketPayload = {
-      OrderId: orderId,
-      NumberInPNR: numberInPNR,
-      BackofficeClientId: '06094',
-      InvoiceClientId: null
-    };
-    console.log('[Emitir] RequestTicketing payload:', JSON.stringify(ticketPayload));
-    const tickResp = await fetch(`${API_BASE}/FlightReservationTicketing/RequestTicketing`, {
-      method: 'POST', headers: hdrs,
-      body: JSON.stringify(ticketPayload)
-    });
-    const tickText = await tickResp.text();
-    console.log(`[Emitir] RequestTicketing HTTP ${tickResp.status}: ${tickText.substring(0, 500)}`);
-    steps.push(`RequestTicketing ${tickResp.status}`);
-
-    if (!tickResp.ok) {
-      return res.json({ ok: false, error: `Error en emisión (paso 6): HTTP ${tickResp.status}. ${tickText.substring(0, 300)}`, steps });
-    }
-
-    let tickData;
-    try { tickData = JSON.parse(tickText); } catch(e) { tickData = { raw: tickText.substring(0, 500) }; }
-
-    // Verificar si hubo error en la respuesta
-    if (tickData.error || tickData.errors) {
-      const errMsg = tickData.error || JSON.stringify(tickData.errors).substring(0, 300);
-      return res.json({ ok: false, error: `Error de emisión: ${errMsg}`, steps });
-    }
-
-    // ═══ PASO 7: Verificar emisión con RetrieveReservation ═══
-    console.log('[Emitir] === PASO 7: Verificando emisión ===');
-    await new Promise(r => setTimeout(r, 2000)); // Esperar 2s para que se procese
-    const rrResp2 = await fetch(`${API_BASE}/FlightReservation/RetrieveReservation`, {
-      method: 'POST', headers: hdrs,
-      body: JSON.stringify({ OrderId: orderId })
-    });
-    let tickets = [];
-    let emisionData = null;
-    if (rrResp2.ok) {
-      const rrData2 = JSON.parse(await rrResp2.text());
-      tickets = (rrData2.ticketsInformation || [])
-        .filter(t => t.status === 'E')
-        .map(t => ({ numero: t.number, carrier: t.validatigCarrierNumericCode }));
-      
-      const flightsInfo = rrData2.flightsInformation || [];
-      const passengersInfo = rrData2.passengersInformation || [];
-      emisionData = {
-        tickets,
-        vuelos: flightsInfo.map(f => ({
-          vuelo: f.flightNumber,
-          ruta: `${f.departureAirportCode}-${f.arrivalAirportCode}`,
-          salida: f.departureDate,
-          llegada: f.arrivalDate,
-          status: f.status,
-          bookingClass: f.bookingClass,
-          airline: f.marketingAirlineCode
-        })),
-        pasajeros: passengersInfo.map(p => ({
-          nombre: `${p.lastName}, ${p.firstName}`,
-          tipo: p.typeCode,
-          ticketNum: p.tickets?.[0]?.number || null
-        })),
-        emitidoEn: new Date().toISOString()
-      };
-    }
-    steps.push(`Verificación: ${tickets.length} tickets`);
-
-    // Actualizar DB
-    const nuevoEstado = tickets.length > 0 ? 'EMITIDA' : 'CREADA';
-    await db.query(`UPDATE reservas SET estado=$1, emision_data=$2, updated_at=NOW() WHERE id=$3`, 
-      [nuevoEstado, emisionData ? JSON.stringify(emisionData) : null, req.params.id]);
-    console.log('[Emitir] Estado actualizado a:', nuevoEstado, 'Tickets:', tickets.length);
-
+    // Construir link a SCIWeb ticketing
+    const sciweb_url = `https://sciweb.tucanotours.com.ar/FlightOrders/Ticketing/${reserva.order_id}`;
+    
     res.json({
       ok: true,
-      mensaje: tickets.length > 0 
-        ? `Tickets emitidos exitosamente (${tickets.length} tickets)`
-        : 'Solicitud de emisión enviada. Verificá el estado en unos minutos.',
-      tickets,
-      steps,
-      ticketingResponse: Object.keys(tickData)
+      sciweb_url,
+      order_id: reserva.order_id,
+      pnr: reserva.pnr
     });
   } catch(e) {
     console.error('[Emitir] Error:', e.message);
