@@ -1277,7 +1277,7 @@ app.post('/reservas/:id/pdf', async (req, res) => {
         for (const cond of condiciones) {
           if (cond.data) {
             const estado = cond.data.permite !== false ? 'Permite' : 'No permite';
-            const montoStr = cond.data.permite !== false && cond.data.monto > 0 ? ` — ${cond.data.moneda} ${cond.data.monto}` : '';
+            const montoStr = cond.data.permite !== false ? ` — ${cond.data.moneda} ${cond.data.monto || 0}` : '';
             doc.text(`  • ${cond.label}: ${estado}${montoStr}`, LEFT, y);
             y = doc.y + 2;
           }
@@ -1635,7 +1635,7 @@ function generarPDFBuffer(opciones, vendedor, nombreCliente) {
         for (const cond of condiciones) {
           if (cond.data) {
             const estado = cond.data.permite !== false ? 'Permite' : 'No permite';
-            const montoStr = cond.data.permite !== false && cond.data.monto > 0 ? ` — ${cond.data.moneda} ${cond.data.monto}` : '';
+            const montoStr = cond.data.permite !== false ? ` — ${cond.data.moneda} ${cond.data.monto || 0}` : '';
             doc.text(`  • ${cond.label}: ${estado}${montoStr}`, PAGE_LEFT);
           } else {
             doc.text(`  • ${cond.label}: No disponible`, PAGE_LEFT);
