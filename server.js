@@ -1432,64 +1432,39 @@ app.post('/reservas/:id/emitir', async (req, res) => {
     const reserva = r.rows[0];
     if (!reserva.order_id) return res.json({ ok: false, error: 'Sin orderId' });
 
-    // GEA: try to emit via Lleego API, then open voucher
+    // GEA: emit via Lleego API
     const isGEA = (reserva.quotation_id || '').startsWith('lleego_') || (reserva.notas || '').includes('GEA');
     if (isGEA) {
       try {
         const llToken = await getLleegoToken();
         if (!llToken) throw new Error('No se pudo autenticar con Lleego');
         
-        // Try to issue/emit via API
-        const issueBody = { locator: reserva.pnr };
-        console.log('[Lleego] Trying to issue PNR:', reserva.pnr, 'orderId:', reserva.order_id);
+        // Emit via PUT /api/v2/transport/emit/{lineId}?locator={PNR}&locale=es-ar
+        const lineId = reserva.order_id; // We store lineId as order_id
+        const emitUrl = `https://api-tr.lleego.com/api/v2/transport/emit/${lineId}?locator=${reserva.pnr}&locale=es-ar`;
+        console.log('[Lleego] Emitting:', emitUrl);
         
-        const endpoints = [
-          `https://api-tr.lleego.com/api/v2/transport/issue?locale=es-ar`,
-          `https://api-tr.lleego.com/api/v2/transport/ticketing?locale=es-ar`,
-          `https://api-tr.lleego.com/api/v2/transport/emit?locale=es-ar`
-        ];
-        
-        let emitOk = false;
-        for (const ep of endpoints) {
-          try {
-            console.log(`[Lleego] Trying emit: ${ep}`);
-            const emitRes = await fetch(ep, {
-              method: 'POST',
-              headers: {
-                'Authorization': `Bearer ${llToken}`,
-                'Content-Type': 'application/json',
-                'x-api-key': LLEEGO_API_KEY,
-                'lang': 'es-ar'
-              },
-              body: JSON.stringify(issueBody)
-            });
-            const emitText = await emitRes.text();
-            console.log(`[Lleego] Emit ${ep} → ${emitRes.status}:`, emitText.substring(0, 500));
-            if (emitRes.status === 404) continue;
-            if (emitRes.ok) {
-              emitOk = true;
-              await db.query("UPDATE reservas SET estado='EMITIDA' WHERE id=$1", [reserva.id]);
-              return res.json({ ok: true, emitida: true, pnr: reserva.pnr, fuente: 'GEA' });
-            }
-          } catch(tryErr) { console.log('[Lleego] Emit try error:', tryErr.message); }
-        }
-        
-        // Fallback: fetch voucher page by locator to find correct voucher ID
-        let voucherId = reserva.order_id;
-        try {
-          const voucherSearchUrl = `https://api-tr.lleego.com/api/v2/transport/${reserva.order_id}?locator=${reserva.pnr}&locale=es-ar`;
-          const vsRes = await fetch(voucherSearchUrl, {
-            headers: { 'Authorization': `Bearer ${llToken}`, 'x-api-key': LLEEGO_API_KEY }
-          });
-          if (vsRes.ok) {
-            const vsData = await vsRes.json();
-            console.log('[Lleego] Voucher search response:', JSON.stringify(vsData).substring(0, 500));
-            voucherId = vsData.voucher_id || vsData.id || reserva.order_id;
+        const emitRes = await fetch(emitUrl, {
+          method: 'PUT',
+          headers: {
+            'Authorization': `Bearer ${llToken}`,
+            'Content-Type': 'application/json',
+            'x-api-key': LLEEGO_API_KEY,
+            'lang': 'es-ar'
           }
-        } catch(e) { console.log('[Lleego] Voucher search error:', e.message); }
+        });
+        const emitText = await emitRes.text();
+        console.log(`[Lleego] Emit response ${emitRes.status}:`, emitText.substring(0, 1000));
         
-        const lleego_url = `https://app.lleego.com/transport/voucher/${voucherId}`;
-        return res.json({ ok: true, sciweb_url: lleego_url, order_id: reserva.order_id, pnr: reserva.pnr, isGEA: true });
+        if (emitRes.ok) {
+          await db.query("UPDATE reservas SET estado='EMITIDA' WHERE id=$1", [reserva.id]);
+          return res.json({ ok: true, emitida: true, pnr: reserva.pnr, fuente: 'GEA' });
+        } else {
+          // Parse error message
+          let errMsg = `Error ${emitRes.status}`;
+          try { const errData = JSON.parse(emitText); errMsg = errData.errors?.[0]?.message || errData.message || errMsg; } catch(e) {}
+          return res.json({ ok: false, error: `Lleego: ${errMsg}` });
+        }
       } catch(e) {
         console.error('[Lleego] Emit error:', e.message);
         return res.json({ ok: false, error: e.message });
