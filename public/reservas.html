@@ -662,10 +662,10 @@ async function verificarEstado() {
       data.tickets.forEach(t => msg += `   ${t}\n`);
     }
     
-    // Debug: mostrar todos los tickets (incluso no detectados como emitidos)
-    if (data.allTickets && data.allTickets.length && (!data.tickets || !data.tickets.length)) {
-      msg += `\n🔍 Tickets encontrados (raw):\n`;
-      data.allTickets.forEach(t => msg += `   #${t.numero} status=${t.status} ${t.statusDesc || ''}\n`);
+    // Tickets VOID
+    if (data.ticketsVoid && data.ticketsVoid.length) {
+      msg += `\n🚫 Tickets anulados:\n`;
+      data.ticketsVoid.forEach(t => msg += `   ${t}\n`);
     }
     
     // OrderState
