@@ -1383,15 +1383,16 @@ app.post('/reservas/:id/emitir', async (req, res) => {
     const reserva = r.rows[0];
     if (!reserva.order_id) return res.json({ ok: false, error: 'Sin orderId' });
 
-    // Construir link a SCIWeb ticketing
+    // GEA: abrir Lleego voucher
+    const isGEA = (reserva.quotation_id || '').startsWith('lleego_') || (reserva.notas || '').includes('GEA');
+    if (isGEA) {
+      const lleego_url = `https://app.lleego.com/transport/voucher/${reserva.order_id}`;
+      return res.json({ ok: true, sciweb_url: lleego_url, order_id: reserva.order_id, pnr: reserva.pnr, isGEA: true });
+    }
+
+    // Tucano: SCIWeb ticketing
     const sciweb_url = `https://sciweb.tucanotours.com.ar/FlightOrders/Ticketing/${reserva.order_id}`;
-    
-    res.json({
-      ok: true,
-      sciweb_url,
-      order_id: reserva.order_id,
-      pnr: reserva.pnr
-    });
+    res.json({ ok: true, sciweb_url, order_id: reserva.order_id, pnr: reserva.pnr });
   } catch(e) {
     console.error('[Emitir] Error:', e.message);
     res.json({ ok: false, error: e.message });
@@ -1423,8 +1424,9 @@ app.post('/reservas/:id/pdf', async (req, res) => {
     let vuelos = [], airportsInfo = {}, aerolinea = reserva.aerolinea || '';
     let fareInfo = null;
     let penalidades = null;
+    const isGEA = (reserva.quotation_id || '').startsWith('lleego_') || (reserva.notas || '').includes('GEA');
 
-    if (reserva.order_id) {
+    if (reserva.order_id && !isGEA) {
       try {
         const token = await getToken();
         const hdrs = getHeaders(token);
@@ -1523,26 +1525,40 @@ app.post('/reservas/:id/pdf', async (req, res) => {
     }
 
     // Fallback vuelos desde itinerario local
-    if (!vuelos.length && reserva.itinerario) {
+    if (!vuelos.length && (reserva.itinerario_json || reserva.itinerario)) {
       try {
-        const itin = JSON.parse(reserva.itinerario);
-        vuelos = (itin.segments || itin || []).map(s => ({
-          departureAirportCode: s.departureAirportCode || s.origin || '',
-          arrivalAirportCode: s.arrivalAirportCode || s.destination || '',
-          departureDate: s.departureDate || '',
-          arrivalDate: s.arrivalDate || '',
-          flightNumber: s.flightNumber || '',
-          marketingAirlineCode: s.marketingAirlineCode || ''
+        const raw = reserva.itinerario_json || reserva.itinerario;
+        const itin = typeof raw === 'string' ? JSON.parse(raw) : raw;
+        const arr = itin.segments || (Array.isArray(itin) ? itin : []);
+        vuelos = arr.map(s => ({
+          departureAirportCode: s.departureAirportCode || s.origen || s.origin || '',
+          arrivalAirportCode: s.arrivalAirportCode || s.destino || s.destination || '',
+          departureDate: s.departureDate || s.salida || s.departureDateTime || '',
+          arrivalDate: s.arrivalDate || s.llegada || s.arrivalDateTime || '',
+          flightNumber: s.flightNumber || s.vuelo || s.numero_vuelo || '',
+          marketingAirlineCode: s.marketingAirlineCode || (s.vuelo || '').substring(0, 2) || ''
         }));
-      } catch(e) {}
+      } catch(e) { console.log('[PDF] Error parsing itinerario:', e.message); }
     }
 
-    // Pasajeros
-    const pasajeros = (reserva.pasajeros_info || []).filter(p => p.nombre).map(p => ({
+    // Pasajeros - fallback a pasajeros_json si no hay reserva_pasajeros
+    let pasajeros = (reserva.pasajeros_info || []).filter(p => p.nombre).map(p => ({
       nombre: p.nombre,
       tipo: p.tipo || 'ADT',
       documento: p.doc_tipo && p.doc_numero ? `${p.doc_tipo} ${p.doc_numero}` : ''
     }));
+    if (!pasajeros.length && reserva.pasajeros_json) {
+      try {
+        const pj = typeof reserva.pasajeros_json === 'string' ? JSON.parse(reserva.pasajeros_json) : reserva.pasajeros_json;
+        if (Array.isArray(pj)) {
+          pasajeros = pj.map(p => ({
+            nombre: `${p.apellido || ''}, ${p.nombre || ''}`.trim(),
+            tipo: p.tipo || 'ADT',
+            documento: p.docTipo && p.docNumero ? `${p.docTipo} ${p.docNumero}` : (p.docNumero || '')
+          }));
+        }
+      } catch(e) {}
+    }
 
     // Calcular precios de venta
     const { vendedor: reqVendedor } = req.body || {};
