@@ -27,6 +27,7 @@ if (db) {
       await db.query(`ALTER TABLE reservas ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT NOW()`);
       await db.query(`ALTER TABLE reservas ADD COLUMN IF NOT EXISTS vendedor TEXT`);
       await db.query(`ALTER TABLE reservas ADD COLUMN IF NOT EXISTS precio_venta_usd NUMERIC`);
+      await db.query(`ALTER TABLE reservas ADD COLUMN IF NOT EXISTS emision_data JSONB`);
       console.log('[DB] Migración OK');
     } catch(e) { console.warn('[DB] Migración:', e.message); }
   })();
@@ -784,11 +785,25 @@ app.post('/reservas/:id/recotizar', async (req, res) => {
     if (!pricingId) console.log('[Recotizar] Full response keys search:', JSON.stringify(prData).substring(0, 500));
     const segRefIdsForSave = segments.map((s, i) => String(i + 1));
 
+    // Extraer penalidades del pricing o de la reserva
+    const prPenalties = prData.penalties || prData.penaltiesInformation || rrData.penaltiesInformation || rrData.penalties || [];
+    let penalidades = null;
+    if (prPenalties.length) {
+      const cambioP = prPenalties.find(p => (p.type === 0 || p.penaltyType === 0) && p.enabled !== false);
+      const cancelP = prPenalties.find(p => (p.type === 1 || p.penaltyType === 1) && p.enabled !== false);
+      penalidades = {
+        cambio: cambioP ? { monto: cambioP.amount, moneda: cambioP.currency } : null,
+        cancelacion: cancelP ? { monto: cancelP.amount, moneda: cancelP.currency } : null
+      };
+    }
+    console.log('[Recotizar] Penalties found:', JSON.stringify(penalidades));
+
     res.json({
       ok: true,
       pnr: rrData.recordLocator,
       tarifas,
       pricingId,
+      penalidades,
       orderId: reserva.order_id,
       segmentIds: segRefIdsForSave,
       rawKeys: Object.keys(prData),
@@ -848,6 +863,120 @@ app.post('/reservas/:id/guardar-tarifa', async (req, res) => {
   }
 });
 
+// ─── EMITIR TICKETS ───
+app.post('/reservas/:id/emitir', async (req, res) => {
+  if (!db) return res.json({ ok: false, error: 'Sin DB' });
+  try {
+    const r = await db.query('SELECT * FROM reservas WHERE id=$1', [req.params.id]);
+    if (!r.rows.length) return res.json({ ok: false, error: 'Reserva no encontrada' });
+    const reserva = r.rows[0];
+    if (!reserva.order_id) return res.json({ ok: false, error: 'Sin orderId' });
+
+    const token = await getToken();
+    const hdrs = getHeaders(token);
+
+    // Paso 1: RetrieveReservation para obtener datos actuales
+    const rrResp = await fetch(`${API_BASE}/FlightReservation/RetrieveReservation`, {
+      method: 'POST', headers: hdrs,
+      body: JSON.stringify({ OrderId: reserva.order_id })
+    });
+    if (!rrResp.ok) return res.json({ ok: false, error: 'No se pudo cargar la reserva' });
+    const rrData = JSON.parse(await rrResp.text());
+
+    // Verificar que hay stored fare (pricing guardado)
+    const storedFares = rrData.storedFaresInformation || [];
+    if (!storedFares.length) {
+      return res.json({ ok: false, error: 'No hay tarifa guardada. Primero recotizá y guardá la tarifa.' });
+    }
+
+    // Payload de emisión
+    const issuePayload = {
+      OrderId: reserva.order_id,
+      OrderRecord: null,
+      Source: 0
+    };
+
+    console.log('[Emitir] Payload:', JSON.stringify(issuePayload));
+
+    // Intentar emisión
+    let issueResp, issueText;
+    for (const ep of [
+      `${API_BASE}/FlightReservation/IssueTicket`,
+      `${API_BASE}/FlightReservation/IssueTickets`,
+      `${API_BASE}/FlightReservationTicketing/IssueTicket`
+    ]) {
+      console.log(`[Emitir] Intentando ${ep}`);
+      issueResp = await fetch(ep, {
+        method: 'POST', headers: hdrs,
+        body: JSON.stringify(issuePayload)
+      });
+      issueText = await issueResp.text();
+      console.log(`[Emitir] HTTP ${issueResp.status}, body: ${issueText.substring(0, 500)}`);
+      if (issueResp.ok) break;
+    }
+
+    if (!issueResp.ok) {
+      return res.json({ ok: false, error: `Error de emisión: HTTP ${issueResp.status}. ${issueText.substring(0, 300)}` });
+    }
+
+    let issueData;
+    try { issueData = JSON.parse(issueText); } catch(e) {
+      issueData = { raw: issueText.substring(0, 500) };
+    }
+
+    // Actualizar estado en DB
+    await db.query(`UPDATE reservas SET estado='EMITIDA', updated_at=NOW() WHERE id=$1`, [req.params.id]);
+
+    // Obtener tickets emitidos
+    const rrResp2 = await fetch(`${API_BASE}/FlightReservation/RetrieveReservation`, {
+      method: 'POST', headers: hdrs,
+      body: JSON.stringify({ OrderId: reserva.order_id })
+    });
+    let tickets = [];
+    if (rrResp2.ok) {
+      const rrData2 = JSON.parse(await rrResp2.text());
+      tickets = (rrData2.ticketsInformation || [])
+        .filter(t => t.status === 'E')
+        .map(t => ({ numero: t.number, carrier: t.validatigCarrierNumericCode }));
+      
+      // Guardar datos completos de la reserva emitida
+      const flightsInfo = rrData2.flightsInformation || [];
+      const passengersInfo = rrData2.passengersInformation || [];
+      const emisionData = {
+        tickets,
+        vuelos: flightsInfo.map(f => ({
+          vuelo: f.flightNumber,
+          ruta: `${f.departureAirportCode}-${f.arrivalAirportCode}`,
+          salida: f.departureDate,
+          llegada: f.arrivalDate,
+          status: f.status,
+          bookingClass: f.bookingClass,
+          airline: f.marketingAirlineCode
+        })),
+        pasajeros: passengersInfo.map(p => ({
+          nombre: `${p.lastName}, ${p.firstName}`,
+          tipo: p.typeCode,
+          ticketNum: p.tickets?.[0]?.number || null
+        })),
+        emitidoEn: new Date().toISOString()
+      };
+      await db.query(`UPDATE reservas SET emision_data=$1, updated_at=NOW() WHERE id=$2`, 
+        [JSON.stringify(emisionData), req.params.id]);
+      console.log('[Emitir] Datos de emisión guardados:', JSON.stringify(emisionData).substring(0, 300));
+    }
+
+    res.json({
+      ok: true,
+      mensaje: 'Tickets emitidos exitosamente',
+      tickets,
+      rawKeys: Object.keys(issueData)
+    });
+  } catch(e) {
+    console.error('[Emitir] Error:', e.message);
+    res.json({ ok: false, error: e.message });
+  }
+});
+
 // ─── GENERAR PDF DE RESERVA ───
 app.post('/reservas/:id/pdf', async (req, res) => {
   if (!db) return res.json({ ok: false, error: 'Sin DB' });
@@ -872,6 +1001,7 @@ app.post('/reservas/:id/pdf', async (req, res) => {
     // Obtener datos frescos de la API
     let vuelos = [], airportsInfo = {}, aerolinea = reserva.aerolinea || '';
     let fareInfo = null;
+    let penalidades = null;
 
     if (reserva.order_id) {
       try {
@@ -883,9 +1013,25 @@ app.post('/reservas/:id/pdf', async (req, res) => {
         });
         if (rrResp.ok) {
           const rrData = JSON.parse(await rrResp.text());
+          console.log('[PDF] RetrieveReservation keys:', Object.keys(rrData).join(','));
           vuelos = rrData.flightsInformation || [];
           airportsInfo = rrData.airportsInformation || {};
           if (vuelos.length && vuelos[0].airlineName) aerolinea = vuelos[0].airlineName;
+          
+          // Extraer penalidades si las hay
+          const rrPenalties = rrData.penaltiesInformation || rrData.penalties || [];
+          if (rrPenalties.length) {
+            const cambioP = rrPenalties.find(p => (p.type === 0 || p.penaltyType === 0) && p.enabled !== false);
+            const cancelP = rrPenalties.find(p => (p.type === 1 || p.penaltyType === 1) && p.enabled !== false);
+            penalidades = {
+              cambio: cambioP ? { monto: cambioP.amount, moneda: cambioP.currency } : null,
+              cancelacion: cancelP ? { monto: cancelP.amount, moneda: cancelP.currency } : null
+            };
+          }
+          // También chequear fareRulesInformation
+          if (!penalidades && rrData.fareRulesInformation) {
+            console.log('[PDF] fareRulesInformation encontrado, keys:', Object.keys(rrData.fareRulesInformation).join(','));
+          }
           // Puede haber múltiples storedFares (vieja + nueva por SavePricing)
           // Agrupar por numberInPNR y tomar el grupo más alto (más reciente)
           const storedFares = rrData.storedFaresInformation || [];
@@ -1120,6 +1266,16 @@ app.post('/reservas/:id/pdf', async (req, res) => {
         const precioVenta = calcularPrecio(pp.neto, pp.tipo_tarifa, pp.comision_over);
         const linea = etiquetaPrecio(precioVenta, pp.tipo, realCantidad, totalPax, multiTipos);
         doc.font(BOLD).fontSize(11).fillColor(NAVY).text(linea, LEFT, y);
+        y = doc.y + 4;
+      }
+      // Penalidades
+      if (penalidades && (penalidades.cambio || penalidades.cancelacion)) {
+        y += 4;
+        doc.font(REGULAR).fontSize(8).fillColor('#666666');
+        const parts = [];
+        if (penalidades.cambio) parts.push(`Cambio: ${penalidades.cambio.moneda} ${penalidades.cambio.monto}`);
+        if (penalidades.cancelacion) parts.push(`Cancelación: ${penalidades.cancelacion.moneda} ${penalidades.cancelacion.monto}`);
+        doc.text(`Penalidades: ${parts.join('  |  ')}`, LEFT, y);
         y = doc.y + 4;
       }
     }
@@ -1444,6 +1600,20 @@ function generarPDFBuffer(opciones, vendedor, nombreCliente) {
         doc.fontSize(11).font(BOLD).fillColor(NAVY).text(linea, PAGE_LEFT);
         doc.moveDown(0.3);
       }
+
+      // ── PENALIDADES ──
+      if (op.penalidades && (op.penalidades.cambio || op.penalidades.cancelacion)) {
+        doc.moveDown(0.3);
+        doc.fontSize(8).font(REGULAR).fillColor('#666666');
+        const parts = [];
+        if (op.penalidades.cambio) {
+          parts.push(`Cambio: ${op.penalidades.cambio.moneda} ${op.penalidades.cambio.monto}`);
+        }
+        if (op.penalidades.cancelacion) {
+          parts.push(`Cancelación: ${op.penalidades.cancelacion.moneda} ${op.penalidades.cancelacion.monto}`);
+        }
+        doc.text(`Penalidades: ${parts.join('  |  ')}`, PAGE_LEFT);
+      }
     }
 
     doc.flushPages();
@@ -1584,9 +1754,18 @@ app.post('/generar-cotizacion', async (req, res) => {
       const brand = trip[0]?.legFlights?.[0]?.brandName || '';
       const detalle = brand ? `${cabin} - ${brand}` : cabin;
 
+      // Penalidades
+      const penalties = q.penalties || [];
+      const cambio = penalties.find(p => p.type === 0 && p.applicability === 0 && p.enabled);
+      const cancelacion = penalties.find(p => p.type === 1 && p.applicability === 0 && p.enabled);
+      const penalidades = {
+        cambio: cambio ? { monto: cambio.amount, moneda: cambio.currency } : null,
+        cancelacion: cancelacion ? { monto: cancelacion.amount, moneda: cancelacion.currency } : null
+      };
+
       return {
         aerolinea: d.airlinesDictionary?.[q.validatingCarrier] || q.validatingCarrier,
-        vuelos, detalle_vuelo: detalle, pasajeros
+        vuelos, detalle_vuelo: detalle, pasajeros, penalidades
       };
     }));
 
