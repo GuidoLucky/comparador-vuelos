@@ -521,8 +521,12 @@ async function ejecutarRecotizar() {
       data.tarifas.forEach(t => {
         grandTotal += t.total;
         // Comisión + Over se descuentan del neto
-        const comisionMonto = (t.comisionCedida?.valueApplied || 0) + (t.comisionObtenida?.valueApplied || 0);
+        const comObt = t.comisionObtenida?.valueApplied || 0;
+        const comCed = t.comisionCedida?.valueApplied || 0;
+        const comisionMonto = comObt + comCed;
+        const comDisplayVal = t.comisionObtenida?.displayValue || t.comisionCedida?.displayValue || '';
         const overMonto = t.overComision?.ceded?.valueApplied || t.overComision?.obtained?.valueApplied || t.overComision?.valueApplied || t.overComision?.amount || 0;
+        const overDisplayVal = t.overComision?.ceded?.displayValue || t.overComision?.obtained?.displayValue || t.overComision?.displayValue || '';
         // Neto = total + fee - comisión - over
         const neto = t.total + t.fee - comisionMonto - overMonto;
         grandNeto += neto;
@@ -535,9 +539,8 @@ async function ejecutarRecotizar() {
             <div class="tarifa-row"><span>Impuestos</span><span>${t.monedaImpuestos} ${t.impuestos.toLocaleString('es-AR', {minimumFractionDigits:2})}</span></div>
             <div class="tarifa-row" style="border-top:1px solid #eee;padding-top:4px;"><span>Subtotal tarifa</span><span>${t.monedaTotal} ${t.total.toLocaleString('es-AR', {minimumFractionDigits:2})}</span></div>
             ${t.fee ? `<div class="tarifa-row"><span>Fee Tucano</span><span>${t.monedaFee} ${t.fee.toLocaleString('es-AR', {minimumFractionDigits:2})}</span></div>` : ''}
-            ${t.comisionObtenida?.valueApplied ? `<div class="tarifa-row" style="color:#2e7d32"><span>Comisión</span><span>${t.comisionObtenida.displayValue || ''} - ${t.monedaTotal} ${Number(t.comisionObtenida.valueApplied).toLocaleString('es-AR', {minimumFractionDigits:2})}</span></div>` : ''}
-            ${t.comisionCedida?.valueApplied ? `<div class="tarifa-row" style="color:#2e7d32"><span>Comisión cedida</span><span>${t.comisionCedida.displayValue || ''} - ${t.monedaTotal} ${Number(t.comisionCedida.valueApplied).toLocaleString('es-AR', {minimumFractionDigits:2})}</span></div>` : ''}
-            ${overMonto ? `<div class="tarifa-row" style="color:#2e7d32"><span>Over</span><span>- ${t.monedaTotal} ${Number(overMonto).toLocaleString('es-AR', {minimumFractionDigits:2})}</span></div>` : ''}
+            ${comisionMonto ? `<div class="tarifa-row" style="color:#2e7d32"><span>Comisión ${comDisplayVal}</span><span>- ${t.monedaTotal} ${comisionMonto.toLocaleString('es-AR', {minimumFractionDigits:2})}</span></div>` : ''}
+            ${overMonto ? `<div class="tarifa-row" style="color:#2e7d32"><span>Over ${overDisplayVal}</span><span>- ${t.monedaTotal} ${overMonto.toLocaleString('es-AR', {minimumFractionDigits:2})}</span></div>` : ''}
             <div class="tarifa-row total"><span>NETO a pagar</span><span>${t.monedaTotal} ${neto.toLocaleString('es-AR', {minimumFractionDigits:2})}</span></div>
           </div>
         `;
