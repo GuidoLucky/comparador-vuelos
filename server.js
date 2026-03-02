@@ -648,11 +648,15 @@ app.post('/crear-reserva', async (req, res) => {
       let bookData;
       try { bookData = JSON.parse(bookText); } catch(e) { throw new Error('Respuesta inválida'); }
       
-      // Extract PNR - can be in multiple places
-      const pnr = bookData.locator || bookData.pnr || bookData.record_locator || 
-                   bookData.data?.locator || bookData.data?.pnr || bookData.booking?.locator ||
-                   bookData.reservations?.[0]?.locator || 'GEA-PENDING';
-      const orderId = bookData.id || bookData.booking_id || bookData.voucher_id || sol.id;
+      // Log full response structure to find PNR
+      console.log('[Lleego] Booking response keys:', Object.keys(bookData));
+      console.log('[Lleego] Booking full response:', JSON.stringify(bookData).substring(0, 1000));
+      
+      // Extract PNR from Lleego nested response: booking.lines[0].booking_reference.locator
+      const pnr = bookData.booking?.lines?.[0]?.booking_reference?.locator ||
+                   bookData.locator || bookData.pnr || bookData.record_locator || 
+                   bookData.data?.locator || bookData.booking?.locator || 'GEA-PENDING';
+      const orderId = bookData.booking?.id || bookData.id || sol.id;
       
       console.log('[Lleego] Booking OK! PNR:', pnr, 'OrderId:', orderId);
       
@@ -660,10 +664,11 @@ app.post('/crear-reserva', async (req, res) => {
       if (db) {
         try {
           for (const p of pasajeros) {
+            if (!p.docNumero) continue;
             const ex = await db.query('SELECT id FROM clientes WHERE doc_numero=$1', [p.docNumero]);
             if (ex.rows.length) {
               p._clienteId = ex.rows[0].id;
-            } else if (p.docNumero) {
+            } else {
               const ins = await db.query(`INSERT INTO clientes (apellido,nombre,email,genero,
                 fecha_nac_dia,fecha_nac_mes,fecha_nac_anio,doc_tipo,doc_numero)
                 VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING id`,
@@ -673,11 +678,11 @@ app.post('/crear-reserva', async (req, res) => {
           }
           
           await db.query(`INSERT INTO reservas (
-            pnr,order_id,source,quotation_id,tipo_viaje,origen,destino,fecha_salida,
+            pnr,order_id,quotation_id,tipo_viaje,origen,destino,fecha_salida,
             aerolinea,precio_usd,moneda,adultos,ninos,infantes,estado,
-            itinerario_json,pasajeros_json,contacto_json)
+            itinerario_json,pasajeros_json,contacto_json,notas)
             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18)`,
-            [pnr, orderId, 'GEA', String(quotationId),
+            [pnr, orderId, String(quotationId),
              vueloInfo?.tipo, vueloInfo?.origen, vueloInfo?.destino, vueloInfo?.salida,
              vueloInfo?.aerolinea, vueloInfo?.precioUSD, 'USD',
              pasajeros.filter(p=>p.tipo==='ADT').length,
@@ -686,7 +691,8 @@ app.post('/crear-reserva', async (req, res) => {
              'CREADA',
              JSON.stringify(vueloInfo?.itinerario),
              JSON.stringify(pasajeros),
-             JSON.stringify(contacto)]);
+             JSON.stringify(contacto),
+             'Reserva GEA/Lleego']);
           console.log('[DB] Reserva GEA guardada, PNR:', pnr);
         } catch(dbErr) { console.error('[DB] Error:', dbErr.message); }
       }
