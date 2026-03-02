@@ -520,8 +520,10 @@ async function ejecutarRecotizar() {
       let grandNeto = 0;
       data.tarifas.forEach(t => {
         grandTotal += t.total;
-        // Neto = total + fee (lo que se paga a Tucano)
-        const neto = t.total + t.fee;
+        // Comisión cedida reduce el neto a pagar
+        const comisionMonto = (t.comisionCedida?.valueApplied || 0) + (t.comisionObtenida?.valueApplied || 0);
+        // Neto = total + fee - comisión
+        const neto = t.total + t.fee - comisionMonto;
         grandNeto += neto;
         
         html += `
@@ -532,22 +534,28 @@ async function ejecutarRecotizar() {
             <div class="tarifa-row"><span>Impuestos</span><span>${t.monedaImpuestos} ${t.impuestos.toLocaleString('es-AR', {minimumFractionDigits:2})}</span></div>
             <div class="tarifa-row" style="border-top:1px solid #eee;padding-top:4px;"><span>Subtotal tarifa</span><span>${t.monedaTotal} ${t.total.toLocaleString('es-AR', {minimumFractionDigits:2})}</span></div>
             ${t.fee ? `<div class="tarifa-row"><span>Fee Tucano</span><span>${t.monedaFee} ${t.fee.toLocaleString('es-AR', {minimumFractionDigits:2})}</span></div>` : ''}
-            ${t.comisionObtenida ? `<div class="tarifa-row" style="color:#2e7d32"><span>Comisión obtenida</span><span>${t.comisionObtenida.displayValue || ''} ${t.comisionObtenida.valueApplied ? '- ' + t.monedaTotal + ' ' + Number(t.comisionObtenida.valueApplied).toLocaleString('es-AR', {minimumFractionDigits:2}) : ''}</span></div>` : ''}
-            ${t.comisionCedida ? `<div class="tarifa-row" style="color:#c62828"><span>Comisión cedida</span><span>${t.comisionCedida.displayValue || ''} ${t.comisionCedida.valueApplied ? '- ' + t.monedaTotal + ' ' + Number(t.comisionCedida.valueApplied).toLocaleString('es-AR', {minimumFractionDigits:2}) : ''}</span></div>` : ''}
+            ${t.comisionObtenida?.valueApplied ? `<div class="tarifa-row" style="color:#2e7d32"><span>Comisión obtenida</span><span>${t.comisionObtenida.displayValue || ''} - ${t.monedaTotal} ${Number(t.comisionObtenida.valueApplied).toLocaleString('es-AR', {minimumFractionDigits:2})}</span></div>` : ''}
+            ${t.comisionCedida?.valueApplied ? `<div class="tarifa-row" style="color:#c62828"><span>Comisión cedida</span><span>${t.comisionCedida.displayValue || ''} - ${t.monedaTotal} ${Number(t.comisionCedida.valueApplied).toLocaleString('es-AR', {minimumFractionDigits:2})}</span></div>` : ''}
             <div class="tarifa-row total"><span>NETO a pagar</span><span>${t.monedaTotal} ${neto.toLocaleString('es-AR', {minimumFractionDigits:2})}</span></div>
           </div>
         `;
       });
       const mon = data.tarifas[0]?.monedaTotal || 'USD';
+      const totalComisiones = data.tarifas.reduce((s, t) => s + (t.comisionCedida?.valueApplied || 0) + (t.comisionObtenida?.valueApplied || 0), 0);
+      const totalFees = grandNeto - grandTotal + totalComisiones;
       html += `<div class="tarifa-card" style="background:#e8f5e9;border-color:#4caf50;">
         <div class="tarifa-row" style="padding:2px 0;font-size:13px">
           <span>Subtotal tarifas</span>
           <span>${mon} ${grandTotal.toLocaleString('es-AR', {minimumFractionDigits:2})}</span>
         </div>
-        <div class="tarifa-row" style="padding:2px 0;font-size:13px">
+        ${totalFees ? `<div class="tarifa-row" style="padding:2px 0;font-size:13px">
           <span>+ Fees</span>
-          <span>${mon} ${(grandNeto - grandTotal).toLocaleString('es-AR', {minimumFractionDigits:2})}</span>
-        </div>
+          <span>${mon} ${totalFees.toLocaleString('es-AR', {minimumFractionDigits:2})}</span>
+        </div>` : ''}
+        ${totalComisiones ? `<div class="tarifa-row" style="padding:2px 0;font-size:13px;color:#2e7d32">
+          <span>- Comisiones</span>
+          <span>- ${mon} ${totalComisiones.toLocaleString('es-AR', {minimumFractionDigits:2})}</span>
+        </div>` : ''}
         <div class="tarifa-row total" style="border:none;margin:0;padding-top:6px;">
           <span>TOTAL NETO RESERVA</span>
           <span>${mon} ${grandNeto.toLocaleString('es-AR', {minimumFractionDigits:2})}</span>
