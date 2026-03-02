@@ -181,13 +181,19 @@ function procesarVuelosLleego(resp, paxCounts = { adultos: 1, ninos: 0, infantes
         console.log('[Lleego] First sol keys:', Object.keys(sol));
         console.log('[Lleego] First sol.data keys:', Object.keys(sol.data || {}));
         console.log('[Lleego] First sol.total_price:', JSON.stringify(sol.total_price));
-        if (sol.pax_prices) console.log('[Lleego] First sol.pax_prices:', JSON.stringify(sol.pax_prices).substring(0, 500));
-        if (sol.prices) console.log('[Lleego] First sol.prices:', JSON.stringify(sol.prices).substring(0, 500));
+        // Log fare_list for per-pax pricing
+        const fareList = sol.data?.fare_list || [];
+        console.log('[Lleego] First sol fare_list count:', fareList.length);
+        if (fareList.length) console.log('[Lleego] First fare_list:', JSON.stringify(fareList).substring(0, 1500));
+        // Log fares dict entries referenced by fare_list
+        for (const fl of fareList.slice(0, 3)) {
+          const fareRef = fl.fare_reference || fl.fare_id || fl.ref || fl;
+          const fareData = fares[fareRef] || fares[fl] || null;
+          if (fareData) console.log(`[Lleego] Fare ${fareRef}:`, JSON.stringify(fareData).substring(0, 500));
+        }
         const a0 = (sol.data?.associations || [])[0];
         if (a0) {
           console.log('[Lleego] First assoc keys:', Object.keys(a0));
-          if (a0.price_detail) console.log('[Lleego] assoc.price_detail:', JSON.stringify(a0.price_detail).substring(0, 500));
-          if (a0.prices) console.log('[Lleego] assoc.prices:', JSON.stringify(a0.prices).substring(0, 500));
         }
       }
       // Get associations (ida y vuelta)
@@ -1972,8 +1978,10 @@ app.get('/detalle-vuelo', async (req, res) => {
           const pricingRes = await fetch(pricingUrl, {
             headers: { 'Authorization': `Bearer ${llToken}`, 'x-api-key': LLEEGO_API_KEY, 'lang': 'es-ar' }
           });
+          const pricingText = await pricingRes.text();
+          console.log('[Lleego] Pricing status:', pricingRes.status, 'body:', pricingText.substring(0, 2000));
           if (pricingRes.ok) {
-            const pricingData = await pricingRes.json();
+            const pricingData = JSON.parse(pricingText);
             console.log('[Lleego] Pricing FULL response:', JSON.stringify(pricingData).substring(0, 3000));
             
             // Try to find per-pax breakdown in response - check many possible paths
