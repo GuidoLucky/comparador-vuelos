@@ -745,7 +745,7 @@ async function confirmarEmision() {
   if (!confirm('ÚLTIMA CONFIRMACIÓN: ¿Emitir tickets ahora?')) return;
   
   try {
-    const statusDiv = document.getElementById('modalContent');
+    const statusDiv = document.getElementById('modalBody');
     const emitirMsg = document.createElement('div');
     emitirMsg.id = 'emitirStatus';
     emitirMsg.style.cssText = 'margin-top:16px;padding:16px;background:#fff3e0;border:2px solid #ff9800;border-radius:10px;text-align:center;';
