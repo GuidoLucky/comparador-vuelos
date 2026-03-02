@@ -785,19 +785,30 @@ app.post('/reservas/:id/recotizar', async (req, res) => {
     if (!pricingId) console.log('[Recotizar] Full response keys search:', JSON.stringify(prData).substring(0, 500));
     const segRefIdsForSave = segments.map((s, i) => String(i + 1));
 
-    // Extraer penalidades - buscar en pricing response y en reserva
+    // Extraer penalidades - buscar en pricing response, reserva, y dentro de los fares
     const prPenalties = prData.penalties || prData.penaltiesInformation || [];
     const rrPenalties = rrData.penaltiesInformation || rrData.penalties || [];
-    const allPenalties = prPenalties.length ? prPenalties : rrPenalties;
-    console.log('[Recotizar] prData penalty keys:', Object.keys(prData).filter(k => k.toLowerCase().includes('penal') || k.toLowerCase().includes('rule')).join(','));
-    console.log('[Recotizar] rrData penalty keys:', Object.keys(rrData).filter(k => k.toLowerCase().includes('penal') || k.toLowerCase().includes('rule')).join(','));
-    console.log('[Recotizar] Penalties raw:', JSON.stringify(allPenalties).substring(0, 300));
+    let allPenalties = prPenalties.length ? prPenalties : rrPenalties;
     
-    // También buscar en storedFares
-    const storedFares = prData.storedFares || prData.fares || [];
-    if (storedFares.length && storedFares[0].penalties) {
-      console.log('[Recotizar] Fare penalties:', JSON.stringify(storedFares[0].penalties).substring(0, 300));
+    // Si no hay penalties a nivel root, buscar en los fares
+    if (!allPenalties.length && fares.length && fares[0].rules) {
+      console.log('[Recotizar] Buscando penalties en fare.rules:', JSON.stringify(fares[0].rules).substring(0, 500));
+      // rules puede tener penalties como sub-array o ser las penalties mismas
+      const fareRules = fares[0].rules;
+      if (Array.isArray(fareRules)) {
+        allPenalties = fareRules.filter(r => r.type === 0 || r.type === 1 || (r.penaltyType !== undefined));
+      }
     }
+    
+    // También buscar en storedFares del pricing
+    if (!allPenalties.length) {
+      const storedF = prData.storedFares || [];
+      if (storedF.length && storedF[0].penalties) {
+        allPenalties = storedF[0].penalties;
+      }
+    }
+    
+    console.log('[Recotizar] Penalties count:', allPenalties.length, allPenalties.length ? JSON.stringify(allPenalties).substring(0, 300) : 'none');
     
     let penalidades = null;
     if (allPenalties.length) {
@@ -1650,6 +1661,12 @@ app.post('/generar-cotizacion', async (req, res) => {
       try { d = JSON.parse(text); } catch(e) { throw new Error('Error al obtener detalle'); }
 
       const q = d.quote;
+      console.log('[Cotizacion] Quote keys:', Object.keys(q || {}).join(','));
+      console.log('[Cotizacion] q.penalties:', JSON.stringify(q?.penalties || []).substring(0, 300));
+      // Also check if penalties are in flightRates
+      if (q?.flightRates?.[0]?.rules) {
+        console.log('[Cotizacion] fare.rules:', JSON.stringify(q.flightRates[0].rules).substring(0, 300));
+      }
       const rates = q.flightRates || [];
 
       const pasajeros = rates.map(rate => {
