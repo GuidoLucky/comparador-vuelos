@@ -199,10 +199,30 @@ function procesarVuelosLleego(resp) {
             ? jSegs.slice(0, -1).map(sid => segments[sid]?.arrival).filter(Boolean) 
             : [];
 
+          // Build per-segment info for PDF (like Tucano's flightsInformation)
+          const segmentos = jSegs.map(sid => {
+            const seg = segments[sid];
+            if (!seg) return null;
+            const depPort = ports[seg.departure] || {};
+            const arrPort = ports[seg.arrival] || {};
+            return {
+              origen: seg.departure,
+              destino: seg.arrival,
+              origenCiudad: depPort.city_name || depPort.name || '',
+              destinoCiudad: arrPort.city_name || arrPort.name || '',
+              salida: seg.departure_date,
+              llegada: seg.arrival_date,
+              vuelo: `${seg.marketing_company}${seg.transport_number}`,
+              aerolinea: seg.marketing_company
+            };
+          }).filter(Boolean);
+
           itinerario.push({
             legId: jRef,
             origen: firstSeg.departure,
             destino: lastSeg.arrival,
+            origenCiudad: ports[firstSeg.departure]?.city_name || ports[firstSeg.departure]?.name || '',
+            destinoCiudad: ports[lastSeg.arrival]?.city_name || ports[lastSeg.arrival]?.name || '',
             salida: firstSeg.departure_date,
             llegada: lastSeg.arrival_date,
             duracionMin: Math.round((journey.duration || 0) / 60),
@@ -210,7 +230,8 @@ function procesarVuelosLleego(resp) {
             escalas,
             ciudadesEscala,
             tripDays: 0,
-            vuelo: `${firstSeg.marketing_company}${firstSeg.transport_number}`
+            vuelo: `${firstSeg.marketing_company}${firstSeg.transport_number}`,
+            segmentos
           });
           break; // Solo primer journey por association (ida o vuelta)
         }
@@ -1530,14 +1551,49 @@ app.post('/reservas/:id/pdf', async (req, res) => {
         const raw = reserva.itinerario_json || reserva.itinerario;
         const itin = typeof raw === 'string' ? JSON.parse(raw) : raw;
         const arr = itin.segments || (Array.isArray(itin) ? itin : []);
-        vuelos = arr.map(s => ({
-          departureAirportCode: s.departureAirportCode || s.origen || s.origin || '',
-          arrivalAirportCode: s.arrivalAirportCode || s.destino || s.destination || '',
-          departureDate: s.departureDate || s.salida || s.departureDateTime || '',
-          arrivalDate: s.arrivalDate || s.llegada || s.arrivalDateTime || '',
-          flightNumber: s.flightNumber || s.vuelo || s.numero_vuelo || '',
-          marketingAirlineCode: s.marketingAirlineCode || (s.vuelo || '').substring(0, 2) || ''
-        }));
+        
+        // GEA itinerarios have nested segmentos per leg
+        const expanded = [];
+        for (const leg of arr) {
+          if (leg.segmentos && leg.segmentos.length) {
+            // GEA: expand segments from each leg
+            for (const seg of leg.segmentos) {
+              expanded.push({
+                departureAirportCode: seg.origen || '',
+                arrivalAirportCode: seg.destino || '',
+                departureDate: seg.salida || '',
+                arrivalDate: seg.llegada || '',
+                flightNumber: seg.vuelo || '',
+                marketingAirlineCode: seg.aerolinea || (seg.vuelo || '').substring(0, 2),
+                _depCity: seg.origenCiudad || '',
+                _arrCity: seg.destinoCiudad || ''
+              });
+            }
+          } else {
+            // Tucano / simple format
+            expanded.push({
+              departureAirportCode: leg.departureAirportCode || leg.origen || leg.origin || '',
+              arrivalAirportCode: leg.arrivalAirportCode || leg.destino || leg.destination || '',
+              departureDate: leg.departureDate || leg.salida || leg.departureDateTime || '',
+              arrivalDate: leg.arrivalDate || leg.llegada || leg.arrivalDateTime || '',
+              flightNumber: leg.flightNumber || leg.vuelo || leg.numero_vuelo || '',
+              marketingAirlineCode: leg.marketingAirlineCode || (leg.vuelo || '').substring(0, 2),
+              _depCity: leg.origenCiudad || '',
+              _arrCity: leg.destinoCiudad || ''
+            });
+          }
+        }
+        vuelos = expanded;
+        
+        // Build airportsInfo from city names in itinerario
+        for (const v of vuelos) {
+          if (v._depCity && v.departureAirportCode && !airportsInfo[v.departureAirportCode]) {
+            airportsInfo[v.departureAirportCode] = { cityName: v._depCity };
+          }
+          if (v._arrCity && v.arrivalAirportCode && !airportsInfo[v.arrivalAirportCode]) {
+            airportsInfo[v.arrivalAirportCode] = { cityName: v._arrCity };
+          }
+        }
       } catch(e) { console.log('[PDF] Error parsing itinerario:', e.message); }
     }
 
@@ -1667,6 +1723,16 @@ app.post('/reservas/:id/pdf', async (req, res) => {
     y += 8;
 
     // ── ITINERARIO ──
+    // Resolve airline code to full name if needed
+    const commonAirlines = {
+      'AR':'Aerolíneas Argentinas','LA':'Latam Airlines','AF':'Air France','DL':'Delta Airlines',
+      'AA':'American Airlines','UA':'United Airlines','IB':'Iberia','BA':'British Airways',
+      'LH':'Lufthansa','AZ':'ITA Airways','KL':'KLM','UX':'Air Europa','ET':'Ethiopian Airlines',
+      'TK':'Turkish Airlines','EK':'Emirates','QR':'Qatar Airways','AC':'Air Canada',
+      'AV':'Avianca','CM':'Copa Airlines','G3':'Gol','JJ':'Latam Brasil','AM':'Aeromexico',
+      'TP':'TAP Portugal','LY':'El Al','QF':'Qantas','SQ':'Singapore Airlines','CX':'Cathay Pacific'
+    };
+    if (aerolinea && aerolinea.length <= 2) aerolinea = commonAirlines[aerolinea.toUpperCase()] || aerolinea;
     const airlineTitleCase = titleCase(aerolinea);
     const tituloItin = airlineTitleCase ? `ITINERARIO  —  ${airlineTitleCase}` : 'ITINERARIO';
     doc.font(BOLD).fontSize(9).fillColor(NAVY).text(tituloItin, LEFT, y);
