@@ -35,6 +35,230 @@ if (db) {
 
 let tokenCache = { token: null, expiry: 0 };
 
+// ─── LLEEGO / GEA ───
+const LLEEGO_EMAIL = process.env.LLEEGO_EMAIL || 'ventas@luckytourviajes.com';
+const LLEEGO_PASS = process.env.LLEEGO_PASS || 't7pmgrxr0V';
+const LLEEGO_AGENT = process.env.LLEEGO_AGENT || 'GFinkelstein';
+const LLEEGO_API_KEY = 'RD7dLSjYqT18InSheQfKLvpANUzNVvEG';
+let lleegoTokenCache = { token: null, expiry: 0 };
+
+async function getLleegoToken() {
+  if (lleegoTokenCache.token && Date.now() < lleegoTokenCache.expiry) return lleegoTokenCache.token;
+  try {
+    const url = `https://middle.lleego.com/api/user/auto-login?e=${encodeURIComponent(LLEEGO_EMAIL)}&w=${encodeURIComponent(LLEEGO_PASS)}&idAgente=${encodeURIComponent(LLEEGO_AGENT)}`;
+    const r = await fetch(url, {
+      headers: { 'Accept': 'application/json', 'Content-Type': 'application/json', 'env': 'geaargentina', 'lang': 'es-ar' }
+    });
+    if (!r.ok) throw new Error(`Lleego auth ${r.status}`);
+    const data = await r.json();
+    if (!data.token) throw new Error('No token in Lleego response');
+    // JWT exp is ~1 hour, use 50 min
+    lleegoTokenCache = { token: data.token, expiry: Date.now() + 50 * 60 * 1000 };
+    console.log('[Lleego] Token obtenido OK');
+    return data.token;
+  } catch(e) {
+    console.error('[Lleego] Auth error:', e.message);
+    return null;
+  }
+}
+
+async function buscarLleego({ tipo, origen, destino, salida, regreso, adultos, ninos, infantes, cabinType, stops, tramos }) {
+  const token = await getLleegoToken();
+  if (!token) return [];
+  try {
+    // Build pax ages array
+    const ages = [];
+    for (let i = 0; i < (parseInt(adultos)||1); i++) ages.push(30);
+    for (let i = 0; i < (parseInt(ninos)||0); i++) ages.push(8);
+    for (let i = 0; i < (parseInt(infantes)||0); i++) ages.push(1);
+
+    // Cabin mapping: GLAS uses 0=all,1=economy,2=premium,3=business,4=first
+    const cabinMap = { '1': 'Y', '2': 'W', '3': 'C', '4': 'F' };
+    const cabin = cabinMap[String(cabinType)] || '';
+
+    // Build journeys
+    const journeys = [];
+    if (tipo === 'multidestino' && Array.isArray(tramos)) {
+      for (const t of tramos) {
+        journeys.push({ origin: t.origen, destination: t.destino, date: t.salida, max_layover_count: (stops !== null && stops !== undefined) ? parseInt(stops) : 99, max_layover_time: '' });
+      }
+    } else {
+      journeys.push({ origin: origen, destination: destino, date: salida, max_layover_count: (stops !== null && stops !== undefined) ? parseInt(stops) : 99, max_layover_time: '' });
+      if (tipo === 'roundtrip' && regreso) {
+        journeys.push({ origin: destino, destination: origen, date: regreso, max_layover_count: (stops !== null && stops !== undefined) ? parseInt(stops) : 99, max_layover_time: '' });
+      }
+    }
+
+    const body = {
+      query: {
+        criterias: [{
+          rule: { combined: false, duplicated: false, show_data: true, show_partial: false, only_partial: false },
+          travel: {
+            companies: [["ADD"]],
+            currency: 'USD',
+            include_train: false, include_bus: false,
+            include_gds: true, include_ndc: true, low_cost: false,
+            only_flight: true,
+            cabin: cabin || undefined,
+            exclude_fares: ['CUPO'],
+            journeys,
+            paxes_distribution: { passengers_ages: ages }
+          }
+        }]
+      }
+    };
+
+    console.log(`[Lleego] Buscando ${origen}-${destino} ${salida}${regreso ? '/'+regreso : ''} ${ages.length}pax cabin=${cabin}`);
+    const r = await fetch('https://api-tr.lleego.com/api/v2/transport/avail?locale=es-ar', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${token}`,
+        'Content-Type': 'application/json',
+        'x-api-key': LLEEGO_API_KEY,
+        'lang': 'es-ar'
+      },
+      body: JSON.stringify(body)
+    });
+    if (!r.ok) {
+      const txt = await r.text().catch(()=>'');
+      console.error(`[Lleego] Error ${r.status}: ${txt.substring(0,200)}`);
+      if (r.status === 401) lleegoTokenCache = { token: null, expiry: 0 };
+      return [];
+    }
+    const resp = await r.json();
+    const solCount = resp.data?.solutions?.length || 0;
+    console.log(`[Lleego] ${solCount} soluciones`);
+    return procesarVuelosLleego(resp);
+  } catch(e) {
+    console.error('[Lleego] Search error:', e.message);
+    return [];
+  }
+}
+
+function procesarVuelosLleego(resp) {
+  const d = resp.data || {};
+  if (!d.solutions || !d.segments) return [];
+  const segments = d.segments || {};
+  const ports = d.port || {};
+  const companies = d.company || {};
+  const providers = d.provider || {};
+  const fares = d.fares || {};
+  const journeys = d.journeys || {};
+
+  return d.solutions.map(sol => {
+    try {
+      // Get associations (ida y vuelta)
+      const assocs = sol.data?.associations || [];
+      const itinerario = [];
+      let maxEscalas = 0;
+
+      for (const assoc of assocs) {
+        const journeyRefs = assoc.journey_references || [];
+        const segRefs = assoc.segment_references || {};
+        // Each journey is an option (e.g. 3 departure options), pick first for display
+        // Actually journeys are alternatives for same leg, we show all segments
+        for (const jRef of journeyRefs) {
+          const journey = journeys[jRef];
+          if (!journey) continue;
+          const jSegs = journey.segments || [];
+          const escalas = journey.layovers || 0;
+          if (escalas > maxEscalas) maxEscalas = escalas;
+          
+          for (const segId of jSegs) {
+            const seg = segments[segId];
+            if (!seg) continue;
+            const depDt = new Date(seg.departure_date);
+            const arrDt = new Date(seg.arrival_date);
+            itinerario.push({
+              legId: segId,
+              origen: seg.departure,
+              destino: seg.arrival,
+              salida: seg.departure_date,
+              llegada: seg.arrival_date,
+              duracionMin: Math.round(seg.duration / 60),
+              duracion: `${Math.floor(seg.duration/3600)}h ${Math.round((seg.duration%3600)/60)}m`,
+              escalas,
+              ciudadesEscala: [],
+              tripDays: 0,
+              vuelo: `${seg.marketing_company}${seg.transport_number}`,
+              equipo: seg.transport_model || ''
+            });
+          }
+          break; // Solo primer journey por association (ida o vuelta)
+        }
+      }
+
+      // Price
+      const price = sol.total_price || {};
+      const precioUSD = price.total || 0;
+
+      // Provider info
+      const providerIds = (sol.providers || []).map(p => p.id);
+      const providerName = providerIds.map(id => {
+        const prov = providers[id];
+        if (!prov) return id;
+        if (prov.category === 'NDC') return `${prov.name || id} NDC`;
+        return prov.name || prov.short_name || id;
+      }).join('/');
+
+      // GDS code mapping
+      const gdsMap = { '1S': 'Sabre', '1A': 'Amadeus', '1G': 'Travelport' };
+      const gdsLabel = providerIds.map(id => {
+        if (gdsMap[id]) return gdsMap[id];
+        const prov = providers[id];
+        if (prov?.category === 'NDC') return `${id} NDC`;
+        return prov?.name || id;
+      }).join('/');
+
+      // Airline
+      const validating = assocs[0]?.validating_company || itinerario[0]?.vuelo?.substring(0,2) || '';
+      const airlineName = companies[validating]?.name || validating;
+
+      // Baggage from first association's first segment
+      const firstSegRefs = Object.values(assocs[0]?.segment_references || {});
+      const firstSeg = firstSegRefs[0] || {};
+      const baggage = firstSeg.baggage || {};
+      const cabinBag = firstSeg.cabin_baggage || {};
+      const cabinInfo = firstSeg.cabin || {};
+
+      const checkedQty = baggage.quantity || 0;
+      const checkedUnit = baggage.unit || 'Units';
+      const checkedIncluido = checkedQty > 0;
+      const checkedLabel = checkedIncluido ? `${checkedQty}x 23KG` : 'No incluida';
+
+      // Fare basis
+      const fareBasis = firstSeg.fare_basis_code || '';
+      const fareInfo = fares[Object.keys(fares).find(k => k.includes(fareBasis))] || {};
+
+      return {
+        id: `lleego_${sol.id}`,
+        aerolinea: validating,
+        aerolineaDesc: airlineName,
+        precioUSD,
+        monedaBase: price.currency || 'USD',
+        expira: sol.time_limits?.last_ticket_date || null,
+        itinerario,
+        escalas: maxEscalas,
+        equipaje: {
+          handOn: { label: 'Incluida', incluido: true },
+          carryOn: { label: cabinBag.included ? 'Incluido' : 'No incluido', incluido: !!cabinBag.included },
+          checked: { label: checkedLabel, incluido: checkedIncluido }
+        },
+        source: 'GEA',
+        fuente: 'GEA',
+        gds: gdsLabel,
+        fareType: fareInfo.fare_type || '',
+        cabina: cabinInfo.short_name || cabinInfo.long_name || '',
+        lleegoId: sol.id,
+        lleegoSourceId: sol.source_id
+      };
+    } catch(e) {
+      console.error('[Lleego] Error procesando solución:', e.message);
+      return null;
+    }
+  }).filter(Boolean);
+}
+
 async function getToken() {
   if (tokenCache.token && Date.now() < tokenCache.expiry) return tokenCache.token;
   const body = new URLSearchParams({ mode:'pass', username:SCIWEB_USER, password:SCIWEB_PASS, channel:'GWC', defaultWholesalerId:WHOLESALER_ID });
@@ -91,78 +315,98 @@ app.get('/health', (req, res) => res.json({ ok:true }));
 // ─── BÚSQUEDA DE VUELOS ───
 app.post('/buscar-vuelos', async (req, res) => {
   const { tipo, origen, destino, salida, regreso, adultos, ninos, infantes, stops, tramos, moneda, airlines, cabinType, flightType } = req.body;
-  try {
-    const token = await getToken();
-    const stopsFilter = (stops !== undefined && stops !== '') ? parseInt(stops) : null;
-    const currencyCode = moneda === 'ARS' ? null : 'USD';
-    const airlinesArr = Array.isArray(airlines) && airlines.length ? airlines : [];
-    const cabinVal = (cabinType !== undefined && cabinType !== null && cabinType !== '') ? cabinType : null;
-    const flightTypeVal = (flightType !== undefined && flightType !== null && flightType !== '') ? flightType : null;
+  
+  // Lanzar búsqueda GLAS + Lleego en paralelo
+  const glasPromise = (async () => {
+    try {
+      const token = await getToken();
+      const stopsFilter = (stops !== undefined && stops !== '') ? parseInt(stops) : null;
+      const currencyCode = moneda === 'ARS' ? null : 'USD';
+      const airlinesArr = Array.isArray(airlines) && airlines.length ? airlines : [];
+      const cabinVal = (cabinType !== undefined && cabinType !== null && cabinType !== '') ? cabinType : null;
+      const flightTypeVal = (flightType !== undefined && flightType !== null && flightType !== '') ? flightType : null;
 
-    let payload, endpoint, addSearchPayload;
+      let payload, endpoint, addSearchPayload;
 
-    if (tipo === 'oneway') {
-      endpoint = `${API_BASE}/FlightSearch/OnewayRemake`;
-      payload = {
-        DepartCode: origen, ArrivalCode: destino,
-        DepartDate: `${salida}T00:00:00`, DepartTime: null,
-        Adults: parseInt(adultos), Childs: parseInt(ninos), Infants: parseInt(infantes),
-        CabinType: cabinVal, Stops: stopsFilter, Airlines: airlinesArr,
-        TypeOfFlightAllowedInItinerary: flightTypeVal, SortByGLASAlgorithm: "",
-        AlternateCurrencyCode: currencyCode, CorporationCodeGlas: null, IncludeFiltersOptions: true
-      };
-      addSearchPayload = { SearchTravelType: 2, OneWayModel: payload, MultipleLegsModel: null, RoundTripModel: null };
-    } else if (tipo === 'roundtrip') {
-      endpoint = `${API_BASE}/FlightSearch/RoundTripRemake`;
-      payload = {
-        DepartCode: origen, ArrivalCode: destino,
-        DepartDate: `${salida}T00:00:00`, ArrivalDate: `${regreso}T00:00:00`,
-        ArrivalTime: null, DepartTime: null,
-        Adults: parseInt(adultos), Childs: parseInt(ninos), Infants: parseInt(infantes),
-        CabinType: cabinVal, Stops: stopsFilter, Airlines: airlinesArr,
-        TypeOfFlightAllowedInItinerary: flightTypeVal, SortByGLASAlgorithm: "",
-        AlternateCurrencyCode: currencyCode, CorporationCodeGlas: null, IncludeFiltersOptions: true
-      };
-      addSearchPayload = { SearchTravelType: 1, OneWayModel: null, MultipleLegsModel: null, RoundTripModel: payload };
-    } else if (tipo === 'multidestino') {
-      endpoint = `${API_BASE}/FlightSearch/MultipleLegsRemake`;
-      const legs = tramos.map((t, i) => ({
-        LegNumber: i+1, DepartCode: t.origen, ArrivalCode: t.destino,
-        DepartDate: `${t.salida}T00:00:00`, DepartTime: null,
-        CabinType: cabinVal, Stops: stopsFilter, Airlines: airlinesArr
-      }));
-      payload = {
-        Legs: legs, Adults: parseInt(adultos), Childs: parseInt(ninos), Infants: parseInt(infantes),
-        TypeOfFlightAllowedInItinerary: flightTypeVal, SortByGLASAlgorithm: "",
-        AlternateCurrencyCode: currencyCode, CorporationCodeGlas: null, IncludeFiltersOptions: true
-      };
-      addSearchPayload = { SearchTravelType: 3, OneWayModel: null, MultipleLegsModel: payload, RoundTripModel: null };
+      if (tipo === 'oneway') {
+        endpoint = `${API_BASE}/FlightSearch/OnewayRemake`;
+        payload = {
+          DepartCode: origen, ArrivalCode: destino,
+          DepartDate: `${salida}T00:00:00`, DepartTime: null,
+          Adults: parseInt(adultos), Childs: parseInt(ninos), Infants: parseInt(infantes),
+          CabinType: cabinVal, Stops: stopsFilter, Airlines: airlinesArr,
+          TypeOfFlightAllowedInItinerary: flightTypeVal, SortByGLASAlgorithm: "",
+          AlternateCurrencyCode: currencyCode, CorporationCodeGlas: null, IncludeFiltersOptions: true
+        };
+        addSearchPayload = { SearchTravelType: 2, OneWayModel: payload, MultipleLegsModel: null, RoundTripModel: null };
+      } else if (tipo === 'roundtrip') {
+        endpoint = `${API_BASE}/FlightSearch/RoundTripRemake`;
+        payload = {
+          DepartCode: origen, ArrivalCode: destino,
+          DepartDate: `${salida}T00:00:00`, ArrivalDate: `${regreso}T00:00:00`,
+          ArrivalTime: null, DepartTime: null,
+          Adults: parseInt(adultos), Childs: parseInt(ninos), Infants: parseInt(infantes),
+          CabinType: cabinVal, Stops: stopsFilter, Airlines: airlinesArr,
+          TypeOfFlightAllowedInItinerary: flightTypeVal, SortByGLASAlgorithm: "",
+          AlternateCurrencyCode: currencyCode, CorporationCodeGlas: null, IncludeFiltersOptions: true
+        };
+        addSearchPayload = { SearchTravelType: 1, OneWayModel: null, MultipleLegsModel: null, RoundTripModel: payload };
+      } else if (tipo === 'multidestino') {
+        endpoint = `${API_BASE}/FlightSearch/MultipleLegsRemake`;
+        const legs = tramos.map((t, i) => ({
+          LegNumber: i+1, DepartCode: t.origen, ArrivalCode: t.destino,
+          DepartDate: `${t.salida}T00:00:00`, DepartTime: null,
+          CabinType: cabinVal, Stops: stopsFilter, Airlines: airlinesArr
+        }));
+        payload = {
+          Legs: legs, Adults: parseInt(adultos), Childs: parseInt(ninos), Infants: parseInt(infantes),
+          TypeOfFlightAllowedInItinerary: flightTypeVal, SortByGLASAlgorithm: "",
+          AlternateCurrencyCode: currencyCode, CorporationCodeGlas: null, IncludeFiltersOptions: true
+        };
+        addSearchPayload = { SearchTravelType: 3, OneWayModel: null, MultipleLegsModel: payload, RoundTripModel: null };
+      }
+
+      await fetch(`${API_BASE}/FlightSearchHistory/AddSearch`, {
+        method:'POST', headers: getHeaders(token), body: JSON.stringify(addSearchPayload)
+      }).catch(()=>{});
+
+      console.log(`[GLAS] Búsqueda: airlines=${airlinesArr.join(',')}, cabin=${cabinVal}, flightType=${flightTypeVal}, stops=${stopsFilter}`);
+      const searchRes = await fetch(endpoint, {
+        method:'POST', headers: getHeaders(token), body: JSON.stringify(payload)
+      });
+      if (!searchRes.ok) throw new Error(`API error: ${searchRes.status}`);
+      const data = await searchRes.json();
+      console.log(`[GLAS] ${data.minifiedQuotations?.length || 0} resultados`);
+      
+      const vuelos = procesarVuelos(data, stopsFilter);
+      // Agregar fuente Tucano a cada resultado
+      vuelos.forEach(v => { v.fuente = 'Tucano'; v.gds = v.source || ''; });
+      return { vuelos, searchId: data.searchId || data.SearchId };
+    } catch(err) {
+      console.error('[GLAS] Error:', err.message);
+      if (err.message.includes('401')) tokenCache = { token:null, expiry:0 };
+      return { vuelos: [], searchId: null, error: err.message };
     }
+  })();
 
-    await fetch(`${API_BASE}/FlightSearchHistory/AddSearch`, {
-      method:'POST', headers: getHeaders(token), body: JSON.stringify(addSearchPayload)
-    }).catch(()=>{});
+  const lleegoPromise = buscarLleego({ tipo, origen, destino, salida, regreso, adultos, ninos, infantes, cabinType, stops, tramos });
 
-    console.log(`[Vuelos] Búsqueda: airlines=${airlinesArr.join(',')}, cabin=${cabinVal}, flightType=${flightTypeVal}, stops=${stopsFilter}`);
-    const searchRes = await fetch(endpoint, {
-      method:'POST', headers: getHeaders(token), body: JSON.stringify(payload)
-    });
-    if (!searchRes.ok) throw new Error(`API error: ${searchRes.status} - ${await searchRes.text().then(t=>t.substring(0,300))}`);
-    const data = await searchRes.json();
-    console.log(`[Vuelos] ${data.minifiedQuotations?.length || 0} resultados`);
-    // Log source/GDS info from first quote
-    if (data.minifiedQuotations?.[0]) {
-      const q0 = data.minifiedQuotations[0];
-      console.log(`[Vuelos] Source fields:`, JSON.stringify({ source: q0.source, sourceDescription: q0.sourceDescription, channel: q0.channel, channelName: q0.channelName, gds: q0.gds, platform: q0.platform, provider: q0.provider, providerName: q0.providerName, supplierCode: q0.supplierCode }));
-    }
+  // Esperar ambos
+  const [glasResult, lleegoVuelos] = await Promise.all([glasPromise, lleegoPromise]);
 
-    const vuelos = procesarVuelos(data, stopsFilter);
-    res.json({ ok:true, vuelos, searchId: data.searchId || data.SearchId });
-  } catch(err) {
-    console.error('[Vuelos] Error:', err.message);
-    if (err.message.includes('401')) tokenCache = { token:null, expiry:0 };
-    res.json({ ok:false, error: err.message });
+  // Combinar resultados
+  const todosVuelos = [...(glasResult.vuelos || []), ...(lleegoVuelos || [])];
+  todosVuelos.sort((a, b) => a.precioUSD - b.precioUSD);
+
+  const totalGlas = glasResult.vuelos?.length || 0;
+  const totalLleego = lleegoVuelos?.length || 0;
+  console.log(`[Búsqueda] Total: ${todosVuelos.length} (Tucano: ${totalGlas}, GEA: ${totalLleego})`);
+
+  if (!todosVuelos.length && glasResult.error) {
+    return res.json({ ok: false, error: glasResult.error });
   }
+
+  res.json({ ok: true, vuelos: todosVuelos, searchId: glasResult.searchId });
 });
 
 function procesarVuelos(data, stopsFilter) {
