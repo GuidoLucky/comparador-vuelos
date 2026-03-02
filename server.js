@@ -200,31 +200,30 @@ function procesarVuelos(data, stopsFilter) {
         }).substring(0, 600));
       }
 
-      // chargeType: 0=Included, 1=Available for purchase, 2=Not available
-      // Algunos GDS manejan campos extra como 'included' o 'freeOfCharge'
-      const isIncluded = (b) => {
-        if (b.included === true || b.freeOfCharge === true) return true;
-        if (b.included === false || b.freeOfCharge === false) return false;
-        return b.chargeType === 0;
-      };
+      // EQUIPAJE - En GLAS: chargeType 1 = incluido en tarifa, chargeType 0 = con cargo/no incluido
+      // Además necesita pieces > 0 para estar realmente incluido
 
+      // MOCHILA / ITEM PERSONAL → chargeType:1 siempre, pieces:1 siempre → incluida
       const handOnList = bagLeg?.handOn || [];
-      const handOnItem = handOnList.find(b => isIncluded(b));
-      const handOnIncluido = !!handOnItem;
-      const handOnLabel = handOnItem ? 'Incluida' : (handOnList.length > 0 ? 'Con cargo' : 'No informado');
+      const handOnIncluido = handOnList.some(b => b.chargeType === 1 && b.pieces >= 1);
+      const handOnLabel = handOnIncluido ? 'Incluida' : (handOnList.length > 0 ? 'Con cargo' : 'No informado');
 
+      // CARRY ON → chargeType:1 con pieces >= 1 = incluido
       const carryOnList = bagLeg?.carryOn || [];
-      const carryOnItem = carryOnList.find(b => isIncluded(b));
+      const carryOnItem = carryOnList.find(b => b.chargeType === 1 && b.pieces >= 1);
       const carryOnIncluido = !!carryOnItem;
       const carryOnLabel = carryOnItem 
         ? (`${carryOnItem.weight||''}${carryOnItem.weightUnit||''}`).trim() || 'Incluido' 
         : (carryOnList.length > 0 ? 'Con cargo' : 'No incluido');
 
-      const checkedList = (bagLeg?.checked||[]).filter(b=>b.passengerType===0);
-      const checkedItem = checkedList.find(b => isIncluded(b) && (b.pieces > 0 || (b.weight && b.weight !== '0')));
+      // CHECKED / DESPACHADO → chargeType:1 con pieces > 0 = incluido
+      const checkedList = (bagLeg?.checked||[]).filter(b => b.passengerType === 0);
+      const checkedItem = checkedList.find(b => b.chargeType === 1 && b.pieces > 0);
       const checkedIncluido = !!checkedItem;
       const checkedLabel = checkedItem 
-        ? (checkedItem.pieces > 0 ? `${checkedItem.pieces}x ${checkedItem.weight}${checkedItem.unit||'KG'}` : `${checkedItem.weight}${checkedItem.unit||'KG'}`) 
+        ? (checkedItem.weight && checkedItem.weight !== '0' && checkedItem.weight !== '' && checkedItem.weight !== null
+            ? `${checkedItem.pieces}x ${checkedItem.weight}${checkedItem.unit || 'KG'}`
+            : `${checkedItem.pieces}x 23KG`)
         : 'No incluida';
 
       return {
