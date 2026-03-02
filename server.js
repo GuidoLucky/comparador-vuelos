@@ -669,17 +669,24 @@ app.post('/crear-reserva', async (req, res) => {
       let bookData;
       try { bookData = JSON.parse(bookText); } catch(e) { throw new Error('Respuesta inválida'); }
       
-      // Log full response structure to find PNR
+      // Log full response structure to find PNR and voucher ID
       console.log('[Lleego] Booking response keys:', Object.keys(bookData));
-      console.log('[Lleego] Booking full response:', JSON.stringify(bookData).substring(0, 1000));
+      if (bookData.booking) {
+        console.log('[Lleego] booking keys:', Object.keys(bookData.booking));
+        if (bookData.booking.lines?.[0]) console.log('[Lleego] line[0] keys:', Object.keys(bookData.booking.lines[0]));
+      }
+      console.log('[Lleego] Booking full:', JSON.stringify(bookData).substring(0, 2000));
       
       // Extract PNR from Lleego nested response: booking.lines[0].booking_reference.locator
       const pnr = bookData.booking?.lines?.[0]?.booking_reference?.locator ||
                    bookData.locator || bookData.pnr || bookData.record_locator || 
                    bookData.data?.locator || bookData.booking?.locator || 'GEA-PENDING';
-      const orderId = bookData.booking?.id || bookData.id || sol.id;
+      // Try to find voucher/line ID for the Lleego web URL
+      const lineId = bookData.booking?.lines?.[0]?.id || '';
+      const bookingId = bookData.booking?.id || bookData.id || '';
+      const orderId = lineId || bookingId || sol.id;
       
-      console.log('[Lleego] Booking OK! PNR:', pnr, 'OrderId:', orderId);
+      console.log('[Lleego] Booking OK! PNR:', pnr, 'LineId:', lineId, 'BookingId:', bookingId, 'orderId:', orderId);
       
       // Guardar en DB
       if (db) {
@@ -2354,6 +2361,89 @@ app.post('/generar-cotizacion', async (req, res) => {
     const token = await getToken();
 
     const opcionesCompletas = await Promise.all(opciones.map(async (op) => {
+      // ─── GEA: use cached data ───
+      if (String(op.quotationId).startsWith('lleego_')) {
+        const cached = lleegoSolutionsCache.get(op.quotationId);
+        if (!cached) throw new Error('Solución GEA expirada. Buscá de nuevo.');
+        const sol = cached.sol;
+        const price = sol.total_price || {};
+        
+        // Build pasajeros from pax_prices or total
+        const pasajeros = [];
+        const paxPrices = sol.pax_prices || [];
+        if (paxPrices.length) {
+          for (const pp of paxPrices) {
+            const t = (pp.pax_type || 'ADT').toUpperCase();
+            pasajeros.push({
+              tipo: t === 'ADT' ? 'adulto' : t === 'CHD' || t === 'CNN' ? 'menor' : 'bebé',
+              cantidad: pp.quantity || 1, neto: pp.total || 0,
+              tipo_tarifa: 'PUB', comision_over: 0
+            });
+          }
+        } else {
+          pasajeros.push({ tipo: 'adulto', cantidad: 1, neto: price.total || 0, tipo_tarifa: 'PUB', comision_over: 0 });
+        }
+        
+        // AIRPORT_CITY fallback map (same as Tucano uses)
+        const AIRPORT_CITY = {
+          'EZE':'Buenos Aires','AEP':'Buenos Aires','MIA':'Miami','MAD':'Madrid','BCN':'Barcelona',
+          'FCO':'Roma','CDG':'Paris','ORY':'Paris','LHR':'Londres','LGW':'Londres','FRA':'Frankfurt',
+          'AMS':'Amsterdam','IST':'Estambul','DXB':'Dubai','DOH':'Doha','TLV':'Tel Aviv',
+          'ADD':'Addis Abeba','GRU':'San Pablo','SCL':'Santiago','LIM':'Lima','BOG':'Bogota',
+          'PTY':'Panama','CUN':'Cancun','MEX':'Mexico DF','JFK':'Nueva York','LAX':'Los Angeles',
+          'MVD':'Montevideo','COR':'Cordoba','MDZ':'Mendoza','BRC':'Bariloche','IGR':'Iguazu',
+          'FTE':'El Calafate','USH':'Ushuaia','SLA':'Salta','TUC':'Tucuman',
+          'MXP':'Milan','MUC':'Munich','ZRH':'Zurich','VIE':'Viena','LIS':'Lisboa',
+          'NRT':'Tokio','ICN':'Seul','SIN':'Singapur','BKK':'Bangkok','SYD':'Sydney',
+          'JNB':'Johannesburgo','CAI':'El Cairo','NBO':'Nairobi','ATL':'Atlanta',
+          'ORD':'Chicago','DFW':'Dallas','FLN':'Florianopolis','POA':'Porto Alegre'
+        };
+        
+        // Build vuelos in cotizacion format: { fecha, origen, destino, salida, llegada, numero_vuelo, brand }
+        const vuelos = [];
+        const assocs = sol.data?.associations || [];
+        for (const assoc of assocs) {
+          const journeyRefs = assoc.journey_references || [];
+          for (const jRef of journeyRefs) {
+            const journey = cached.journeys[jRef]; if (!journey) continue;
+            const jSegs = journey.segments || [];
+            for (const sid of jSegs) {
+              const seg = cached.segments[sid]; if (!seg) continue;
+              const depPort = cached.ports[seg.departure] || {};
+              const arrPort = cached.ports[seg.arrival] || {};
+              const depCity = depPort.city_name || depPort.name || AIRPORT_CITY[seg.departure] || '';
+              const arrCity = arrPort.city_name || arrPort.name || AIRPORT_CITY[seg.arrival] || '';
+              const dep = new Date(seg.departure_date);
+              const arr = new Date(seg.arrival_date);
+              
+              const origenStr = depCity ? `${depCity} (${seg.departure})` : `(${seg.departure})`;
+              const destinoStr = arrCity ? `${arrCity} (${seg.arrival})` : `(${seg.arrival})`;
+              
+              vuelos.push({
+                fecha: `${String(dep.getDate()).padStart(2,'0')}/${String(dep.getMonth()+1).padStart(2,'0')}`,
+                origen: origenStr,
+                destino: destinoStr,
+                salida: `${String(dep.getHours()).padStart(2,'0')}.${String(dep.getMinutes()).padStart(2,'0')}`,
+                llegada: `${String(arr.getHours()).padStart(2,'0')}.${String(arr.getMinutes()).padStart(2,'0')}`,
+                numero_vuelo: `${seg.marketing_company} ${seg.transport_number}`,
+                brand: ''
+              });
+            }
+          }
+        }
+        
+        const validating = assocs[0]?.validating_company || '';
+        const airlineName = cached.companies[validating]?.name || validating;
+        
+        return { 
+          aerolinea: airlineName, vuelos, 
+          detalle_vuelo: 'Economica', 
+          pasajeros, penalidades: null, 
+          equipaje: op.equipaje || null 
+        };
+      }
+      
+      // ─── Tucano: use GLAS API ───
       const r = await fetch(`${API_BASE}/FlightSearch/ItineraryDetailRemake?searchId=${op.searchId}&quotationId=${op.quotationId}`, {
         headers: getHeaders(token)
       });
