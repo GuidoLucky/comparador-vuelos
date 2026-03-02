@@ -75,40 +75,50 @@ async function buscarLleego({ tipo, origen, destino, salida, regreso, adultos, n
     // Cabin mapping: GLAS uses 0=all,1=economy,2=premium,3=business,4=first
     const cabinMap = { '1': 'Y', '2': 'W', '3': 'C', '4': 'F' };
     const cabin = cabinMap[String(cabinType)] || '';
+    const stopsVal = (stops !== null && stops !== undefined && stops !== '') ? parseInt(stops) : null;
 
     // Build journeys
     const journeys = [];
     if (tipo === 'multidestino' && Array.isArray(tramos)) {
       for (const t of tramos) {
-        journeys.push({ origin: t.origen, destination: t.destino, date: t.salida, max_layover_count: (stops !== null && stops !== undefined) ? parseInt(stops) : 99, max_layover_time: '' });
+        const j = { origin: t.origen, destination: t.destino, date: t.salida };
+        if (stopsVal !== null) j.max_layover_count = stopsVal;
+        journeys.push(j);
       }
     } else {
-      journeys.push({ origin: origen, destination: destino, date: salida, max_layover_count: (stops !== null && stops !== undefined) ? parseInt(stops) : 99, max_layover_time: '' });
+      const j1 = { origin: origen, destination: destino, date: salida };
+      if (stopsVal !== null) j1.max_layover_count = stopsVal;
+      journeys.push(j1);
       if (tipo === 'roundtrip' && regreso) {
-        journeys.push({ origin: destino, destination: origen, date: regreso, max_layover_count: (stops !== null && stops !== undefined) ? parseInt(stops) : 99, max_layover_time: '' });
+        const j2 = { origin: destino, destination: origen, date: regreso };
+        if (stopsVal !== null) j2.max_layover_count = stopsVal;
+        journeys.push(j2);
       }
     }
+
+    const travelOpts = {
+      companies: [["ADD"]],
+      currency: 'USD',
+      include_train: false, include_bus: false,
+      include_gds: true, include_ndc: true, low_cost: false,
+      only_flight: true,
+      exclude_fares: ['CUPO'],
+      journeys,
+      paxes_distribution: { passengers_ages: ages }
+    };
+    if (cabin) travelOpts.cabin = cabin;
 
     const body = {
       query: {
         criterias: [{
           rule: { combined: false, duplicated: false, show_data: true, show_partial: false, only_partial: false },
-          travel: {
-            companies: [["ADD"]],
-            currency: 'USD',
-            include_train: false, include_bus: false,
-            include_gds: true, include_ndc: true, low_cost: false,
-            only_flight: true,
-            cabin: cabin || undefined,
-            exclude_fares: ['CUPO'],
-            journeys,
-            paxes_distribution: { passengers_ages: ages }
-          }
+          travel: travelOpts
         }]
       }
     };
 
     console.log(`[Lleego] Buscando ${origen}-${destino} ${salida}${regreso ? '/'+regreso : ''} ${ages.length}pax cabin=${cabin}`);
+    console.log(`[Lleego] Request body:`, JSON.stringify(body).substring(0, 500));
     const r = await fetch('https://api-tr.lleego.com/api/v2/transport/avail?locale=es-ar', {
       method: 'POST',
       headers: {
@@ -126,8 +136,13 @@ async function buscarLleego({ tipo, origen, destino, salida, regreso, adultos, n
       return [];
     }
     const resp = await r.json();
-    const solCount = resp.data?.solutions?.length || 0;
-    console.log(`[Lleego] ${solCount} soluciones`);
+    const topKeys = Object.keys(resp);
+    const dataKeys = resp.data ? Object.keys(resp.data) : [];
+    const solCount = resp.data?.solutions?.length || resp.solutions?.length || 0;
+    console.log(`[Lleego] ${solCount} soluciones | topKeys: ${topKeys.join(',')} | dataKeys: ${dataKeys.join(',')}`);
+    if (solCount === 0) {
+      console.log(`[Lleego] Raw resp sample:`, JSON.stringify(resp).substring(0, 500));
+    }
     return procesarVuelosLleego(resp);
   } catch(e) {
     console.error('[Lleego] Search error:', e.message);
@@ -334,7 +349,7 @@ app.post('/buscar-vuelos', async (req, res) => {
           DepartCode: origen, ArrivalCode: destino,
           DepartDate: `${salida}T00:00:00`, DepartTime: null,
           Adults: parseInt(adultos), Childs: parseInt(ninos), Infants: parseInt(infantes),
-          CabinType: cabinVal, Stops: stopsFilter, Airlines: airlinesArr,
+          CabinType: cabinVal, Stops: null, Airlines: airlinesArr,
           TypeOfFlightAllowedInItinerary: flightTypeVal, SortByGLASAlgorithm: "",
           AlternateCurrencyCode: currencyCode, CorporationCodeGlas: null, IncludeFiltersOptions: true
         };
@@ -439,15 +454,6 @@ function procesarVuelos(data, stopsFilter) {
 
       const bagLeg = q.legsWithBaggageAllowance?.[0]?.baggageAllowance;
       const maxEscalas = itinerario.reduce((max, l) => Math.max(max, l.escalas||0), 0);
-
-      // Log raw baggage data for debugging
-      if (bagLeg) {
-        console.log(`[Equipaje] Vuelo ${q.validatingCarrier} $${q.grandTotalSellingPriceAmount}:`, JSON.stringify({
-          handOn: bagLeg.handOn,
-          carryOn: bagLeg.carryOn,
-          checked: (bagLeg.checked||[]).filter(b=>b.passengerType===0)
-        }).substring(0, 600));
-      }
 
       // EQUIPAJE - En GLAS: chargeType 1 = incluido en tarifa, chargeType 0 = con cargo/no incluido
       // Además necesita pieces > 0 para estar realmente incluido
