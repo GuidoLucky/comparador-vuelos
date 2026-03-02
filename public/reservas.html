@@ -349,7 +349,7 @@ async function verDetalle(id) {
         <h3>Información general</h3>
         <div class="detail-grid">
           <div class="detail-item"><div class="lbl">PNR</div><div class="val">${r.pnr || '-'}</div></div>
-          <div class="detail-item"><div class="lbl">Order</div><div class="val">${r.order_number || '-'}</div></div>
+          <div class="detail-item"><div class="lbl">Order</div><div class="val">${r.order_id ? `<a href="https://sciweb.tucanotours.com.ar/FlightOrders/Details/${r.order_id}" target="_blank" style="color:#1565c0;text-decoration:none;">${r.order_number || r.order_id.substring(0,8)} 🔗</a>` : (r.order_number || '-')}</div></div>
           <div class="detail-item"><div class="lbl">Estado</div><div class="val"><span class="badge badge-${r.estado}">${r.estado}</span></div></div>
           <div class="detail-item"><div class="lbl">Aerolínea</div><div class="val">${r.aerolinea || '-'}</div></div>
           <div class="detail-item"><div class="lbl">Precio neto</div><div class="val">USD ${(r.precio_usd||0).toLocaleString('es-AR')}</div></div>
@@ -373,7 +373,7 @@ async function verDetalle(id) {
     actionsHtml += `<button class="btn btn-outline" onclick="mostrarPdfOpts()">📄 Generar PDF</button>`;
     if (r.estado === 'CREADA') {
       actionsHtml += `<button class="btn btn-success" onclick="mostrarRecotizar()">💲 Recotizar</button>`;
-      actionsHtml += `<button class="btn btn-outline" style="background:#d32f2f;color:white;border:none;" onclick="confirmarEmision()">✈️ Emitir</button>`;
+      actionsHtml += `<button class="btn btn-outline" style="background:#1565c0;color:white;border:none;" onclick="confirmarEmision()">✈️ Emitir en SCIWeb</button>`;
       actionsHtml += `<button class="btn btn-success" onclick="cambiarEstado('EMITIDA')">✅ Marcar como Emitida</button>`;
       actionsHtml += `<button class="btn btn-danger" onclick="cambiarEstado('CANCELADA')">❌ Cancelar</button>`;
     } else if (r.estado === 'EMITIDA') {
@@ -662,6 +662,17 @@ async function verificarEstado() {
       data.tickets.forEach(t => msg += `   ${t}\n`);
     }
     
+    // Debug: mostrar todos los tickets (incluso no detectados como emitidos)
+    if (data.allTickets && data.allTickets.length && (!data.tickets || !data.tickets.length)) {
+      msg += `\n🔍 Tickets encontrados (raw):\n`;
+      data.allTickets.forEach(t => msg += `   #${t.numero} status=${t.status} ${t.statusDesc || ''}\n`);
+    }
+    
+    // OrderState
+    if (data.orderState !== undefined) {
+      msg += `\n📋 OrderState: ${data.orderState}\n`;
+    }
+    
     // Vuelos
     if (data.vuelos && data.vuelos.length) {
       msg += `\n✈️ Vuelos:\n`;
@@ -739,43 +750,37 @@ async function confirmarEmision() {
     return;
   }
   
-  const msg = `⚠️ EMITIR TICKETS\n\nPNR: ${reservaActual.pnr}\nPrecio neto: USD ${reservaActual.precio_usd || 'N/A'}\n\n¿Estás seguro de que querés emitir los tickets?\nEsta acción NO se puede deshacer.`;
-  
-  if (!confirm(msg)) return;
-  if (!confirm('ÚLTIMA CONFIRMACIÓN: ¿Emitir tickets ahora?')) return;
-  
   try {
-    const statusDiv = document.getElementById('modalBody');
-    const emitirMsg = document.createElement('div');
-    emitirMsg.id = 'emitirStatus';
-    emitirMsg.style.cssText = 'margin-top:16px;padding:16px;background:#fff3e0;border:2px solid #ff9800;border-radius:10px;text-align:center;';
-    emitirMsg.innerHTML = `<p style="font-size:16px;margin:0;">✈️ Emitiendo tickets...</p>
-      <p style="color:#666;margin:4px 0 0;font-size:12px;">Procesando 7 pasos de emisión. Puede tardar 15-30 segundos.</p>
-      <div style="margin-top:8px;height:4px;background:#ffe0b2;border-radius:2px;overflow:hidden"><div style="width:20%;height:100%;background:#ff9800;animation:progress 15s ease-in-out forwards"></div></div>
-      <style>@keyframes progress{0%{width:5%}50%{width:60%}90%{width:85%}100%{width:95%}}</style>`;
-    statusDiv.appendChild(emitirMsg);
-    
-    const resp = await fetch('/reservas/' + reservaActual.id + '/emitir', { method: 'POST', headers: {'Content-Type':'application/json'} });
+    const resp = await fetch('/reservas/' + reservaActual.id + '/emitir', { 
+      method: 'POST', headers: {'Content-Type':'application/json'} 
+    });
     const data = await resp.json();
+    if (!data.ok) { alert('Error: ' + data.error); return; }
     
-    if (data.ok) {
-      emitirMsg.style.borderColor = '#4caf50';
-      emitirMsg.style.background = '#e8f5e9';
-      let ticketsHtml = '';
-      if (data.tickets && data.tickets.length) {
-        ticketsHtml = '<div style="margin-top:8px">' + data.tickets.map(t => `<span style="display:inline-block;background:#fff;padding:4px 10px;border-radius:4px;margin:2px;font-family:monospace;">${t.carrier}-${t.numero}</span>`).join('') + '</div>';
+    // Abrir SCIWeb en nueva pestaña
+    if (data.sciweb_url) {
+      const abrir = confirm(
+        `Emitir reserva ${data.pnr}\n\n` +
+        `Se abrirá SCIWeb para completar la emisión.\n` +
+        `Después de emitir en SCIWeb, volvé acá y hacé click en "Verificar estado" para sincronizar.\n\n` +
+        `¿Abrir SCIWeb?`
+      );
+      if (abrir) {
+        window.open(data.sciweb_url, '_blank');
+        // Mostrar recordatorio
+        const statusDiv = document.getElementById('modalBody');
+        const reminder = document.createElement('div');
+        reminder.style.cssText = 'margin-top:16px;padding:16px;background:#e3f2fd;border:2px solid #1976d2;border-radius:10px;text-align:center;';
+        reminder.innerHTML = `
+          <p style="font-size:14px;margin:0;color:#1565c0;">✈️ SCIWeb abierto en nueva pestaña</p>
+          <p style="color:#666;margin:8px 0;font-size:12px;">Después de emitir, hacé click abajo para sincronizar:</p>
+          <button class="btn btn-primary" onclick="verificarEstado()" style="margin-top:4px">🔄 Verificar estado</button>
+        `;
+        statusDiv.appendChild(reminder);
       }
-      const stepsHtml = data.steps ? `<div style="margin-top:8px;font-size:11px;color:#666">${data.steps.join(' → ')}</div>` : '';
-      emitirMsg.innerHTML = `<p style="font-size:16px;margin:0;color:#2e7d32;">✅ ${data.mensaje}</p>${ticketsHtml}${stepsHtml}`;
-      setTimeout(cargarReservas, 1000);
-    } else {
-      emitirMsg.style.borderColor = '#f44336';
-      emitirMsg.style.background = '#ffebee';
-      const stepsHtml = data.steps ? `<div style="margin-top:8px;font-size:11px;color:#666">${data.steps.join(' → ')}</div>` : '';
-      emitirMsg.innerHTML = `<p style="font-size:14px;margin:0;color:#c62828;">❌ Error: ${data.error}</p>${stepsHtml}`;
     }
   } catch(e) {
-    alert('Error de conexión: ' + e.message);
+    alert('Error: ' + e.message);
   }
 }
 
