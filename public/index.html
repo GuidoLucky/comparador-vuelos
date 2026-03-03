@@ -74,6 +74,7 @@ header{background:var(--dark2);border-bottom:1px solid var(--border);padding:14p
 .badge-fuente{font-size:8px;font-weight:700;padding:1px 6px;border-radius:3px;letter-spacing:0.3px;}
 .badge-tucano{background:rgba(46,204,113,0.15);color:#2ecc71;}
 .badge-gea{background:rgba(66,165,245,0.15);color:#42a5f5;}
+.badge-sabre{background:rgba(230,126,34,0.15);color:#e67e22;}
 .badge-gds{background:var(--dark3);color:var(--muted);padding:1px 5px;border-radius:3px;font-size:8px;}
 .tramo{padding:2px 0;}
 .tramo-label{font-size:9px;color:var(--muted);text-transform:uppercase;letter-spacing:1px;margin-bottom:5px;font-weight:600;}
@@ -538,7 +539,7 @@ function renderVuelo(v){
       <div class="aero-col">
         <div class="aero-code">${v.aerolinea}</div>
         <div class="aero-name">${v.aerolineaDesc}</div>
-        <div class="aero-source">${v.fuente?`<span class="badge-fuente badge-${v.fuente==='GEA'?'gea':'tucano'}">${v.fuente}</span>`:''}${v.gds?`<span class="badge-gds">${v.gds}</span>`:''}</div>
+        <div class="aero-source">${v.fuente?`<span class="badge-fuente badge-${v.fuente==='GEA'?'gea':v.fuente==='Sabre'?'sabre':'tucano'}">${v.fuente}</span>`:''}${v.gds?`<span class="badge-gds">${v.gds}</span>`:''}</div>
       </div>
       <div>${tramosHTML}</div>
       <div class="precio-col">
@@ -575,9 +576,10 @@ function aplicarFiltrosYRender(){
   todosLosVuelos.forEach(v=>{cuentas[Math.min(v.escalas,2)]++;});
   const aerosMap={};
   todosLosVuelos.forEach(v=>{aerosMap[v.aerolinea]=v.aerolineaDesc;});
-  const fuenteCounts={Tucano:0,GEA:0};
+  const fuenteCounts={Tucano:0,GEA:0,Sabre:0};
   todosLosVuelos.forEach(v=>{if(v.fuente&&fuenteCounts[v.fuente]!==undefined)fuenteCounts[v.fuente]++;});
-  const hayMultiFuente=fuenteCounts.Tucano>0&&fuenteCounts.GEA>0;
+  const numFuentes=(fuenteCounts.Tucano>0?1:0)+(fuenteCounts.GEA>0?1:0)+(fuenteCounts.Sabre>0?1:0);
+  const hayMultiFuente=numFuentes>1;
   const precioMinUSD=Math.min(...todosLosVuelos.map(v=>v.precioUSD));
   const precioMaxUSD=Math.max(...todosLosVuelos.map(v=>v.precioUSD));
   const currentMaxUSD=filtros.maxPrecioUSD||precioMaxUSD;
@@ -611,8 +613,9 @@ function aplicarFiltrosYRender(){
         ${hayMultiFuente?`<div class="filtro-grupo">
           <div class="filtro-grupo-title">Fuente</div>
           <button class="filtro-btn ${filtros.fuente===''?'active':''}" onclick="setFuente('')"><div class="filtro-dot" style="background:var(--blue)"></div>Todas<span class="filtro-count">${todosLosVuelos.length}</span></button>
-          <button class="filtro-btn ${filtros.fuente==='Tucano'?'active':''}" onclick="setFuente('Tucano')"><div class="filtro-dot" style="background:#2ecc71"></div>Tucano<span class="filtro-count">${fuenteCounts.Tucano}</span></button>
-          <button class="filtro-btn ${filtros.fuente==='GEA'?'active':''}" onclick="setFuente('GEA')"><div class="filtro-dot" style="background:#42a5f5"></div>GEA<span class="filtro-count">${fuenteCounts.GEA}</span></button>
+          ${fuenteCounts.Tucano?`<button class="filtro-btn ${filtros.fuente==='Tucano'?'active':''}" onclick="setFuente('Tucano')"><div class="filtro-dot" style="background:#2ecc71"></div>Tucano<span class="filtro-count">${fuenteCounts.Tucano}</span></button>`:''}
+          ${fuenteCounts.GEA?`<button class="filtro-btn ${filtros.fuente==='GEA'?'active':''}" onclick="setFuente('GEA')"><div class="filtro-dot" style="background:#42a5f5"></div>GEA<span class="filtro-count">${fuenteCounts.GEA}</span></button>`:''}
+          ${fuenteCounts.Sabre?`<button class="filtro-btn ${filtros.fuente==='Sabre'?'active':''}" onclick="setFuente('Sabre')"><div class="filtro-dot" style="background:#e67e22"></div>Sabre<span class="filtro-count">${fuenteCounts.Sabre}</span></button>`:''}
         </div>`:''}
         <button class="btn-limpiar" onclick="limpiarFiltros()">✕ Limpiar filtros</button>
       </div>
