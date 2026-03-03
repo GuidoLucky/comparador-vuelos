@@ -2713,19 +2713,23 @@ app.post('/reservas/:id/pdf', async (req, res) => {
         y = doc.y + 3;
         doc.font(REGULAR).fontSize(7.5).fillColor('#555555');
         const condiciones = [
-          { label: 'Cambio (antes del viaje)', data: pen.cambio_antes || pen.cambio },
-          { label: 'Cambio (durante el viaje)', data: pen.cambio_durante },
-          { label: 'Devolución (antes del viaje)', data: pen.devolucion_antes || pen.cancelacion },
-          { label: 'Devolución (durante el viaje)', data: pen.devolucion_durante }
+          { label: 'Cambio (antes del viaje)', data: pen.cambio_antes || pen.cambio, isDevolucion: false },
+          { label: 'Cambio (durante el viaje)', data: pen.cambio_durante, isDevolucion: false },
+          { label: 'Devolución (antes del viaje)', data: pen.devolucion_antes || pen.cancelacion, isDevolucion: true },
+          { label: 'Devolución (durante el viaje)', data: pen.devolucion_durante, isDevolucion: true }
         ];
         for (const cond of condiciones) {
           if (cond.data) {
             const estado = cond.data.permite !== false ? 'Permite' : 'No permite';
-            const montoStr = cond.data.permite !== false ? ` — ${cond.data.moneda} ${cond.data.monto || 0}` : '';
+            const montoVal = cond.isDevolucion && cond.data.permite !== false ? ((cond.data.monto || 0) + 100) : (cond.data.monto || 0);
+            const montoStr = cond.data.permite !== false ? ` — ${cond.data.moneda} ${montoVal}` : '';
             doc.text(`  • ${cond.label}: ${estado}${montoStr}`, LEFT, y);
             y = doc.y + 2;
           }
         }
+        doc.moveDown(0.2);
+        doc.font(REGULAR).fontSize(6.5).fillColor('#888888').text('Los cambios siempre están sujetos a diferencia de tarifa', LEFT, y);
+        y = doc.y + 2;
       }
     }
 
@@ -3234,20 +3238,23 @@ function generarPDFBuffer(opciones, vendedor, nombreCliente) {
         doc.moveDown(0.2);
         doc.font(REGULAR).fontSize(7.5).fillColor('#555555');
         const condiciones = [
-          { label: 'Cambio (antes del viaje)', data: pen.cambio_antes || pen.cambio },
-          { label: 'Cambio (durante el viaje)', data: pen.cambio_durante },
-          { label: 'Devolución (antes del viaje)', data: pen.devolucion_antes || pen.cancelacion },
-          { label: 'Devolución (durante el viaje)', data: pen.devolucion_durante }
+          { label: 'Cambio (antes del viaje)', data: pen.cambio_antes || pen.cambio, isDevolucion: false },
+          { label: 'Cambio (durante el viaje)', data: pen.cambio_durante, isDevolucion: false },
+          { label: 'Devolución (antes del viaje)', data: pen.devolucion_antes || pen.cancelacion, isDevolucion: true },
+          { label: 'Devolución (durante el viaje)', data: pen.devolucion_durante, isDevolucion: true }
         ];
         for (const cond of condiciones) {
           if (cond.data) {
             const estado = cond.data.permite !== false ? 'Permite' : 'No permite';
-            const montoStr = cond.data.permite !== false ? ` — ${cond.data.moneda} ${cond.data.monto || 0}` : '';
+            const montoVal = cond.isDevolucion && cond.data.permite !== false ? ((cond.data.monto || 0) + 100) : (cond.data.monto || 0);
+            const montoStr = cond.data.permite !== false ? ` — ${cond.data.moneda} ${montoVal}` : '';
             doc.text(`  • ${cond.label}: ${estado}${montoStr}`, PAGE_LEFT);
           } else {
             doc.text(`  • ${cond.label}: No disponible`, PAGE_LEFT);
           }
         }
+        doc.moveDown(0.2);
+        doc.font(REGULAR).fontSize(6.5).fillColor('#888888').text('Los cambios siempre están sujetos a diferencia de tarifa', PAGE_LEFT);
         console.log(`[PDF-Cotizacion] Renderizado: Condiciones completas`);
       }
     }
