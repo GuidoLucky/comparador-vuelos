@@ -2128,12 +2128,17 @@ app.post('/reservas/:id/recotizar', async (req, res) => {
     }
     console.log('[Recotizar] Penalties found:', JSON.stringify(penalidades));
 
+    // Extract brand info from flights
+    const brands = [...new Set(flights.map(f => f.brandName).filter(Boolean))];
+    const brandLabel = brands.join(' / ') || null;
+
     res.json({
       ok: true,
       pnr: rrData.recordLocator,
       tarifas,
       pricingId,
       penalidades,
+      brand: brandLabel,
       orderId: reserva.order_id,
       segmentIds: segRefIdsForSave,
       rawKeys: Object.keys(prData),
