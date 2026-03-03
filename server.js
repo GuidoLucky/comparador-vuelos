@@ -1462,6 +1462,23 @@ app.post('/crear-reserva', async (req, res) => {
       }
       console.log('[Lleego] Booking full:', JSON.stringify(bookData).substring(0, 2000));
       
+      // CHECK: Si Lleego devuelve success:false, la reserva falló - NO crear reserva fantasma
+      if (bookData.success === false) {
+        const errores = bookData.errors || [];
+        const errMsg = errores.map(e => e.description || e.short_name || e.code || 'Error desconocido').join('; ');
+        console.log('[Lleego] Booking FAILED:', errMsg);
+        // Detectar oferta caducada específicamente
+        const esOfertaCaducada = errores.some(e => 
+          (e.description && e.description.toLowerCase().includes('caducada')) ||
+          (e.short_name && e.short_name.includes('900505')) ||
+          (e.code === '75F')
+        );
+        if (esOfertaCaducada) {
+          throw new Error('La oferta NDC ha caducado. Por favor, realizá una nueva búsqueda e intentá reservar más rápido. Las ofertas NDC tienen un tiempo de vigencia limitado.');
+        }
+        throw new Error(`Error en reserva GEA: ${errMsg}`);
+      }
+      
       // Extract PNR from Lleego nested response - search multiple paths
       const line0 = bookData.booking?.lines?.[0] || {};
       const pnr = line0.booking_reference?.locator ||
