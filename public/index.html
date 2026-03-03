@@ -1338,19 +1338,21 @@ async function verDetalle(quotationId, searchId, e) {
     }).join('');
     // ─── CONDICIONES (tabla estilo SCIWeb) ───
     var pen = d.penalidades || {};
-    function renderCondRow(label, data) {
+    function renderCondRow(label, data, isDevolucion) {
       if (!data) return '<tr><td class="cond-label">' + label + '</td><td class="cond-monto">—</td><td><span class="cond-badge no-permite">Sin info</span></td></tr>';
       var permite = data.permite !== false;
       var badge = permite ? '<span class="cond-badge permite">Permite</span>' : '<span class="cond-badge no-permite">No permite</span>';
-      var monto = permite ? (data.moneda + ' ' + (data.monto || 0).toLocaleString('es-AR', {minimumFractionDigits:2})) : '';
+      var montoVal = isDevolucion && permite ? ((data.monto || 0) + 100) : (data.monto || 0);
+      var monto = permite ? (data.moneda + ' ' + montoVal.toLocaleString('es-AR', {minimumFractionDigits:2})) : '';
       return '<tr><td class="cond-label">' + label + '</td><td class="cond-monto">' + monto + '</td><td>' + badge + '</td></tr>';
     }
     var condHTML = '<table class="cond-table">' +
-      renderCondRow('Cambio (Antes del viaje)', pen.cambio_antes || pen.cambio) +
-      renderCondRow('Cambio (Durante el viaje)', pen.cambio_durante) +
-      renderCondRow('Devolución (Antes del viaje)', pen.devolucion_antes || pen.cancelacion) +
-      renderCondRow('Devolución (Durante el viaje)', pen.devolucion_durante) +
-      '</table>';
+      renderCondRow('Cambio (Antes del viaje)', pen.cambio_antes || pen.cambio, false) +
+      renderCondRow('Cambio (Durante el viaje)', pen.cambio_durante, false) +
+      renderCondRow('Devolución (Antes del viaje)', pen.devolucion_antes || pen.cancelacion, true) +
+      renderCondRow('Devolución (Durante el viaje)', pen.devolucion_durante, true) +
+      '</table>' +
+      '<div style="font-size:10px;color:var(--muted);margin-top:6px;font-style:italic">Los cambios siempre están sujetos a diferencia de tarifa</div>';
     panel.innerHTML =
       '<div class="detalle-grid">' +
         '<div>' +
