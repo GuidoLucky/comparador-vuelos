@@ -397,7 +397,7 @@ async function buscarSabre({ tipo, origen, destino, salida, regreso, adultos, ni
     // BFM request
     const bfmBody = {
       OTA_AirLowFareSearchRQ: {
-        Version: '4.3.0',
+        Version: '5.0.0',
         POS: {
           Source: [{ PseudoCityCode: SABRE_PCC, RequestorID: { Type: '1', ID: '1', CompanyName: { Code: 'TN' } } }]
         },
@@ -431,7 +431,7 @@ async function buscarSabre({ tipo, origen, destino, salida, regreso, adultos, ni
     
     console.log('[Sabre] BFM request:', JSON.stringify(bfmBody).substring(0, 500));
     
-    const res = await fetch(`${SABRE_API_BASE}/v4.3.0/shop/flights?mode=live&limit=30&offset=1&enablelogs=true`, {
+    const res = await fetch(`${SABRE_API_BASE}/v5.0.0/shop/flights?limit=30&offset=1`, {
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${token}`,
