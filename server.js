@@ -1460,7 +1460,7 @@ app.post('/crear-reserva', async (req, res) => {
       // Call pricing endpoint BEFORE booking to validate/refresh NDC offer
       try {
         const _pjp = journeyCodes.map((j,i) => `&journey0${i}=${j}`).join('');
-        const _purl = `https://api-tr.lleego.com/api/v2/transport/pricing?format=json&solutionID0=${sol.id}${_pjp}&extend=true&locale=es-ar`;
+        const _purl = `https://api-tr.lleego.com/api/v2/transport/pricing?format=json&solutionID0=${sol.id}&token=${searchToken}${_pjp}&extend=true&locale=es-ar`;
         console.log('[Lleego] Pre-booking pricing:', _purl);
         const _pr = await fetch(_purl, {
           headers: { 'Authorization': `Bearer ${llToken}`, 'x-api-key': LLEEGO_API_KEY, 'lang': 'es-ar' }
@@ -3013,7 +3013,7 @@ app.get('/detalle-vuelo', async (req, res) => {
           _jCodes.push(`${_s.marketing_company}${_s.transport_number}${_dd}${_s.departure||''}${_ls.arrival||''}`);
         }
         const _jp = _jCodes.map((j,i) => `&journey0${i}=${j}`).join('');
-        const policyUrl = `https://api-tr.lleego.com/api/v2/transport/pricing?format=json&solutionID0=${sol.id}${_jp}&extend=true&locale=es-ar`;
+        const policyUrl = `https://api-tr.lleego.com/api/v2/transport/pricing?format=json&solutionID0=${sol.id}&token=${cached.searchToken}${_jp}&extend=true&locale=es-ar`;
         console.log('[Lleego] Policy URL:', policyUrl);
         const policyRes = await fetch(policyUrl, {
           headers: {
