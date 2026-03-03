@@ -1033,7 +1033,7 @@ app.post('/buscar-vuelos', async (req, res) => {
         };
         addSearchPayload = { SearchTravelType: 1, OneWayModel: null, MultipleLegsModel: null, RoundTripModel: payload };
       } else if (tipo === 'multidestino') {
-        endpoint = `${API_BASE}/FlightSearch/MultipleLegsRemake`;
+        endpoint = `${API_BASE}/FlightSearch/MultipleFlightsRemake`;
         const legs = tramos.map((t, i) => ({
           LegNumber: i+1, DepartCode: t.origen, ArrivalCode: t.destino,
           DepartDate: `${t.salida}T00:00:00`, DepartTime: null,
