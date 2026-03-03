@@ -3140,6 +3140,9 @@ app.get('/detalle-vuelo', async (req, res) => {
           if (!penalidades.cambio && penalidades.cambio_antes) penalidades.cambio = { ...penalidades.cambio_antes };
           
           console.log('[Lleego] Parsed penalties:', JSON.stringify(penalidades));
+        } else {
+          const errTxt = await policyRes.text().catch(()=>'');
+          console.log(`[Lleego] Policy FAILED ${policyRes.status}:`, errTxt.substring(0, 300));
         }
       }
     } catch(e) {
