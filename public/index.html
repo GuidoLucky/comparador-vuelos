@@ -1536,7 +1536,7 @@ async function generarPdfRes() {
 function mostrarRecotizarRes() {
   if (document.getElementById('recotPanel')) { document.getElementById('recotPanel').remove(); return; }
   const panel = document.createElement('div'); panel.id = 'recotPanel'; panel.className = 'recot-panel';
-  panel.innerHTML = '<h4>💲 Recotizar reserva</h4><div class="recot-opts"><div><label>Moneda</label><select id="recotMoneda"><option value="">Auto</option><option value="USD">USD</option><option value="ARS">ARS</option></select></div><div><label>Tipo tarifa</label><select id="recotFareType"><option value="0">No forzar</option><option value="1">Públicas</option><option value="2">Privadas</option></select></div><div><label>Validadora</label><input type="text" id="recotCarrier" placeholder="Ej: UX, AR..." maxlength="3"></div><div><label>Nacionalidad</label><input type="text" id="recotNationality" placeholder="Ej: ARG" maxlength="3"></div></div><button class="btn-act btn-act-primary" onclick="ejecutarRecotizarRes()" id="btnRecot">📊 Obtener tarifa actual</button><div id="recotResult"></div>';
+  panel.innerHTML = '<h4>💲 Recotizar reserva</h4><div class="recot-opts"><div><label>Moneda</label><select id="recotMoneda"><option value="">Auto</option><option value="USD">USD</option><option value="ARS">ARS</option></select></div><div><label>Tipo tarifa</label><select id="recotFareType"><option value="0">No forzar</option><option value="1">Públicas</option><option value="2">Privadas</option></select></div><div><label>Validadora</label><input type="text" id="recotCarrier" placeholder="Ej: UX, AR..." maxlength="3"></div><div><label>Nacionalidad</label><input type="text" id="recotNationality" placeholder="Ej: ARG" maxlength="3"></div><div><label>Brand ID</label><input type="text" id="recotBrandId" placeholder="Ej: BASIC" maxlength="20"></div></div><button class="btn-act btn-act-primary" onclick="ejecutarRecotizarRes()" id="btnRecot">📊 Obtener tarifa actual</button><div id="recotResult"></div>';
   document.getElementById('modalBody').appendChild(panel);
 }
 
@@ -1545,11 +1545,13 @@ async function ejecutarRecotizarRes() {
   const btn = document.getElementById('btnRecot'); const rd = document.getElementById('recotResult');
   btn.textContent = '⏳ Consultando...'; btn.disabled = true; rd.innerHTML = '';
   try {
-    const opts = { moneda:document.getElementById('recotMoneda').value||null, fareType:parseInt(document.getElementById('recotFareType').value)||0, overrideCarrier:document.getElementById('recotCarrier').value||null, nationality:document.getElementById('recotNationality').value||null };
+    const opts = { moneda:document.getElementById('recotMoneda').value||null, fareType:parseInt(document.getElementById('recotFareType').value)||0, overrideCarrier:document.getElementById('recotCarrier').value||null, nationality:document.getElementById('recotNationality').value||null, brandId:document.getElementById('recotBrandId')?.value||null };
     const res = await fetch('/reservas/' + reservaActual.id + '/recotizar', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(opts) });
     const data = await res.json(); if (!data.ok) throw new Error(data.error);
     if (data.tarifas && data.tarifas.length) {
-      let html = ''; let grandTotal = 0; let grandNeto = 0;
+      let html = '';
+      if (data.brand) { html += '<div style="margin-bottom:8px;font-size:11px;color:var(--gold)">✈ Brand: <b>' + data.brand + '</b></div>'; }
+      let grandTotal = 0; let grandNeto = 0;
       data.tarifas.forEach(t => {
         grandTotal += t.total;
         const comMonto = (t.comisionObtenida?.valueApplied||0) + (t.comisionCedida?.valueApplied||0);
