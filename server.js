@@ -3356,9 +3356,12 @@ app.post('/generar-cotizacion', async (req, res) => {
           }
         }
         
+        // Get penalties from cache
+        const cachedPenCotSabre = penaltiesCache.get(op.quotationId) || null;
+
         return {
           aerolinea: cached.validatingCarrier || '',
-          vuelos, detalle_vuelo: 'Economica', pasajeros, penalidades: null,
+          vuelos, detalle_vuelo: 'Economica', pasajeros, penalidades: cachedPenCotSabre,
           equipaje: {
             handOn: { label: 'Incluida', incluido: true },
             carryOn: { label: 'No informado', incluido: false },
