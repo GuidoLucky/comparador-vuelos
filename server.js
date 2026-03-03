@@ -1390,18 +1390,40 @@ app.post('/crear-reserva', async (req, res) => {
         const firstSegId = (journey.segments || [])[0];
         const seg = cached.segments[firstSegId]; if (!seg) continue;
         const depDate = seg.departure_date ? seg.departure_date.substring(0, 10).replace(/-/g, '') : '';
-        journeyCodes.push(`${seg.marketing_company}${seg.transport_number}${depDate}`);
+        // Append origin+destination airport codes (required by Lleego NDC)
+        const lastSegId = (journey.segments || []).slice(-1)[0];
+        const lastSeg = cached.segments[lastSegId] || seg;
+        const origen = seg.departure || '';
+        const destino = lastSeg.arrival || '';
+        journeyCodes.push(`${seg.marketing_company}${seg.transport_number}${depDate}${origen}${destino}`);
       }
       
-      // Build travellers
+      // Build travellers with birth_date and documents (required for NDC)
       const titleMap = { '0': 'Mr', '1': 'Mrs', 0: 'Mr', 1: 'Mrs' };
-      const travellers = pasajeros.map(p => ({
-        type: p.tipo || 'ADT',
-        title: titleMap[p.genero] || 'Mr',
-        name: (p.nombre || '').toUpperCase(),
-        surnames: [(p.apellido || '').toUpperCase()],
-        documents: []
-      }));
+      const capitalizeWord = (s) => (s || '').split(' ').map(w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase()).join(' ');
+      const travellers = pasajeros.map(p => {
+        // Build birth_date from components
+        let birthDate = null;
+        if (p.fechaNacAnio && p.fechaNacMes && p.fechaNacDia) {
+          birthDate = `${p.fechaNacAnio}-${String(p.fechaNacMes).padStart(2,'0')}-${String(p.fechaNacDia).padStart(2,'0')}`;
+        }
+        // Build documents array
+        const docs = [];
+        if (p.docNumero) {
+          const docCode = (p.docTipo || '').toUpperCase();
+          const llDocType = (docCode === 'PP' || docCode === 'PAS' || docCode === 'PASAPORTE') ? 'PP' : 'NI';
+          docs.push({ type: llDocType, number: String(p.docNumero) });
+        }
+        const trav = {
+          type: p.tipo || 'ADT',
+          title: titleMap[p.genero] || 'Mr',
+          name: capitalizeWord(p.nombre),
+          surnames: [capitalizeWord(p.apellido)],
+          documents: docs
+        };
+        if (birthDate) trav.birth_date = birthDate;
+        return trav;
+      });
       
       // Build fees
       const fees = pasajeros.map((p, i) => ({
@@ -1409,10 +1431,10 @@ app.post('/crear-reserva', async (req, res) => {
         amount: 0
       }));
       
-      // Holder = contacto
+      // Holder = contacto (proper case, not uppercase)
       const holder = {
-        name: (contacto.nombre || pasajeros[0]?.nombre || '').toUpperCase(),
-        surnames: [(contacto.apellido || pasajeros[0]?.apellido || '').toUpperCase()],
+        name: capitalizeWord(contacto.nombre || pasajeros[0]?.nombre || ''),
+        surnames: [capitalizeWord(contacto.apellido || pasajeros[0]?.apellido || '')],
         contact: {
           mails: [contacto.email || ''],
           phones: [
@@ -1454,20 +1476,11 @@ app.post('/crear-reserva', async (req, res) => {
       let bookData;
       try { bookData = JSON.parse(bookText); } catch(e) { throw new Error('Respuesta inválida'); }
       
-      // Log full response structure to find PNR and voucher ID
-      console.log('[Lleego] Booking response keys:', Object.keys(bookData));
-      if (bookData.booking) {
-        console.log('[Lleego] booking keys:', Object.keys(bookData.booking));
-        if (bookData.booking.lines?.[0]) console.log('[Lleego] line[0] keys:', Object.keys(bookData.booking.lines[0]));
-      }
-      console.log('[Lleego] Booking full:', JSON.stringify(bookData).substring(0, 2000));
-      
-      // CHECK: Si Lleego devuelve success:false, la reserva falló - NO crear reserva fantasma
+      // CHECK: Si Lleego devuelve success:false, la reserva falló
       if (bookData.success === false) {
         const errores = bookData.errors || [];
         const errMsg = errores.map(e => e.description || e.short_name || e.code || 'Error desconocido').join('; ');
         console.log('[Lleego] Booking FAILED:', errMsg);
-        // Detectar oferta caducada específicamente
         const esOfertaCaducada = errores.some(e => 
           (e.description && e.description.toLowerCase().includes('caducada')) ||
           (e.short_name && e.short_name.includes('900505')) ||
@@ -1478,6 +1491,14 @@ app.post('/crear-reserva', async (req, res) => {
         }
         throw new Error(`Error en reserva GEA: ${errMsg}`);
       }
+      
+      // Log full response structure to find PNR and voucher ID
+      console.log('[Lleego] Booking response keys:', Object.keys(bookData));
+      if (bookData.booking) {
+        console.log('[Lleego] booking keys:', Object.keys(bookData.booking));
+        if (bookData.booking.lines?.[0]) console.log('[Lleego] line[0] keys:', Object.keys(bookData.booking.lines[0]));
+      }
+      console.log('[Lleego] Booking full:', JSON.stringify(bookData).substring(0, 2000));
       
       // Extract PNR from Lleego nested response - search multiple paths
       const line0 = bookData.booking?.lines?.[0] || {};
@@ -3465,7 +3486,7 @@ app.post('/generar-cotizacion', async (req, res) => {
         return { 
           aerolinea: airlineName, vuelos, 
           detalle_vuelo: 'Economica', 
-          pasajeros, penalidades: null, 
+          pasajeros, penalidades: penaltiesCache.get(op.quotationId) || null, 
           equipaje: op.equipaje || null 
         };
       }
