@@ -239,6 +239,7 @@ if (db) {
       await db.query(`ALTER TABLE reservas ADD COLUMN IF NOT EXISTS vendedor TEXT`);
       await db.query(`ALTER TABLE reservas ADD COLUMN IF NOT EXISTS precio_venta_usd NUMERIC`);
       await db.query(`ALTER TABLE reservas ADD COLUMN IF NOT EXISTS emision_data JSONB`);
+      await db.query(`ALTER TABLE reservas ADD COLUMN IF NOT EXISTS penalidades_json JSONB`);
       await db.query(`ALTER TABLE reservas ADD COLUMN IF NOT EXISTS usuario_id INTEGER`);
       
       // Tabla de usuarios
@@ -654,6 +655,7 @@ const AIRPORT_CITY_MAP = {
 };
 // Cache de soluciones Lleego para Ver precio / Reservar
 const lleegoSolutionsCache = new Map(); // key: lleego_SOLID → raw solution data
+const penaltiesCache = new Map(); // key: quotationId → penalidades object
 // Limpiar cache cada 30 min (las soluciones expiran)
 setInterval(() => { if (lleegoSolutionsCache.size > 500) lleegoSolutionsCache.clear(); }, 30*60*1000);
 
@@ -1519,6 +1521,11 @@ app.post('/crear-reserva', async (req, res) => {
              req.user?.userId || null,
              req.user?.nombre || null]);
           console.log('[DB] Reserva GEA guardada, PNR:', pnr);
+          // Save cached penalties if available
+          const cachedPenGEA = penaltiesCache.get(quotationId);
+          if (cachedPenGEA) {
+            try { await db.query('UPDATE reservas SET penalidades_json=$1 WHERE pnr=$2', [JSON.stringify(cachedPenGEA), pnr]); } catch(e) {}
+          }
         } catch(dbErr) { console.error('[DB] Error:', dbErr.message); }
       }
       
@@ -1680,6 +1687,11 @@ app.post('/crear-reserva', async (req, res) => {
           }
         }
         console.log('[DB] Reserva guardada, PNR:', data.recordLocator);
+          // Save cached penalties if available
+          const cachedPenTuc = penaltiesCache.get(quotationId);
+          if (cachedPenTuc) {
+            try { await db.query('UPDATE reservas SET penalidades_json=$1 WHERE pnr=$2', [JSON.stringify(cachedPenTuc), data.recordLocator]); } catch(e) {}
+          }
       } catch(dbErr) {
         console.error('[DB] Error guardando:', dbErr.message);
       }
@@ -2139,6 +2151,14 @@ app.post('/reservas/:id/recotizar', async (req, res) => {
       };
     }
     console.log('[Recotizar] Penalties found:', JSON.stringify(penalidades));
+
+    // Save penalties to DB for PDF use
+    if (penalidades) {
+      try {
+        await db.query('UPDATE reservas SET penalidades_json=$1, updated_at=NOW() WHERE id=$2', [JSON.stringify(penalidades), req.params.id]);
+        console.log('[Recotizar] Penalties saved to DB');
+      } catch(e) { console.log('[Recotizar] Error saving penalties:', e.message); }
+    }
 
     // Extract brand info from flights
     const brands = [...new Set(flights.map(f => f.brandName).filter(Boolean))];
@@ -2719,7 +2739,14 @@ app.post('/reservas/:id/pdf', async (req, res) => {
 
     // ── CONDICIONES (siempre, emitida o no) ──
     {
-      const pen = penalidades;
+      // Fallback: read from DB if API didn't provide penalties
+      let pen = penalidades;
+      if (!pen && reserva.penalidades_json) {
+        try {
+          pen = typeof reserva.penalidades_json === 'string' ? JSON.parse(reserva.penalidades_json) : reserva.penalidades_json;
+          console.log('[PDF] Using penalties from DB');
+        } catch(e) {}
+      }
       if (pen && (pen.cambio_antes || pen.cambio_durante || pen.devolucion_antes || pen.devolucion_durante || pen.cambio || pen.cancelacion)) {
         y += 6;
         doc.font(BOLD).fontSize(8).fillColor(NAVY).text('Condiciones:', LEFT, y);
@@ -2912,6 +2939,9 @@ app.get('/detalle-vuelo', async (req, res) => {
       console.log('[Lleego] Policy fetch error (non-fatal):', e.message);
     }
     
+    // Cache GEA penalties
+    if (penalidades && quotationId) penaltiesCache.set(quotationId, penalidades);
+
     return res.json({
       ok: true,
       tarifa: price.base || price.fare || 0,
@@ -2976,6 +3006,11 @@ app.get('/detalle-vuelo', async (req, res) => {
     };
     console.log('[Detalle] Penalties raw:', JSON.stringify(penalties).substring(0, 500));
     console.log('[Detalle] Penalidades parsed:', JSON.stringify(penalidades));
+
+    // Cache penalties for use when creating reservation
+    if (penalidades && quotationId) {
+      penaltiesCache.set(quotationId, penalidades);
+    }
 
     res.json({
       ok: true,
