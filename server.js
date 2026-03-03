@@ -1034,14 +1034,14 @@ app.post('/buscar-vuelos', async (req, res) => {
         addSearchPayload = { SearchTravelType: 1, OneWayModel: null, MultipleLegsModel: null, RoundTripModel: payload };
       } else if (tipo === 'multidestino') {
         endpoint = `${API_BASE}/FlightSearch/MultipleFlightsRemake`;
-        const legs = tramos.map((t, i) => ({
-          LegNumber: i+1, DepartCode: t.origen, ArrivalCode: t.destino,
-          DepartDate: `${t.salida}T00:00:00`, DepartTime: null,
-          CabinType: cabinVal, Stops: stopsFilter, Airlines: airlinesArr
+        const searchFlightLegs = tramos.map((t) => ({
+          DepartCode: t.origen, ArrivalCode: t.destino,
+          DepartDate: `${t.salida}T00:00:00`, DepartTime: null
         }));
         payload = {
-          Legs: legs, Adults: parseInt(adultos), Childs: parseInt(ninos), Infants: parseInt(infantes),
-          TypeOfFlightAllowedInItinerary: flightTypeVal, SortByGLASAlgorithm: "",
+          SearchFlightLegs: searchFlightLegs, Adults: parseInt(adultos), Childs: parseInt(ninos), Infants: parseInt(infantes),
+          Stops: stopsFilter, Airlines: airlinesArr, CabinType: cabinVal,
+          TypeOfFlightAllowedInItinerary: flightTypeVal, SortByGLASAlgorithm: null,
           AlternateCurrencyCode: currencyCode, CorporationCodeGlas: null, IncludeFiltersOptions: true
         };
         addSearchPayload = { SearchTravelType: 3, OneWayModel: null, MultipleLegsModel: payload, RoundTripModel: null };
