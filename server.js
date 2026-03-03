@@ -2540,6 +2540,33 @@ app.post('/reservas/:id/pdf', async (req, res) => {
             console.log(`[PDF] Trimming fareInfo from ${fareInfo.length} to last ${totalPaxCount} (most recent pricing)`);
             fareInfo = fareInfo.slice(-totalPaxCount);
           }
+          
+          // Si storedFares tiene menos entries que pasajeros, cada entry cubre múltiples pax
+          // Expandir: dividir neto por la cantidad de pax de ese tipo y crear 1 entry por pax
+          if (fareInfo.length < totalPaxCount && fareInfo.length > 0 && totalPaxCount > 0) {
+            const paxCountByType = {};
+            for (const pi of paxInfo) {
+              const pt = pTypeMap[pi.type] || 'ADT';
+              paxCountByType[pt] = (paxCountByType[pt] || 0) + 1;
+            }
+            // Fallback: contar desde reserva si paxInfo está vacío
+            if (!paxInfo.length) {
+              if (reserva.adultos) paxCountByType['ADT'] = reserva.adultos;
+              if (reserva.ninos) paxCountByType['CHD'] = reserva.ninos;
+              if (reserva.infantes) paxCountByType['INF'] = reserva.infantes;
+            }
+            console.log(`[PDF] storedFares (${fareInfo.length}) < paxCount (${totalPaxCount}). Expandiendo. paxByType:`, JSON.stringify(paxCountByType));
+            const expanded = [];
+            for (const fi of fareInfo) {
+              const qty = paxCountByType[fi.passengerDiscountType] || 1;
+              const netoPerPax = fi.neto / qty;
+              for (let i = 0; i < qty; i++) {
+                expanded.push({ ...fi, neto: netoPerPax });
+              }
+              console.log(`[PDF] Expanded ${fi.passengerDiscountType}: neto total ${fi.neto} / ${qty} pax = ${netoPerPax} per pax`);
+            }
+            fareInfo = expanded;
+          }
         }
       } catch(e) {
         console.log('[PDF] Error API, usando datos locales:', e.message);
@@ -2643,27 +2670,6 @@ app.post('/reservas/:id/pdf', async (req, res) => {
         grouped[tipo].cantidad++;
       }
       preciosVenta = Object.values(grouped);
-      
-      // Fix: si hay menos fareInfo entries que pasajeros, el neto podría ser el total
-      // de todos los pax de ese tipo, no por persona. Verificar y corregir.
-      const totalPaxActual = pasajeros.length || 1;
-      const sumNeto = preciosVenta.reduce((s, p) => s + (p.neto * p.cantidad), 0);
-      const dbNeto = reserva.precio_usd || 0;
-      // Si sumNeto ≈ dbNeto × (N pasajeros / N fareEntries), las fares son TOTAL no per-pax
-      if (fareInfo.length < totalPaxActual && fareInfo.length > 0 && dbNeto > 0) {
-        // Each fareInfo entry covers multiple passengers - divide neto by actual count
-        for (const pp of preciosVenta) {
-          // Count actual pax of this type from passenger list
-          const tipoMap = { 'adulto': ['ADT','AD'], 'menor': ['CHD','CNN','CH'], 'bebé': ['INF','INS'], 'infante': ['INF','INS'] };
-          const tipoCodes = tipoMap[pp.tipo] || ['ADT'];
-          const realCount = pasajeros.filter(p => tipoCodes.includes((p.tipo || 'ADT').toUpperCase())).length || pp.cantidad;
-          if (realCount > 1 && pp.cantidad <= 1) {
-            console.log(`[PDF] Fix: dividiendo neto ${pp.neto} por ${realCount} pax reales (tipo ${pp.tipo})`);
-            pp.neto = pp.neto / realCount;
-            pp.cantidad = realCount;
-          }
-        }
-      }
       
       console.log('[PDF] Usando fareInfo API (ajustado):', JSON.stringify(preciosVenta));
     } else if (reserva.precio_usd) {
