@@ -555,7 +555,11 @@ function procesarVuelosSabre(data, paxCounts) {
           const tipoVuelo = legs.length > 2 ? 'multidestino' : (legs.length === 2 ? 'roundtrip' : 'oneway');
           
           // Baggage info
-          let equipaje = { mochila: null, carryOn: null, bodega: null };
+          let equipaje = {
+            handOn: { label: 'Incluida', incluido: true },
+            carryOn: { label: 'No informado', incluido: false },
+            checked: { label: 'No informado', incluido: false }
+          };
           try {
             for (const paxEntry of paxInfoList) {
               const pi = paxEntry.passengerInfo || {};
@@ -564,10 +568,14 @@ function procesarVuelosSabre(data, paxCounts) {
                 const allowance = baggageMap[bag.allowance?.ref];
                 if (allowance) {
                   if (allowance.pieceCount !== undefined) {
-                    equipaje.bodega = allowance.pieceCount > 0 ? `${allowance.pieceCount} pieza${allowance.pieceCount > 1 ? 's' : ''}` : 'No incluido';
+                    if (allowance.pieceCount > 0) {
+                      equipaje.checked = { label: `${allowance.pieceCount}x 23KG`, incluido: true };
+                    } else {
+                      equipaje.checked = { label: 'No incluida', incluido: false };
+                    }
                   }
                   if (allowance.weight) {
-                    equipaje.bodega = `${allowance.weight}${allowance.unit || 'kg'}`;
+                    equipaje.checked = { label: `${allowance.weight}${allowance.unit || 'kg'}`, incluido: true };
                   }
                 }
               }
@@ -3291,7 +3299,11 @@ app.post('/generar-cotizacion', async (req, res) => {
         return {
           aerolinea: cached.validatingCarrier || '',
           vuelos, detalle_vuelo: 'Economica', pasajeros, penalidades: null,
-          equipaje: cached.legs?.[0]?.segmentos?.[0] ? {} : null
+          equipaje: {
+            handOn: { label: 'Incluida', incluido: true },
+            carryOn: { label: 'No informado', incluido: false },
+            checked: { label: 'No informado', incluido: false }
+          }
         };
       }
       // ─── GEA: use cached data ───
