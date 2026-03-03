@@ -714,7 +714,6 @@ async function buscarLleego({ tipo, origen, destino, salida, regreso, adultos, n
     }
 
     const travelOpts = {
-      companies: [["ADD"]],
       currency: 'USD',
       include_train: false, include_bus: false,
       include_gds: true, include_ndc: true, low_cost: false,
