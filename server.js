@@ -1460,10 +1460,22 @@ app.post('/crear-reserva', async (req, res) => {
       }
       console.log('[Lleego] Booking full:', JSON.stringify(bookData).substring(0, 2000));
       
-      // Extract PNR from Lleego nested response: booking.lines[0].booking_reference.locator
-      const pnr = bookData.booking?.lines?.[0]?.booking_reference?.locator ||
+      // Extract PNR from Lleego nested response - search multiple paths
+      const line0 = bookData.booking?.lines?.[0] || {};
+      const pnr = line0.booking_reference?.locator ||
+                   line0.locator || line0.pnr || line0.record_locator ||
+                   line0.booking_reference?.record_locator ||
                    bookData.locator || bookData.pnr || bookData.record_locator || 
-                   bookData.data?.locator || bookData.booking?.locator || 'GEA-PENDING';
+                   bookData.data?.locator || bookData.booking?.locator ||
+                   bookData.booking?.pnr || bookData.booking?.record_locator ||
+                   // Deep search: look for any string that looks like a PNR (6 uppercase chars)
+                   (() => {
+                     const str = JSON.stringify(bookData);
+                     const pnrMatch = str.match(/"(?:locator|pnr|record_locator|booking_reference)"\s*:\s*"([A-Z]{5,8})"/i);
+                     if (pnrMatch) { console.log('[Lleego] PNR found via deep search:', pnrMatch[1]); return pnrMatch[1]; }
+                     return null;
+                   })() ||
+                   'GEA-PENDING';
       // Try to find voucher/line ID for the Lleego web URL
       const lineId = bookData.booking?.lines?.[0]?.id || '';
       const bookingId = bookData.booking?.id || bookData.id || '';
@@ -2411,17 +2423,12 @@ app.post('/reservas/:id/pdf', async (req, res) => {
           fareInfo = latestFares.map((f, idx) => {
             const totalTarifa = f.fareValues?.totalAmount || 0;
             const feeTucano = (f.feeValues || []).reduce((s, fee) => s + (fee.amount || 0), 0);
-            // Mapear tipo de pasajero: 1) passengersInformation, 2) DB counts fallback
+            // Use fare's own passengerType field first, then fallback to passengersInformation
             let paxType = 'ADT';
-            if (paxInfo[idx]) {
+            if (f.passengerType !== undefined) {
+              paxType = pTypeMap[f.passengerType] || 'ADT';
+            } else if (paxInfo[idx]) {
               paxType = pTypeMap[paxInfo[idx].type] || paxInfo[idx].typeCode || 'ADT';
-            } else if (reserva) {
-              // Fallback: usar counts de la DB
-              const adtCount = reserva.adultos || 0;
-              const chdCount = reserva.ninos || 0;
-              if (idx < adtCount) paxType = 'ADT';
-              else if (idx < adtCount + chdCount) paxType = 'CHD';
-              else paxType = 'INF';
             }
             console.log(`[PDF] fare[${idx}]: paxType=${paxType}, total=${totalTarifa}, fee=${feeTucano}, neto=${totalTarifa+feeTucano}`);
             return {
@@ -2431,6 +2438,12 @@ app.post('/reservas/:id/pdf', async (req, res) => {
               passengerDiscountType: paxType
             };
           });
+          // Limit fareInfo to actual passenger count - take the LAST entries (most recent pricing)
+          const totalPaxCount = (reserva.adultos || 0) + (reserva.ninos || 0) + (reserva.infantes || 0);
+          if (fareInfo.length > totalPaxCount && totalPaxCount > 0) {
+            console.log(`[PDF] Trimming fareInfo from ${fareInfo.length} to last ${totalPaxCount} (most recent pricing)`);
+            fareInfo = fareInfo.slice(-totalPaxCount);
+          }
         }
       } catch(e) {
         console.log('[PDF] Error API, usando datos locales:', e.message);
