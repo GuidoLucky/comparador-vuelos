@@ -344,40 +344,20 @@ async function buscarSabre({ tipo, origen, destino, salida, regreso, adultos, ni
     const chdCount = parseInt(ninos) || 0;
     const infCount = parseInt(infantes) || 0;
     
-    // Build passenger types
-    const passengerInfo = [];
-    let paxId = 1;
-    for (let i = 0; i < adtCount; i++) {
-      passengerInfo.push({ Type: 'ADT', Quantity: 1 });
-    }
-    if (chdCount > 0) passengerInfo.push({ Type: 'CNN', Quantity: chdCount });
-    if (infCount > 0) passengerInfo.push({ Type: 'INF', Quantity: infCount });
-    // Consolidate by type
     const paxTypes = [];
-    const paxMap = {};
-    for (const p of passengerInfo) {
-      if (paxMap[p.Type]) paxMap[p.Type].Quantity += p.Quantity;
-      else { paxMap[p.Type] = { ...p }; }
-    }
-    Object.values(paxMap).forEach((p, idx) => {
-      paxTypes.push({ Code: p.Type, Quantity: p.Quantity });
-    });
+    if (adtCount > 0) paxTypes.push({ Code: 'ADT', Quantity: adtCount });
+    if (chdCount > 0) paxTypes.push({ Code: 'CNN', Quantity: chdCount });
+    if (infCount > 0) paxTypes.push({ Code: 'INF', Quantity: infCount });
 
-    // Cabin mapping
-    const cabinMap = { '1': 'Y', '2': 'S', '3': 'C', '4': 'F' };
-    const cabin = cabinMap[cabinType] || undefined;
-    
-    // Build origin-destination info
+    // Build origin-destination
     const originDest = [];
-    
     if (tipo === 'multidestino' && tramos) {
       for (const t of tramos) {
-        const od = {
+        originDest.push({
           DepartureDateTime: `${t.salida}T00:00:00`,
           OriginLocation: { LocationCode: t.origen },
           DestinationLocation: { LocationCode: t.destino }
-        };
-        originDest.push(od);
+        });
       }
     } else {
       originDest.push({
@@ -394,20 +374,15 @@ async function buscarSabre({ tipo, origen, destino, salida, regreso, adultos, ni
       }
     }
     
-    // BFM request
+    // BFM v5 request (matching Sabre's exact format)
     const bfmBody = {
       OTA_AirLowFareSearchRQ: {
-        Version: '4',
+        Version: '5',
         POS: {
           Source: [{ PseudoCityCode: SABRE_PCC, RequestorID: { Type: '1', ID: '1', CompanyName: { Code: 'TN' } } }]
         },
         OriginDestinationInformation: originDest,
-        TravelPreferences: {
-          TPA_Extensions: {
-            NumTrips: { Number: 30 },
-            DataSources: { NDC: 'Disable', ATPCO: 'Enable', LCC: 'Disable' }
-          }
-        },
+        TravelPreferences: {},
         TravelerInfoSummary: {
           AirTravelerAvail: [{ PassengerTypeQuantity: paxTypes }]
         },
@@ -417,21 +392,14 @@ async function buscarSabre({ tipo, origen, destino, salida, regreso, adultos, ni
       }
     };
     
-    // Add cabin preference
-    if (cabin) {
-      bfmBody.OTA_AirLowFareSearchRQ.TravelPreferences.CabinPref = [{ Cabin: cabin, PreferLevel: 'Preferred' }];
-    }
-    
-    // Add max stops
+    // Add stops filter
     if (stops === '0' || stops === 0) {
-      for (const od of originDest) {
-        od.TPA_Extensions = { Flight: { MaxConnections: 0 } };
-      }
+      bfmBody.OTA_AirLowFareSearchRQ.TravelPreferences.MaxStopsQuantity = 0;
     }
     
-    console.log('[Sabre] BFM request:', JSON.stringify(bfmBody).substring(0, 500));
+    console.log('[Sabre] BFM v5 request:', JSON.stringify(bfmBody).substring(0, 600));
     
-    const res = await fetch(`${SABRE_API_BASE}/v4/shop/flights?limit=30&offset=1`, {
+    const res = await fetch(`${SABRE_API_BASE}/v5/offers/shop`, {
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${token}`,
@@ -460,146 +428,185 @@ const sabreSolutionsCache = new Map();
 function procesarVuelosSabre(data, paxCounts) {
   const results = [];
   try {
-    const resp = data.OTA_AirLowFareSearchRS || data;
-    const pricedItins = resp.PricedItineraries?.PricedItinerary || [];
-    console.log(`[Sabre] ${pricedItins.length} itinerarios`);
+    const resp = data.groupedItineraryResponse || data;
+    if (!resp) { console.log('[Sabre] No groupedItineraryResponse'); return []; }
     
-    if (!pricedItins.length) return [];
+    // Build lookup maps from Descs
+    const scheduleMap = {};
+    (resp.scheduleDescs || []).forEach(s => { scheduleMap[s.id] = s; });
+    const legMap = {};
+    (resp.legDescs || []).forEach(l => { legMap[l.id] = l; });
+    const taxMap = {};
+    (resp.taxDescs || []).forEach(t => { taxMap[t.id] = t; });
+    const baggageMap = {};
+    (resp.baggageAllowanceDescs || []).forEach(b => { baggageMap[b.id] = b; });
+    const validatingCarrierMap = {};
+    (resp.validatingCarrierDescs || []).forEach(v => { validatingCarrierMap[v.id] = v; });
     
-    for (const itin of pricedItins) {
-      try {
-        const airItinerary = itin.AirItinerary;
-        const pricingInfo = itin.AirItineraryPricingInfo?.[0] || {};
-        const fareInfo = pricingInfo.ItinTotalFare || {};
-        
-        // Total price
-        const totalFare = fareInfo.TotalFare || {};
-        const baseFare = fareInfo.BaseFare || {};
-        const taxes = fareInfo.Taxes?.Tax?.[0] || fareInfo.Taxes || {};
-        const totalUSD = parseFloat(totalFare.Amount) || 0;
-        const currency = totalFare.CurrencyCode || 'USD';
-        
-        // Per-pax breakdown from PTC_FareBreakdowns
-        const fareBreakdowns = pricingInfo.PTC_FareBreakdowns?.PTC_FareBreakdown || [];
-        const fareList = [];
-        for (const fb of fareBreakdowns) {
-          const paxType = fb.PassengerTypeQuantity?.Code || 'ADT';
-          const qty = fb.PassengerTypeQuantity?.Quantity || 1;
-          const paxFare = fb.PassengerFare || {};
-          const paxBase = parseFloat(paxFare.BaseFare?.Amount) || 0;
-          const paxTaxTotal = parseFloat(paxFare.TotalFare?.Amount) || 0;
-          const paxTaxes = paxTaxTotal - paxBase;
-          fareList.push({
-            passenger_type: paxType, quantity: qty,
-            base: paxBase, total_taxes: paxTaxes, total: paxTaxTotal
-          });
-        }
-        
-        // Segments / legs
-        const ods = airItinerary?.OriginDestinationOptions?.OriginDestinationOption || [];
-        const legs = [];
-        const allSegments = [];
-        
-        for (const od of ods) {
-          const segs = od.FlightSegment || [];
-          const legSegs = [];
-          for (const seg of segs) {
-            const segData = {
-              origen: seg.DepartureAirport?.LocationCode || '',
-              destino: seg.ArrivalAirport?.LocationCode || '',
-              salida: seg.DepartureDateTime || '',
-              llegada: seg.ArrivalDateTime || '',
-              vuelo: `${seg.MarketingAirline?.Code || ''}${seg.FlightNumber || ''}`,
-              aerolinea: seg.MarketingAirline?.Code || '',
-              operador: seg.OperatingAirline?.Code || seg.MarketingAirline?.Code || '',
-              cabina: seg.ResBookDesigCode || '',
-              duracion: seg.ElapsedTime || 0
-            };
-            legSegs.push(segData);
-            allSegments.push(segData);
+    const itinGroups = resp.itineraryGroups || [];
+    console.log(`[Sabre] ${itinGroups.length} itinerary groups`);
+    
+    for (const group of itinGroups) {
+      const groupLegs = group.groupDescription?.legDescriptions || [];
+      const itineraries = group.itineraries || [];
+      
+      for (const itin of itineraries) {
+        try {
+          const legRefs = itin.legs || [];
+          const pricingInfos = itin.pricingInformation || [];
+          if (!pricingInfos.length) continue;
+          
+          const pricing = pricingInfos[0]; // Take first/cheapest pricing
+          const fare = pricing.fare || {};
+          const totalFare = fare.totalFare || {};
+          const totalUSD = totalFare.totalPrice || 0;
+          const currency = totalFare.currency || 'USD';
+          
+          // Validating carrier
+          const vcRefs = fare.validatingCarriers || [];
+          let validatingCarrier = fare.validatingCarrierCode || '';
+          if (!validatingCarrier && vcRefs.length) {
+            const vc = validatingCarrierMap[vcRefs[0].ref];
+            validatingCarrier = vc?.default?.code || '';
           }
           
-          const firstSeg = legSegs[0];
-          const lastSeg = legSegs[legSegs.length - 1];
-          legs.push({
-            origen: firstSeg.origen,
-            destino: lastSeg.destino,
-            origenCiudad: AIRPORT_CITY_MAP[firstSeg.origen] || firstSeg.origen,
-            destinoCiudad: AIRPORT_CITY_MAP[lastSeg.destino] || lastSeg.destino,
-            salida: firstSeg.salida,
-            llegada: lastSeg.llegada,
-            escalas: legSegs.length - 1,
-            segmentos: legSegs
-          });
-        }
-        
-        if (!legs.length) continue;
-        
-        const firstLeg = legs[0];
-        const mainAirline = firstLeg.segmentos[0]?.aerolinea || '';
-        const totalEscalas = legs.reduce((s, l) => s + l.escalas, 0);
-        const totalPax = (paxCounts.adultos || 1) + (paxCounts.ninos || 0) + (paxCounts.infantes || 0);
-        const precioPerPax = totalPax > 0 ? Math.round(totalUSD / totalPax * 100) / 100 : totalUSD;
-        
-        // Determine flight type
-        const tipoVuelo = legs.length > 2 ? 'multidestino' : (legs.length === 2 ? 'roundtrip' : 'oneway');
-        
-        // Validating carrier
-        const validatingCarrier = pricingInfo.TPA_Extensions?.ValidatingCarrier?.Code || mainAirline;
-        
-        // Cache solution for later booking
-        const solId = `sabre_${Date.now()}_${Math.random().toString(36).substr(2,6)}`;
-        sabreSolutionsCache.set(solId, { 
-          itin, pricingInfo, fareBreakdowns, legs, paxCounts, fareList,
-          validatingCarrier, totalUSD, currency
-        });
-        
-        // Baggage info from BaggageInformation
-        let equipaje = { mochila: null, carryOn: null, bodega: null };
-        try {
-          const baggageInfo = pricingInfo.TPA_Extensions?.BaggageInformationList?.BaggageInformation || [];
-          for (const bag of baggageInfo) {
-            const allowance = bag.Allowance?.[0] || {};
-            if (allowance.Pieces !== undefined) {
-              const pieces = parseInt(allowance.Pieces) || 0;
-              equipaje.bodega = pieces > 0 ? `${pieces} pieza${pieces > 1 ? 's' : ''}` : 'No incluido';
-            }
-            if (allowance.Weight) {
-              equipaje.bodega = `${allowance.Weight}${allowance.Unit || 'kg'}`;
-            }
+          // Per-pax breakdown from passengerInfoList
+          const fareList = [];
+          const paxInfoList = fare.passengerInfoList || [];
+          for (const paxEntry of paxInfoList) {
+            const pi = paxEntry.passengerInfo || {};
+            const paxType = pi.passengerType || 'ADT';
+            const paxNum = pi.passengerNumber || 1;
+            const paxFare = pi.passengerTotalFare || {};
+            const paxTotal = paxFare.totalFare || 0;
+            const paxTax = paxFare.totalTaxAmount || 0;
+            const paxBase = paxFare.equivalentAmount || (paxTotal - paxTax);
+            fareList.push({
+              passenger_type: paxType, quantity: paxNum,
+              base: paxBase, total_taxes: paxTax, total: paxTotal
+            });
+            
+            // Baggage from this pax
+            // (handled below)
           }
-        } catch(e) {}
-        
-        const vuelo = {
-          source: 'sabre',
-          fuente: 'Sabre',
-          gds: 'Sabre',
-          quotationId: solId,
-          aerolinea: validatingCarrier,
-          aerolineaDesc: validatingCarrier, // Will be resolved in frontend
-          precioTotal: totalUSD,
-          precioUSD: totalUSD,
-          precioPerPax,
-          moneda: currency,
-          tipo: tipoVuelo,
-          escalas: totalEscalas,
-          itinerario: legs.map(l => ({
-            origen: l.origen,
-            destino: l.destino,
-            origenCiudad: l.origenCiudad,
-            destinoCiudad: l.destinoCiudad,
-            salida: l.salida,
-            llegada: l.llegada,
-            escalas: l.escalas,
-            segmentos: l.segmentos
-          })),
-          equipaje,
-          fareList
-        };
-        
-        results.push(vuelo);
-      } catch(itinErr) {
-        console.error('[Sabre] Itin parse error:', itinErr.message);
+          
+          // Build legs from refs
+          const legs = [];
+          for (let li = 0; li < legRefs.length; li++) {
+            const legDesc = legMap[legRefs[li].ref];
+            if (!legDesc) continue;
+            
+            const depDate = groupLegs[li]?.departureDate || '';
+            const schedules = legDesc.schedules || [];
+            const legSegs = [];
+            
+            for (const schedRef of schedules) {
+              const sched = scheduleMap[schedRef.ref];
+              if (!sched) continue;
+              
+              const dep = sched.departure || {};
+              const arr = sched.arrival || {};
+              const carrier = sched.carrier || {};
+              
+              // Build full datetime
+              const depTime = dep.time || '00:00:00';
+              const depDT = depDate ? `${depDate}T${depTime.split('+')[0].split('-')[0]}` : '';
+              
+              // Calculate arrival date (might be next day)
+              let arrDT = depDT; // approximate
+              if (dep.time && arr.time) {
+                arrDT = `${depDate}T${arr.time.split('+')[0].split('-')[0]}`;
+              }
+              
+              legSegs.push({
+                origen: dep.airport || '',
+                destino: arr.airport || '',
+                salida: depDT,
+                llegada: arrDT,
+                vuelo: `${carrier.marketing || ''}${carrier.marketingFlightNumber || ''}`,
+                aerolinea: carrier.marketing || '',
+                operador: carrier.operating || carrier.marketing || '',
+                cabina: 'Y',
+                duracion: sched.elapsedTime || 0
+              });
+            }
+            
+            if (!legSegs.length) continue;
+            const firstSeg = legSegs[0];
+            const lastSeg = legSegs[legSegs.length - 1];
+            legs.push({
+              origen: firstSeg.origen,
+              destino: lastSeg.destino,
+              origenCiudad: AIRPORT_CITY_MAP[firstSeg.origen] || firstSeg.origen,
+              destinoCiudad: AIRPORT_CITY_MAP[lastSeg.destino] || lastSeg.destino,
+              salida: firstSeg.salida,
+              llegada: lastSeg.llegada,
+              escalas: legSegs.length - 1,
+              segmentos: legSegs
+            });
+          }
+          
+          if (!legs.length) continue;
+          
+          const mainAirline = validatingCarrier || legs[0].segmentos[0]?.aerolinea || '';
+          const totalEscalas = legs.reduce((s, l) => s + l.escalas, 0);
+          const totalPax = (paxCounts.adultos || 1) + (paxCounts.ninos || 0) + (paxCounts.infantes || 0);
+          const precioPerPax = totalPax > 0 ? Math.round(totalUSD / totalPax * 100) / 100 : totalUSD;
+          const tipoVuelo = legs.length > 2 ? 'multidestino' : (legs.length === 2 ? 'roundtrip' : 'oneway');
+          
+          // Baggage info
+          let equipaje = { mochila: null, carryOn: null, bodega: null };
+          try {
+            for (const paxEntry of paxInfoList) {
+              const pi = paxEntry.passengerInfo || {};
+              const bagInfos = pi.baggageInformation || [];
+              for (const bag of bagInfos) {
+                const allowance = baggageMap[bag.allowance?.ref];
+                if (allowance) {
+                  if (allowance.pieceCount !== undefined) {
+                    equipaje.bodega = allowance.pieceCount > 0 ? `${allowance.pieceCount} pieza${allowance.pieceCount > 1 ? 's' : ''}` : 'No incluido';
+                  }
+                  if (allowance.weight) {
+                    equipaje.bodega = `${allowance.weight}${allowance.unit || 'kg'}`;
+                  }
+                }
+              }
+              break; // Only first pax
+            }
+          } catch(e) {}
+          
+          // Cache solution
+          const solId = `sabre_${Date.now()}_${Math.random().toString(36).substr(2,6)}`;
+          sabreSolutionsCache.set(solId, { 
+            itin, pricing, fare, legs, paxCounts, fareList,
+            validatingCarrier, totalUSD, currency
+          });
+          
+          results.push({
+            source: 'sabre',
+            fuente: 'Sabre',
+            gds: 'Sabre',
+            quotationId: solId,
+            aerolinea: mainAirline,
+            aerolineaDesc: mainAirline,
+            precioTotal: totalUSD,
+            precioUSD: totalUSD,
+            precioPerPax,
+            moneda: currency,
+            tipo: tipoVuelo,
+            escalas: totalEscalas,
+            itinerario: legs.map(l => ({
+              origen: l.origen, destino: l.destino,
+              origenCiudad: l.origenCiudad, destinoCiudad: l.destinoCiudad,
+              salida: l.salida, llegada: l.llegada,
+              escalas: l.escalas, segmentos: l.segmentos
+            })),
+            equipaje,
+            fareList
+          });
+        } catch(itinErr) {
+          console.error('[Sabre] Itin parse error:', itinErr.message);
+        }
       }
     }
     
@@ -609,6 +616,7 @@ function procesarVuelosSabre(data, paxCounts) {
   }
   return results;
 }
+
 
 // Mapa global de códigos IATA → ciudades (para normalizar nombres de aeropuertos)
 const AIRPORT_CITY_MAP = {
