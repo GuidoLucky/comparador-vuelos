@@ -297,6 +297,319 @@ const LLEEGO_AGENT = process.env.LLEEGO_AGENT || 'GFinkelstein';
 const LLEEGO_API_KEY = 'RD7dLSjYqT18InSheQfKLvpANUzNVvEG';
 let lleegoTokenCache = { token: null, expiry: 0 };
 
+// ─── SABRE DIRECT ───
+const SABRE_USER_ID = process.env.SABRE_USER_ID || 'V1:pxkjaapqxykqfduj:DEVCENTER:EXT';
+const SABRE_PASSWORD = process.env.SABRE_PASSWORD || '59buNJbD';
+const SABRE_PCC = process.env.SABRE_PCC || '42LJ';
+const SABRE_API_BASE = 'https://api-crt.cert.havail.sabre.com'; // CERT (DEVCENTER)
+let sabreTokenCache = { token: null, expiry: 0 };
+
+async function getSabreToken() {
+  if (sabreTokenCache.token && Date.now() < sabreTokenCache.expiry) return sabreTokenCache.token;
+  try {
+    // Sabre OAuth2: base64(base64(userId):base64(password))
+    const encodedUser = Buffer.from(SABRE_USER_ID).toString('base64');
+    const encodedPass = Buffer.from(SABRE_PASSWORD).toString('base64');
+    const credentials = Buffer.from(`${encodedUser}:${encodedPass}`).toString('base64');
+    
+    const res = await fetch(`${SABRE_API_BASE}/v2/auth/token`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Basic ${credentials}`,
+        'Content-Type': 'application/x-www-form-urlencoded'
+      },
+      body: 'grant_type=client_credentials'
+    });
+    if (!res.ok) {
+      const errText = await res.text();
+      console.log('[Sabre] Auth error:', res.status, errText.substring(0, 500));
+      return null;
+    }
+    const data = await res.json();
+    sabreTokenCache = { token: data.access_token, expiry: Date.now() + (data.expires_in || 600) * 1000 - 30000 };
+    console.log('[Sabre] Token obtenido OK');
+    return data.access_token;
+  } catch(e) {
+    console.error('[Sabre] Auth error:', e.message);
+    return null;
+  }
+}
+
+// ─── SABRE: Bargain Finder Max Search ───
+async function buscarSabre({ tipo, origen, destino, salida, regreso, adultos, ninos, infantes, cabinType, stops, tramos }) {
+  const token = await getSabreToken();
+  if (!token) return [];
+  try {
+    const adtCount = parseInt(adultos) || 1;
+    const chdCount = parseInt(ninos) || 0;
+    const infCount = parseInt(infantes) || 0;
+    
+    // Build passenger types
+    const passengerInfo = [];
+    let paxId = 1;
+    for (let i = 0; i < adtCount; i++) {
+      passengerInfo.push({ Type: 'ADT', Quantity: 1 });
+    }
+    if (chdCount > 0) passengerInfo.push({ Type: 'CNN', Quantity: chdCount });
+    if (infCount > 0) passengerInfo.push({ Type: 'INF', Quantity: infCount });
+    // Consolidate by type
+    const paxTypes = [];
+    const paxMap = {};
+    for (const p of passengerInfo) {
+      if (paxMap[p.Type]) paxMap[p.Type].Quantity += p.Quantity;
+      else { paxMap[p.Type] = { ...p }; }
+    }
+    Object.values(paxMap).forEach((p, idx) => {
+      paxTypes.push({ Code: p.Type, Quantity: p.Quantity });
+    });
+
+    // Cabin mapping
+    const cabinMap = { '1': 'Y', '2': 'S', '3': 'C', '4': 'F' };
+    const cabin = cabinMap[cabinType] || undefined;
+    
+    // Build origin-destination info
+    const originDest = [];
+    
+    if (tipo === 'multidestino' && tramos) {
+      for (const t of tramos) {
+        const od = {
+          DepartureDateTime: `${t.salida}T00:00:00`,
+          OriginLocation: { LocationCode: t.origen },
+          DestinationLocation: { LocationCode: t.destino }
+        };
+        originDest.push(od);
+      }
+    } else {
+      originDest.push({
+        DepartureDateTime: `${salida}T00:00:00`,
+        OriginLocation: { LocationCode: origen },
+        DestinationLocation: { LocationCode: destino }
+      });
+      if (tipo !== 'oneway' && regreso) {
+        originDest.push({
+          DepartureDateTime: `${regreso}T00:00:00`,
+          OriginLocation: { LocationCode: destino },
+          DestinationLocation: { LocationCode: origen }
+        });
+      }
+    }
+    
+    // BFM request
+    const bfmBody = {
+      OTA_AirLowFareSearchRQ: {
+        Version: '4.3.0',
+        POS: {
+          Source: [{ PseudoCityCode: SABRE_PCC, RequestorID: { Type: '1', ID: '1', CompanyName: { Code: 'TN' } } }]
+        },
+        OriginDestinationInformation: originDest,
+        TravelPreferences: {
+          TPA_Extensions: {
+            NumTrips: { Number: 30 },
+            DataSources: { NDC: 'Disable', ATPCO: 'Enable', LCC: 'Disable' }
+          }
+        },
+        TravelerInfoSummary: {
+          AirTravelerAvail: [{ PassengerTypeQuantity: paxTypes }]
+        },
+        TPA_Extensions: {
+          IntelliSellTransaction: { RequestType: { Name: '50ITINS' } }
+        }
+      }
+    };
+    
+    // Add cabin preference
+    if (cabin) {
+      bfmBody.OTA_AirLowFareSearchRQ.TravelPreferences.CabinPref = [{ Cabin: cabin, PreferLevel: 'Preferred' }];
+    }
+    
+    // Add max stops
+    if (stops === '0' || stops === 0) {
+      for (const od of originDest) {
+        od.TPA_Extensions = { Flight: { MaxConnections: 0 } };
+      }
+    }
+    
+    console.log('[Sabre] BFM request:', JSON.stringify(bfmBody).substring(0, 500));
+    
+    const res = await fetch(`${SABRE_API_BASE}/v4.3.0/shop/flights?mode=live&limit=30&offset=1&enablelogs=true`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${token}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify(bfmBody)
+    });
+    
+    if (!res.ok) {
+      const errText = await res.text();
+      console.log('[Sabre] BFM error:', res.status, errText.substring(0, 1000));
+      return [];
+    }
+    
+    const data = await res.json();
+    return procesarVuelosSabre(data, { adultos: adtCount, ninos: chdCount, infantes: infCount });
+  } catch(e) {
+    console.error('[Sabre] Search error:', e.message);
+    return [];
+  }
+}
+
+// Cache for Sabre solutions
+const sabreSolutionsCache = new Map();
+
+function procesarVuelosSabre(data, paxCounts) {
+  const results = [];
+  try {
+    const resp = data.OTA_AirLowFareSearchRS || data;
+    const pricedItins = resp.PricedItineraries?.PricedItinerary || [];
+    console.log(`[Sabre] ${pricedItins.length} itinerarios`);
+    
+    if (!pricedItins.length) return [];
+    
+    for (const itin of pricedItins) {
+      try {
+        const airItinerary = itin.AirItinerary;
+        const pricingInfo = itin.AirItineraryPricingInfo?.[0] || {};
+        const fareInfo = pricingInfo.ItinTotalFare || {};
+        
+        // Total price
+        const totalFare = fareInfo.TotalFare || {};
+        const baseFare = fareInfo.BaseFare || {};
+        const taxes = fareInfo.Taxes?.Tax?.[0] || fareInfo.Taxes || {};
+        const totalUSD = parseFloat(totalFare.Amount) || 0;
+        const currency = totalFare.CurrencyCode || 'USD';
+        
+        // Per-pax breakdown from PTC_FareBreakdowns
+        const fareBreakdowns = pricingInfo.PTC_FareBreakdowns?.PTC_FareBreakdown || [];
+        const fareList = [];
+        for (const fb of fareBreakdowns) {
+          const paxType = fb.PassengerTypeQuantity?.Code || 'ADT';
+          const qty = fb.PassengerTypeQuantity?.Quantity || 1;
+          const paxFare = fb.PassengerFare || {};
+          const paxBase = parseFloat(paxFare.BaseFare?.Amount) || 0;
+          const paxTaxTotal = parseFloat(paxFare.TotalFare?.Amount) || 0;
+          const paxTaxes = paxTaxTotal - paxBase;
+          fareList.push({
+            passenger_type: paxType, quantity: qty,
+            base: paxBase, total_taxes: paxTaxes, total: paxTaxTotal
+          });
+        }
+        
+        // Segments / legs
+        const ods = airItinerary?.OriginDestinationOptions?.OriginDestinationOption || [];
+        const legs = [];
+        const allSegments = [];
+        
+        for (const od of ods) {
+          const segs = od.FlightSegment || [];
+          const legSegs = [];
+          for (const seg of segs) {
+            const segData = {
+              origen: seg.DepartureAirport?.LocationCode || '',
+              destino: seg.ArrivalAirport?.LocationCode || '',
+              salida: seg.DepartureDateTime || '',
+              llegada: seg.ArrivalDateTime || '',
+              vuelo: `${seg.MarketingAirline?.Code || ''}${seg.FlightNumber || ''}`,
+              aerolinea: seg.MarketingAirline?.Code || '',
+              operador: seg.OperatingAirline?.Code || seg.MarketingAirline?.Code || '',
+              cabina: seg.ResBookDesigCode || '',
+              duracion: seg.ElapsedTime || 0
+            };
+            legSegs.push(segData);
+            allSegments.push(segData);
+          }
+          
+          const firstSeg = legSegs[0];
+          const lastSeg = legSegs[legSegs.length - 1];
+          legs.push({
+            origen: firstSeg.origen,
+            destino: lastSeg.destino,
+            origenCiudad: AIRPORT_CITY_MAP[firstSeg.origen] || firstSeg.origen,
+            destinoCiudad: AIRPORT_CITY_MAP[lastSeg.destino] || lastSeg.destino,
+            salida: firstSeg.salida,
+            llegada: lastSeg.llegada,
+            escalas: legSegs.length - 1,
+            segmentos: legSegs
+          });
+        }
+        
+        if (!legs.length) continue;
+        
+        const firstLeg = legs[0];
+        const mainAirline = firstLeg.segmentos[0]?.aerolinea || '';
+        const totalEscalas = legs.reduce((s, l) => s + l.escalas, 0);
+        const totalPax = (paxCounts.adultos || 1) + (paxCounts.ninos || 0) + (paxCounts.infantes || 0);
+        const precioPerPax = totalPax > 0 ? Math.round(totalUSD / totalPax * 100) / 100 : totalUSD;
+        
+        // Determine flight type
+        const tipoVuelo = legs.length > 2 ? 'multidestino' : (legs.length === 2 ? 'roundtrip' : 'oneway');
+        
+        // Validating carrier
+        const validatingCarrier = pricingInfo.TPA_Extensions?.ValidatingCarrier?.Code || mainAirline;
+        
+        // Cache solution for later booking
+        const solId = `sabre_${Date.now()}_${Math.random().toString(36).substr(2,6)}`;
+        sabreSolutionsCache.set(solId, { 
+          itin, pricingInfo, fareBreakdowns, legs, paxCounts, fareList,
+          validatingCarrier, totalUSD, currency
+        });
+        
+        // Baggage info from BaggageInformation
+        let equipaje = { mochila: null, carryOn: null, bodega: null };
+        try {
+          const baggageInfo = pricingInfo.TPA_Extensions?.BaggageInformationList?.BaggageInformation || [];
+          for (const bag of baggageInfo) {
+            const allowance = bag.Allowance?.[0] || {};
+            if (allowance.Pieces !== undefined) {
+              const pieces = parseInt(allowance.Pieces) || 0;
+              equipaje.bodega = pieces > 0 ? `${pieces} pieza${pieces > 1 ? 's' : ''}` : 'No incluido';
+            }
+            if (allowance.Weight) {
+              equipaje.bodega = `${allowance.Weight}${allowance.Unit || 'kg'}`;
+            }
+          }
+        } catch(e) {}
+        
+        const vuelo = {
+          source: 'sabre',
+          fuente: 'Sabre',
+          gds: 'Sabre',
+          quotationId: solId,
+          aerolinea: validatingCarrier,
+          aerolineaDesc: validatingCarrier, // Will be resolved in frontend
+          precioTotal: totalUSD,
+          precioUSD: totalUSD,
+          precioPerPax,
+          moneda: currency,
+          tipo: tipoVuelo,
+          escalas: totalEscalas,
+          itinerario: legs.map(l => ({
+            origen: l.origen,
+            destino: l.destino,
+            origenCiudad: l.origenCiudad,
+            destinoCiudad: l.destinoCiudad,
+            salida: l.salida,
+            llegada: l.llegada,
+            escalas: l.escalas,
+            segmentos: l.segmentos
+          })),
+          equipaje,
+          fareList
+        };
+        
+        results.push(vuelo);
+      } catch(itinErr) {
+        console.error('[Sabre] Itin parse error:', itinErr.message);
+      }
+    }
+    
+    console.log(`[Sabre] ${results.length} vuelos procesados`);
+  } catch(e) {
+    console.error('[Sabre] Parse error:', e.message);
+  }
+  return results;
+}
+
 // Mapa global de códigos IATA → ciudades (para normalizar nombres de aeropuertos)
 const AIRPORT_CITY_MAP = {
   'EZE':'Buenos Aires','AEP':'Buenos Aires','MIA':'Miami','MAD':'Madrid','BCN':'Barcelona',
@@ -742,17 +1055,20 @@ app.post('/buscar-vuelos', async (req, res) => {
   })();
 
   const lleegoPromise = buscarLleego({ tipo, origen, destino, salida, regreso, adultos, ninos, infantes, cabinType, stops, tramos });
+  
+  const sabrePromise = buscarSabre({ tipo, origen, destino, salida, regreso, adultos, ninos, infantes, cabinType, stops, tramos });
 
-  // Esperar ambos
-  const [glasResult, lleegoVuelos] = await Promise.all([glasPromise, lleegoPromise]);
+  // Esperar todos
+  const [glasResult, lleegoVuelos, sabreVuelos] = await Promise.all([glasPromise, lleegoPromise, sabrePromise]);
 
   // Combinar resultados
-  const todosVuelos = [...(glasResult.vuelos || []), ...(lleegoVuelos || [])];
-  todosVuelos.sort((a, b) => a.precioUSD - b.precioUSD);
+  const todosVuelos = [...(glasResult.vuelos || []), ...(lleegoVuelos || []), ...(sabreVuelos || [])];
+  todosVuelos.sort((a, b) => (a.precioTotal || a.precioUSD) - (b.precioTotal || b.precioUSD));
 
   const totalGlas = glasResult.vuelos?.length || 0;
   const totalLleego = lleegoVuelos?.length || 0;
-  console.log(`[Búsqueda] Total: ${todosVuelos.length} (Tucano: ${totalGlas}, GEA: ${totalLleego})`);
+  const totalSabre = sabreVuelos?.length || 0;
+  console.log(`[Búsqueda] Total: ${todosVuelos.length} (Tucano: ${totalGlas}, GEA: ${totalLleego}, Sabre: ${totalSabre})`);
 
   if (!todosVuelos.length && glasResult.error) {
     return res.json({ ok: false, error: glasResult.error });
@@ -846,6 +1162,10 @@ app.post('/check-availability', async (req, res) => {
   if (String(quotationId).startsWith('lleego_')) {
     return res.json({ ok: true, hasDifferences: false });
   }
+  // Sabre: no availability check needed
+  if (String(quotationId).startsWith('sabre_')) {
+    return res.json({ ok: true, hasDifferences: false });
+  }
   
   try {
     const token = await getToken();
@@ -885,6 +1205,150 @@ app.get('/document-countries', async (req, res) => {
 // Crear reserva
 app.post('/crear-reserva', async (req, res) => {
   const { searchId, quotationId, pasajeros, contacto, vueloInfo } = req.body;
+  
+  // ─── SABRE DIRECT booking ───
+  if (String(quotationId).startsWith('sabre_')) {
+    try {
+      const cached = sabreSolutionsCache.get(quotationId);
+      if (!cached) throw new Error('Solución Sabre expirada. Buscá de nuevo.');
+      
+      const token = await getSabreToken();
+      if (!token) throw new Error('No se pudo autenticar con Sabre');
+      
+      // Build CreatePNR payload
+      const segments = [];
+      let segNum = 0;
+      for (const leg of cached.legs) {
+        for (const seg of leg.segmentos) {
+          segNum++;
+          const depDT = seg.salida; // "2026-05-02T08:00:00"
+          segments.push({
+            DepartureDateTime: depDT,
+            FlightNumber: seg.vuelo.replace(/^[A-Z]{2}/, ''),
+            NumberInParty: String(pasajeros.length),
+            ResBookDesigCode: seg.cabina || 'Y',
+            Status: 'NN',
+            OriginLocation: { LocationCode: seg.origen },
+            DestinationLocation: { LocationCode: seg.destino },
+            MarketingAirline: { Code: seg.aerolinea, FlightNumber: seg.vuelo.replace(/^[A-Z]{2}/, '') }
+          });
+        }
+      }
+      
+      // Build passenger info
+      const paxInfo = pasajeros.map((p, idx) => {
+        const paxData = {
+          NameNumber: `${idx + 1}.1`,
+          GivenName: p.nombre,
+          Surname: p.apellido,
+          DateOfBirth: `${p.nacimientoAnio}-${String(p.nacimientoMes).padStart(2,'0')}-${String(p.nacimientoDia).padStart(2,'0')}`,
+          Gender: p.sexo === 'M' ? 'M' : 'F',
+          PassengerType: p.tipo === 'INF' ? 'INF' : (p.tipo === 'CHD' ? 'CNN' : 'ADT'),
+          NameReference: `P${idx + 1}`
+        };
+        return paxData;
+      });
+      
+      // Contact info
+      const holderPax = pasajeros[0] || {};
+      const phone = contacto?.telefono || holderPax.telefono || '';
+      const email = contacto?.email || holderPax.email || '';
+      
+      const createPNRBody = {
+        CreatePassengerNameRecordRQ: {
+          version: '2.4.0',
+          TravelItineraryAddInfo: {
+            AgencyInfo: { Ticketing: { TicketType: '7TAW' } },
+            CustomerInfo: {
+              ContactNumbers: {
+                ContactNumber: [{ Phone: phone.replace(/\D/g, ''), PhoneUseType: 'H' }]
+              },
+              Email: [{ Address: email, Type: 'TO' }],
+              PersonName: paxInfo.map(p => ({
+                NameNumber: p.NameNumber,
+                GivenName: p.GivenName,
+                Surname: p.Surname
+              }))
+            }
+          },
+          AirBook: {
+            OriginDestinationInformation: {
+              FlightSegment: segments
+            },
+            HaltOnStatus: [{ Code: 'NN' }, { Code: 'NO' }, { Code: 'HL' }, { Code: 'UC' }]
+          },
+          AirPrice: [{
+            PriceRequestInformation: {
+              Retain: true,
+              OptionalQualifiers: {
+                PricingQualifiers: {
+                  PassengerType: [...new Set(pasajeros.map(p => ({ Code: p.tipo === 'INF' ? 'INF' : (p.tipo === 'CHD' ? 'CNN' : 'ADT') })))]
+                }
+              }
+            }
+          }],
+          PostProcessing: {
+            EndTransaction: { Source: { ReceivedFrom: 'LUCKYTOUR COMPARADOR' } }
+          }
+        }
+      };
+      
+      console.log('[Sabre] CreatePNR payload:', JSON.stringify(createPNRBody).substring(0, 1500));
+      
+      const bookRes = await fetch(`${SABRE_API_BASE}/v2.4.0/passenger/records?mode=create`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(createPNRBody)
+      });
+      
+      const bookText = await bookRes.text();
+      console.log(`[Sabre] CreatePNR response ${bookRes.status}:`, bookText.substring(0, 2000));
+      
+      if (!bookRes.ok) throw new Error(`Sabre booking error ${bookRes.status}: ${bookText.substring(0, 500)}`);
+      
+      const bookData = JSON.parse(bookText);
+      const pnrData = bookData.CreatePassengerNameRecordRS || bookData;
+      const pnr = pnrData.ItineraryRef?.ID || 
+                   pnrData.AirBook?.OriginDestinationOption?.[0]?.FlightSegment?.[0]?.BookingLocator || '';
+      
+      console.log('[Sabre] PNR:', pnr);
+      
+      if (!pnr) throw new Error('No se obtuvo PNR de Sabre: ' + bookText.substring(0, 500));
+      
+      // Save to DB
+      if (db) {
+        try {
+          await db.query(`INSERT INTO reservas (
+            pnr,order_id,quotation_id,tipo_viaje,origen,destino,fecha_salida,
+            aerolinea,precio_usd,moneda,adultos,ninos,infantes,estado,
+            itinerario_json,pasajeros_json,contacto_json,notas,usuario_id,vendedor)
+            VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20)`,
+            [pnr, pnr, String(quotationId),
+             vueloInfo?.tipo, vueloInfo?.origen, vueloInfo?.destino, vueloInfo?.salida,
+             vueloInfo?.aerolinea, vueloInfo?.precioUSD, 'USD',
+             pasajeros.filter(p=>p.tipo==='ADT').length,
+             pasajeros.filter(p=>p.tipo==='CHD').length,
+             pasajeros.filter(p=>p.tipo==='INF').length,
+             'CREADA',
+             JSON.stringify(vueloInfo?.itinerario),
+             JSON.stringify(pasajeros),
+             JSON.stringify(contacto),
+             'Reserva Sabre Directo',
+             req.user?.userId || null,
+             req.user?.nombre || null]);
+          console.log('[DB] Reserva Sabre guardada, PNR:', pnr);
+        } catch(dbErr) { console.error('[DB] Error:', dbErr.message); }
+      }
+      
+      return res.json({ ok: true, pnr, orderId: pnr, fuente: 'Sabre' });
+    } catch(e) {
+      console.error('[Sabre] Booking error:', e.message);
+      return res.json({ ok: false, error: e.message });
+    }
+  }
   
   // ─── GEA / Lleego booking ───
   if (String(quotationId).startsWith('lleego_')) {
@@ -1723,6 +2187,61 @@ app.post('/reservas/:id/emitir', async (req, res) => {
     const reserva = r.rows[0];
     if (!reserva.order_id) return res.json({ ok: false, error: 'Sin orderId' });
 
+    // Sabre Direct: emit via Sabre API
+    const isSabre = (reserva.quotation_id || '').startsWith('sabre_') || (reserva.notas || '').includes('Sabre');
+    if (isSabre) {
+      try {
+        const sabreToken = await getSabreToken();
+        if (!sabreToken) throw new Error('No se pudo autenticar con Sabre');
+        
+        // Issue ticket via Sabre REST
+        const ticketBody = {
+          AirTicketRQ: {
+            version: '1.2.1',
+            DesignatePrinter: {
+              Printers: { Ticket: { CountryCode: 'AR' } }
+            },
+            Itinerary: { ID: reserva.pnr },
+            Ticketing: [{
+              FOP_Qualifiers: {
+                BasicFOP: { Type: 'CA' }
+              },
+              MiscQualifiers: {
+                Ticket: { Type: 'ETR' }
+              }
+            }],
+            PostProcessing: {
+              EndTransaction: { Source: { ReceivedFrom: 'LUCKYTOUR' } }
+            }
+          }
+        };
+        
+        console.log('[Sabre] Ticketing PNR:', reserva.pnr);
+        const ticketRes = await fetch(`${SABRE_API_BASE}/v1.2.1/air/ticket?mode=create`, {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${sabreToken}`,
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify(ticketBody)
+        });
+        const ticketText = await ticketRes.text();
+        console.log(`[Sabre] Ticketing response ${ticketRes.status}:`, ticketText.substring(0, 1000));
+        
+        if (ticketRes.ok) {
+          await db.query("UPDATE reservas SET estado='EMITIDA' WHERE id=$1", [reserva.id]);
+          return res.json({ ok: true, emitida: true, pnr: reserva.pnr, fuente: 'Sabre' });
+        } else {
+          let errMsg = `Error ${ticketRes.status}`;
+          try { const errData = JSON.parse(ticketText); errMsg = errData.message || errMsg; } catch(e) {}
+          return res.json({ ok: false, error: `Sabre: ${errMsg}` });
+        }
+      } catch(e) {
+        console.error('[Sabre] Ticketing error:', e.message);
+        return res.json({ ok: false, error: e.message });
+      }
+    }
+
     // GEA: emit via Lleego API
     const isGEA = (reserva.quotation_id || '').startsWith('lleego_') || (reserva.notas || '').includes('GEA');
     if (isGEA) {
@@ -1797,8 +2316,9 @@ app.post('/reservas/:id/pdf', async (req, res) => {
     let fareInfo = null;
     let penalidades = null;
     const isGEA = (reserva.quotation_id || '').startsWith('lleego_') || (reserva.notas || '').includes('GEA');
+    const isSabre = (reserva.quotation_id || '').startsWith('sabre_') || (reserva.notas || '').includes('Sabre');
 
-    if (reserva.order_id && !isGEA) {
+    if (reserva.order_id && !isGEA && !isSabre) {
       try {
         const token = await getToken();
         const hdrs = getHeaders(token);
@@ -2219,6 +2739,50 @@ app.listen(PORT, () => console.log(`✅ Puerto ${PORT}`));
 // ─── DETALLE DE VUELO (desglose de precio) ───
 app.get('/detalle-vuelo', async (req, res) => {
   const { searchId, quotationId } = req.query;
+  
+  // ─── SABRE DIRECT: return cached price data ───
+  if (String(quotationId).startsWith('sabre_')) {
+    const cached = sabreSolutionsCache.get(quotationId);
+    if (!cached) return res.json({ ok: false, error: 'Solución Sabre expirada. Buscá de nuevo.' });
+    
+    const desglose = [];
+    for (const fare of (cached.fareList || [])) {
+      const tipo = (fare.passenger_type || 'ADT').toUpperCase();
+      desglose.push({
+        tipo: tipo === 'CNN' ? 'CHD' : tipo,
+        cantidad: fare.quantity || 1,
+        tarifa: fare.base || 0,
+        impuestos: fare.total_taxes || 0,
+        fee: 0, descuento: 0,
+        total: fare.total || 0,
+        detImpuestos: []
+      });
+    }
+    
+    // Try to get baggage and penalty info
+    let penalidades = { cambio_antes: null, cambio_durante: null, devolucion_antes: null, devolucion_durante: null };
+    try {
+      const pInfo = cached.pricingInfo || {};
+      // Check penalties from fare info
+      const fareInfos = pInfo.FareInfos?.FareInfo || [];
+      for (const fi of fareInfos) {
+        if (fi.TPA_Extensions?.Penalties) {
+          const pen = fi.TPA_Extensions.Penalties;
+          if (pen.Change) penalidades.cambio_antes = pen.Change.Amount ? `USD ${pen.Change.Amount}` : (pen.Change.Applicability || null);
+          if (pen.Refund) penalidades.devolucion_antes = pen.Refund.Amount ? `USD ${pen.Refund.Amount}` : (pen.Refund.Applicability || null);
+        }
+      }
+    } catch(e) {}
+    
+    return res.json({
+      ok: true, source: 'sabre',
+      desglose,
+      penalidades,
+      precioNeto: cached.totalUSD,
+      moneda: cached.currency || 'USD',
+      reglas: []
+    });
+  }
   
   // ─── GEA / Lleego: return cached price data + fetch conditions ───
   if (String(quotationId).startsWith('lleego_')) {
@@ -2684,6 +3248,44 @@ app.post('/generar-cotizacion', async (req, res) => {
     const token = await getToken();
 
     const opcionesCompletas = await Promise.all(opciones.map(async (op) => {
+      // ─── SABRE: use cached data ───
+      if (String(op.quotationId).startsWith('sabre_')) {
+        const cached = sabreSolutionsCache.get(op.quotationId);
+        if (!cached) throw new Error('Solución Sabre expirada. Buscá de nuevo.');
+        
+        const pasajeros = [];
+        for (const fare of (cached.fareList || [])) {
+          const t = (fare.passenger_type || 'ADT').toUpperCase();
+          pasajeros.push({
+            tipo: t === 'ADT' ? 'adulto' : t === 'CNN' || t === 'CHD' ? 'menor' : 'bebé',
+            cantidad: fare.quantity || 1, neto: fare.total || 0,
+            tipo_tarifa: 'PUB', comision_over: 0
+          });
+        }
+        
+        const vuelos = [];
+        for (const leg of cached.legs) {
+          for (const seg of leg.segmentos) {
+            const depDate = seg.salida ? new Date(seg.salida) : null;
+            const arrDate = seg.llegada ? new Date(seg.llegada) : null;
+            vuelos.push({
+              fecha: depDate ? `${String(depDate.getDate()).padStart(2,'0')}/${String(depDate.getMonth()+1).padStart(2,'0')}` : '',
+              origen: `${AIRPORT_CITY_MAP[seg.origen] || seg.origen} (${seg.origen})`,
+              destino: `${AIRPORT_CITY_MAP[seg.destino] || seg.destino} (${seg.destino})`,
+              salida: depDate ? `${String(depDate.getHours()).padStart(2,'0')}.${String(depDate.getMinutes()).padStart(2,'0')}` : '',
+              llegada: arrDate ? `${String(arrDate.getHours()).padStart(2,'0')}.${String(arrDate.getMinutes()).padStart(2,'0')}` : '',
+              numero_vuelo: seg.vuelo,
+              brand: ''
+            });
+          }
+        }
+        
+        return {
+          aerolinea: cached.validatingCarrier || '',
+          vuelos, detalle_vuelo: 'Economica', pasajeros, penalidades: null,
+          equipaje: cached.legs?.[0]?.segmentos?.[0] ? {} : null
+        };
+      }
       // ─── GEA: use cached data ───
       if (String(op.quotationId).startsWith('lleego_')) {
         const cached = lleegoSolutionsCache.get(op.quotationId);
