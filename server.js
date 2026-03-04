@@ -703,7 +703,8 @@ async function fetchLleegoPolicy(quotationId) {
       for (const sId of segIds) {
         const _s = cached.segments[sId]; if (!_s) continue;
         const _dd = _s.departure_date ? _s.departure_date.substring(0,10).replace(/-/g,'') : '';
-        segCodes.push(`${_s.marketing_company}${_s.transport_number}${_dd}${_s.departure||''}${_s.arrival||''}`);
+        const _flNum = (_s.transport_number || '').padStart(4, '0');
+        segCodes.push(`${_s.marketing_company}${_flNum}${_dd}${_s.departure||''}${_s.arrival||''}`);
       }
       if (segCodes.length) _jCodesBase.push(segCodes.join('@'));
     }
@@ -1528,7 +1529,8 @@ app.post('/crear-reserva', async (req, res) => {
         for (const sId of segIds) {
           const s = cached.segments[sId]; if (!s) continue;
           const dd = s.departure_date ? s.departure_date.substring(0, 10).replace(/-/g, '') : '';
-          segCodes.push(`${s.marketing_company}${s.transport_number}${dd}${s.departure || ''}${s.arrival || ''}`);
+          const flNum = (s.transport_number || '').padStart(4, '0');
+          segCodes.push(`${s.marketing_company}${flNum}${dd}${s.departure || ''}${s.arrival || ''}`);
         }
         if (segCodes.length) journeyCodes.push(segCodes.join('@'));
       }
@@ -1729,6 +1731,23 @@ app.post('/crear-reserva', async (req, res) => {
         if (bookData.booking.lines?.[0]) console.log('[Lleego] line[0] keys:', Object.keys(bookData.booking.lines[0]));
       }
       console.log('[Lleego] Booking full:', JSON.stringify(bookData).substring(0, 2000));
+      
+      // Check for error in line[0] (Lleego sometimes returns 200 with embedded error)
+      const lineError = bookData.booking?.lines?.[0]?.error;
+      if (lineError) {
+        const errMsg = typeof lineError === 'string' ? lineError : (lineError.message || lineError.description || JSON.stringify(lineError));
+        console.log('[Lleego] Line error:', errMsg);
+        throw new Error(`Error en reserva GEA: ${errMsg}`);
+      }
+      
+      // Check if booking actually has an ID and PNR (if not, it failed silently)
+      const hasBookingId = !!bookData.booking?.id;
+      const hasLineId = !!bookData.booking?.lines?.[0]?.id;
+      const hasLocator = !!bookData.booking?.lines?.[0]?.booking_reference?.locator;
+      if (!hasBookingId && !hasLineId && !hasLocator) {
+        console.log('[Lleego] Booking returned 200 but no IDs/PNR - treating as failure');
+        throw new Error('La reserva no se completó correctamente. Intentá de nuevo buscando el vuelo o reservá directamente desde GEA (app.lleego.com).');
+      }
       
       // Extract PNR from Lleego nested response - search multiple paths
       const line0 = bookData.booking?.lines?.[0] || {};
