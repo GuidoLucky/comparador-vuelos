@@ -3731,7 +3731,16 @@ app.post('/generar-cotizacion', async (req, res) => {
         const cabinLabel = cabinNameMap[cabinShort] || cabinShort || 'Economica';
         // Get brand/family from fare_list
         const famBrand = fareList[0]?.family || '';
-        const detalleVuelo = famBrand ? `${cabinLabel} - ${famBrand}` : cabinLabel;
+        // LCCs (GOL, Jetsmart, etc.) return W but it's really Economy - use brand as primary label
+        const lccCodes = ['G3','JA','FO','H2','WJ','VB','NK','F9','W4','W6'];
+        const isLCC = lccCodes.includes(validating);
+        let detalleVuelo;
+        if (famBrand) {
+          // Has brand: use brand only (e.g. "LIGHT", "CLASSIC", "Flagship First")
+          detalleVuelo = (isLCC || cabinLabel === 'Economica') ? famBrand : `${cabinLabel} - ${famBrand}`;
+        } else {
+          detalleVuelo = isLCC ? 'Economica' : cabinLabel;
+        }
 
         // Get penalties - fetch from policy if not cached
         let geaPenalidades = penaltiesCache.get(op.quotationId) || null;
