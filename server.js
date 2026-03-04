@@ -697,32 +697,29 @@ async function fetchLleegoPolicy(quotationId) {
     for (const _a of _assocs2) {
       const _jR = (_a.journey_references || [])[0]; if (!_jR) continue;
       const _j = cached.journeys[_jR]; if (!_j) continue;
-      const _fS = (_j.segments || [])[0];
-      const _s = cached.segments[_fS]; if (!_s) continue;
-      const _dd = _s.departure_date ? _s.departure_date.substring(0,10).replace(/-/g,'') : '';
-      const _lS = (_j.segments || []).slice(-1)[0];
-      const _ls = cached.segments[_lS] || _s;
-      const flightNum = String(_s.transport_number || '').padStart(4, '0');
-      _jCodesBase.push({
-        noAirports: `${_s.marketing_company}${flightNum}${_dd}`,
-        withAirports: `${_s.marketing_company}${flightNum}${_dd}${_s.departure||''}${_ls.arrival||''}`
-      });
+      const segIds = _j.segments || [];
+      // Build each segment code and join with @ for connections
+      const segCodes = [];
+      for (const sId of segIds) {
+        const _s = cached.segments[sId]; if (!_s) continue;
+        const _dd = _s.departure_date ? _s.departure_date.substring(0,10).replace(/-/g,'') : '';
+        segCodes.push(`${_s.marketing_company}${_s.transport_number}${_dd}${_s.departure||''}${_s.arrival||''}`);
+      }
+      if (segCodes.length) _jCodesBase.push(segCodes.join('@'));
     }
     
-    // Try without airports first (works for AA NDC, AR Sabre, LA NDC), retry with airports (IB NDC)
-    let policyRes = null;
-    for (const fmt of ['noAirports', 'withAirports']) {
-      const _jp = _jCodesBase.map((j,i) => `&journey0${i}=${j[fmt]}`).join('');
-      const policyUrl = `https://api-tr.lleego.com/api/v2/transport/policy?token=${cached.searchToken}&solutionID0=${sol.id}${_jp}&locale=es-ar`;
-      console.log(`[Lleego] Policy URL (${fmt}):`, policyUrl.substring(0, 250));
-      policyRes = await fetch(policyUrl, {
-        headers: { 'Authorization': `Bearer ${llToken}`, 'x-api-key': LLEEGO_API_KEY, 'lang': 'es-ar' }
-      });
-      if (policyRes.ok) break;
+    // Try with full journey codes (works for all providers)
+    const _jp = _jCodesBase.map((j,i) => `&journey0${i}=${j}`).join('');
+    const policyUrl = `https://api-tr.lleego.com/api/v2/transport/policy?token=${cached.searchToken}&solutionID0=${sol.id}${_jp}&locale=es-ar`;
+    console.log('[Lleego] Policy URL:', policyUrl.substring(0, 250));
+    const policyRes = await fetch(policyUrl, {
+      headers: { 'Authorization': `Bearer ${llToken}`, 'x-api-key': LLEEGO_API_KEY, 'lang': 'es-ar' }
+    });
+    if (!policyRes.ok) {
       const errTxt = await policyRes.text().catch(()=>'');
-      console.log(`[Lleego] Policy FAILED ${policyRes.status} (${fmt}):`, errTxt.substring(0, 200));
+      console.log(`[Lleego] Policy FAILED ${policyRes.status}:`, errTxt.substring(0, 200));
+      return null;
     }
-    if (!policyRes || !policyRes.ok) return null;
     const policyData = await policyRes.json();
     const penalties = policyData.solutions?.[0]?.penalties || policyData.penalties || [];
     console.log(`[Lleego] Policy OK: ${penalties.length} penalties found`);
@@ -1520,21 +1517,20 @@ app.post('/crear-reserva', async (req, res) => {
       const searchToken = cached.searchToken;
       const assocs = sol.data?.associations || [];
       
-      // Build journey codes: airline + flightNum + dateYYYYMMDD
+      // Build journey codes: each segment as airline+flightNum+dateYYYYMMDD+origin+dest, joined by @ for connections
       const journeyCodes = [];
       for (const assoc of assocs) {
         const journeyRefs = assoc.journey_references || [];
         const jRef = journeyRefs[0]; if (!jRef) continue;
         const journey = cached.journeys[jRef]; if (!journey) continue;
-        const firstSegId = (journey.segments || [])[0];
-        const seg = cached.segments[firstSegId]; if (!seg) continue;
-        const depDate = seg.departure_date ? seg.departure_date.substring(0, 10).replace(/-/g, '') : '';
-        // Append origin+destination airport codes (required by Lleego NDC)
-        const lastSegId = (journey.segments || []).slice(-1)[0];
-        const lastSeg = cached.segments[lastSegId] || seg;
-        const origen = seg.departure || '';
-        const destino = lastSeg.arrival || '';
-        journeyCodes.push(`${seg.marketing_company}${seg.transport_number}${depDate}${origen}${destino}`);
+        const segIds = journey.segments || [];
+        const segCodes = [];
+        for (const sId of segIds) {
+          const s = cached.segments[sId]; if (!s) continue;
+          const dd = s.departure_date ? s.departure_date.substring(0, 10).replace(/-/g, '') : '';
+          segCodes.push(`${s.marketing_company}${s.transport_number}${dd}${s.departure || ''}${s.arrival || ''}`);
+        }
+        if (segCodes.length) journeyCodes.push(segCodes.join('@'));
       }
       
       // Build travellers with birth_date and documents (required for NDC)
@@ -1553,6 +1549,10 @@ app.post('/crear-reserva', async (req, res) => {
           const docCode = (p.docTipo || '').toUpperCase();
           const llDocType = (docCode === 'PP' || docCode === 'PAS' || docCode === 'PASAPORTE') ? 'PP' : 'NI';
           docs.push({ type: llDocType, number: String(p.docNumero) });
+        }
+        // Add fiscal document (CUIL/CUIT) as type CL if available
+        if (p.factNumero) {
+          docs.push({ type: 'CL', number: String(p.factNumero) });
         }
         const trav = {
           type: p.tipo || 'ADT',
@@ -1582,7 +1582,6 @@ app.post('/crear-reserva', async (req, res) => {
       const holder = {
         name: capitalizeWord(contacto.nombre || pasajeros[0]?.nombre || ''),
         surnames: [capitalizeWord(contacto.apellido || pasajeros[0]?.apellido || '')],
-        birth_date: travellers[0]?.birth_date || '1990-01-01',
         contact: {
           mails: [contacto.email || ''],
           phones: [
@@ -1608,6 +1607,7 @@ app.post('/crear-reserva', async (req, res) => {
       console.log('[Lleego] Travellers count:', travellers.length, 'Holder docs:', holderDocs.length);
       
       // Call pricing endpoint BEFORE booking to validate/refresh NDC offer
+      let pricingFailed = false;
       try {
         const _pjp = journeyCodes.map((j,i) => `&journey0${i}=${j}`).join('');
         const _purl = `https://api-tr.lleego.com/api/v2/transport/pricing?format=json&solutionID0=${sol.id}&token=${searchToken}${_pjp}&extend=true&locale=es-ar`;
@@ -1617,6 +1617,16 @@ app.post('/crear-reserva', async (req, res) => {
         });
         const _pd = await _pr.json();
         console.log('[Lleego] Pre-booking pricing status:', _pr.status, JSON.stringify(_pd).substring(0, 300));
+        
+        // If pricing says offer expired, abort before attempting booking
+        if (_pr.status >= 400) {
+          const errMsg = _pd?.error?.message || '';
+          if (errMsg.includes('not available') || errMsg.includes('search again') || errMsg.includes('Wrong Option')) {
+            pricingFailed = true;
+            console.log('[Lleego] Offer expired per pricing, aborting booking');
+          }
+        }
+        
         // Cache penalties from pricing if available (try multiple response formats)
         const _pn = _pd.notes || _pd.data?.notes || [];
         const _pp = _pd.solutions?.[0]?.penalties || _pd.penalties || [];
@@ -1666,6 +1676,11 @@ app.post('/crear-reserva', async (req, res) => {
         console.log('[Lleego] Pre-booking pricing error (continuing):', _pe.message);
       }
       
+      // If offer expired, don't attempt booking
+      if (pricingFailed) {
+        console.log('[Lleego] Pricing failed but attempting booking anyway (pricing is optional validation)');
+      }
+      
       const bookRes = await fetch('https://api-tr.lleego.com/api/v2/transport/booking?locale=es-ar', {
         method: 'POST',
         headers: {
@@ -1680,7 +1695,13 @@ app.post('/crear-reserva', async (req, res) => {
       const bookText = await bookRes.text();
       console.log(`[Lleego] Booking response ${bookRes.status}:`, bookText.substring(0, 500));
       
-      if (!bookRes.ok) throw new Error(`Lleego booking error ${bookRes.status}: ${bookText.substring(0, 300)}`);
+      if (!bookRes.ok) {
+        // Better error for NDC-specific failures
+        if (bookText.includes('getId() on null') || bookText.includes('not available')) {
+          throw new Error('Error al reservar con esta aerolínea NDC. Buscá de nuevo e intentá rápido, o reservá directamente desde GEA (app.lleego.com).');
+        }
+        throw new Error(`Lleego booking error ${bookRes.status}: ${bookText.substring(0, 300)}`);
+      }
       
       let bookData;
       try { bookData = JSON.parse(bookText); } catch(e) { throw new Error('Respuesta inválida'); }
