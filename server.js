@@ -1028,6 +1028,10 @@ app.post('/buscar-vuelos', async (req, res) => {
       const currencyCode = moneda === 'ARS' ? null : 'USD';
       const airlinesArr = Array.isArray(airlines) && airlines.length ? airlines : [];
       const cabinVal = (cabinType !== undefined && cabinType !== null && cabinType !== '') ? cabinType : null;
+      // GLAS cabin codes: 0=Economy, 1=Premium Economy, 2=Business, 3=First
+      // Frontend codes:   0=Economy, 1=First, 2=Business, 3=Premium Economy
+      const glasCabinMap = { 0: 0, 1: 3, 2: 2, 3: 1 };
+      const glasCabinVal = cabinVal !== null ? (glasCabinMap[cabinVal] ?? cabinVal) : null;
       const flightTypeVal = (flightType !== undefined && flightType !== null && flightType !== '') ? flightType : null;
 
       let payload, endpoint, addSearchPayload;
@@ -1038,7 +1042,7 @@ app.post('/buscar-vuelos', async (req, res) => {
           DepartCode: origen, ArrivalCode: destino,
           DepartDate: `${salida}T00:00:00`, DepartTime: null,
           Adults: parseInt(adultos), Childs: parseInt(ninos), Infants: parseInt(infantes),
-          CabinType: cabinVal, Stops: null, Airlines: airlinesArr,
+          CabinType: glasCabinVal, Stops: null, Airlines: airlinesArr,
           TypeOfFlightAllowedInItinerary: flightTypeVal, SortByGLASAlgorithm: "",
           AlternateCurrencyCode: currencyCode, CorporationCodeGlas: null, IncludeFiltersOptions: true
         };
@@ -1050,7 +1054,7 @@ app.post('/buscar-vuelos', async (req, res) => {
           DepartDate: `${salida}T00:00:00`, ArrivalDate: `${regreso}T00:00:00`,
           ArrivalTime: null, DepartTime: null,
           Adults: parseInt(adultos), Childs: parseInt(ninos), Infants: parseInt(infantes),
-          CabinType: cabinVal, Stops: stopsFilter, Airlines: airlinesArr,
+          CabinType: glasCabinVal, Stops: stopsFilter, Airlines: airlinesArr,
           TypeOfFlightAllowedInItinerary: flightTypeVal, SortByGLASAlgorithm: "",
           AlternateCurrencyCode: currencyCode, CorporationCodeGlas: null, IncludeFiltersOptions: true
         };
@@ -1063,7 +1067,7 @@ app.post('/buscar-vuelos', async (req, res) => {
         }));
         payload = {
           SearchFlightLegs: searchFlightLegs, Adults: parseInt(adultos), Childs: parseInt(ninos), Infants: parseInt(infantes),
-          Stops: stopsFilter, Airlines: airlinesArr, CabinType: cabinVal,
+          Stops: stopsFilter, Airlines: airlinesArr, CabinType: glasCabinVal,
           TypeOfFlightAllowedInItinerary: flightTypeVal, SortByGLASAlgorithm: null,
           AlternateCurrencyCode: currencyCode, CorporationCodeGlas: null, IncludeFiltersOptions: true
         };
@@ -1888,7 +1892,7 @@ app.get('/reservas', async (req, res) => {
     if (q) {
       params.push('%' + q + '%');
       const idx = params.length;
-      where.push(`(pnr ILIKE $${idx} OR origen ILIKE $${idx} OR destino ILIKE $${idx} OR aerolinea ILIKE $${idx} OR order_number ILIKE $${idx})`);
+      where.push(`(pnr ILIKE $${idx} OR origen ILIKE $${idx} OR destino ILIKE $${idx} OR aerolinea ILIKE $${idx} OR order_number ILIKE $${idx} OR pasajeros_json::text ILIKE $${idx})`);
     }
     if (where.length) sql += ' WHERE ' + where.join(' AND ');
     sql += ' ORDER BY created_at DESC LIMIT ' + (parseInt(limit) || 100);
