@@ -693,7 +693,7 @@ async function fetchLleegoPolicy(quotationId) {
     if (!llToken || !cached.searchToken) return null;
 
     const _assocs2 = sol.data?.associations || [];
-    const _jCodes = [];
+    const _jCodesBase = [];
     for (const _a of _assocs2) {
       const _jR = (_a.journey_references || [])[0]; if (!_jR) continue;
       const _j = cached.journeys[_jR]; if (!_j) continue;
@@ -702,19 +702,27 @@ async function fetchLleegoPolicy(quotationId) {
       const _dd = _s.departure_date ? _s.departure_date.substring(0,10).replace(/-/g,'') : '';
       const _lS = (_j.segments || []).slice(-1)[0];
       const _ls = cached.segments[_lS] || _s;
-      _jCodes.push(`${_s.marketing_company}${_s.transport_number}${_dd}${_s.departure||''}${_ls.arrival||''}`);
+      const flightNum = String(_s.transport_number || '').padStart(4, '0');
+      _jCodesBase.push({
+        noAirports: `${_s.marketing_company}${flightNum}${_dd}`,
+        withAirports: `${_s.marketing_company}${flightNum}${_dd}${_s.departure||''}${_ls.arrival||''}`
+      });
     }
-    const _jp = _jCodes.map((j,i) => `&journey0${i}=${j}`).join('');
-    const policyUrl = `https://api-tr.lleego.com/api/v2/transport/policy?token=${cached.searchToken}&solutionID0=${sol.id}${_jp}&locale=es-ar`;
-    console.log('[Lleego] Policy URL:', policyUrl.substring(0, 200));
-    const policyRes = await fetch(policyUrl, {
-      headers: { 'Authorization': `Bearer ${llToken}`, 'x-api-key': LLEEGO_API_KEY, 'lang': 'es-ar' }
-    });
-    if (!policyRes.ok) {
+    
+    // Try without airports first (works for AA NDC, AR Sabre, LA NDC), retry with airports (IB NDC)
+    let policyRes = null;
+    for (const fmt of ['noAirports', 'withAirports']) {
+      const _jp = _jCodesBase.map((j,i) => `&journey0${i}=${j[fmt]}`).join('');
+      const policyUrl = `https://api-tr.lleego.com/api/v2/transport/policy?token=${cached.searchToken}&solutionID0=${sol.id}${_jp}&locale=es-ar`;
+      console.log(`[Lleego] Policy URL (${fmt}):`, policyUrl.substring(0, 250));
+      policyRes = await fetch(policyUrl, {
+        headers: { 'Authorization': `Bearer ${llToken}`, 'x-api-key': LLEEGO_API_KEY, 'lang': 'es-ar' }
+      });
+      if (policyRes.ok) break;
       const errTxt = await policyRes.text().catch(()=>'');
-      console.log(`[Lleego] Policy FAILED ${policyRes.status}:`, errTxt.substring(0, 300));
-      return null;
+      console.log(`[Lleego] Policy FAILED ${policyRes.status} (${fmt}):`, errTxt.substring(0, 200));
     }
+    if (!policyRes || !policyRes.ok) return null;
     const policyData = await policyRes.json();
     const penalties = policyData.solutions?.[0]?.penalties || policyData.penalties || [];
     console.log(`[Lleego] Policy OK: ${penalties.length} penalties found`);
@@ -1533,11 +1541,12 @@ app.post('/crear-reserva', async (req, res) => {
       const titleMap = { '0': 'Mr', '1': 'Mrs', 0: 'Mr', 1: 'Mrs' };
       const capitalizeWord = (s) => (s || '').split(' ').map(w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase()).join(' ');
       const travellers = pasajeros.map(p => {
-        // Build birth_date from components
+        // Build birth_date from components (required for NDC providers)
         let birthDate = null;
-        if (p.fechaNacAnio && p.fechaNacMes && p.fechaNacDia) {
-          birthDate = `${p.fechaNacAnio}-${String(p.fechaNacMes).padStart(2,'0')}-${String(p.fechaNacDia).padStart(2,'0')}`;
-        }
+        const bYear = p.fechaNacAnio || '1990';
+        const bMonth = p.fechaNacMes || '1';
+        const bDay = p.fechaNacDia || '1';
+        birthDate = `${bYear}-${String(bMonth).padStart(2,'0')}-${String(bDay).padStart(2,'0')}`;
         // Build documents array
         const docs = [];
         if (p.docNumero) {
@@ -1550,9 +1559,9 @@ app.post('/crear-reserva', async (req, res) => {
           title: titleMap[p.genero] || 'Mr',
           name: capitalizeWord(p.nombre),
           surnames: [capitalizeWord(p.apellido)],
+          birth_date: birthDate,
           documents: docs
         };
-        if (birthDate) trav.birth_date = birthDate;
         return trav;
       });
       
@@ -1563,9 +1572,17 @@ app.post('/crear-reserva', async (req, res) => {
       }));
       
       // Holder = contacto (proper case, not uppercase)
+      // For NDC providers, holder needs documents too
+      const holderDocs = [];
+      if (pasajeros[0]?.docNumero) {
+        const docCode = (pasajeros[0].docTipo || '').toUpperCase();
+        const llDocType = (docCode === 'PP' || docCode === 'PAS' || docCode === 'PASAPORTE') ? 'PP' : 'NI';
+        holderDocs.push({ type: llDocType, number: String(pasajeros[0].docNumero) });
+      }
       const holder = {
         name: capitalizeWord(contacto.nombre || pasajeros[0]?.nombre || ''),
         surnames: [capitalizeWord(contacto.apellido || pasajeros[0]?.apellido || '')],
+        birth_date: travellers[0]?.birth_date || '1990-01-01',
         contact: {
           mails: [contacto.email || ''],
           phones: [
@@ -1573,7 +1590,7 @@ app.post('/crear-reserva', async (req, res) => {
             { country_pref: '54', number: (contacto.telefono2 || '').replace(/[^\d]/g, '') }
           ]
         },
-        documents: []
+        documents: holderDocs
       };
       
       const bookBody = {
@@ -1586,7 +1603,9 @@ app.post('/crear-reserva', async (req, res) => {
         }
       };
       
-      console.log('[Lleego] Booking payload:', JSON.stringify(bookBody).substring(0, 800));
+      console.log('[Lleego] Booking payload:', JSON.stringify(bookBody).substring(0, 1500));
+      console.log('[Lleego] Journey codes:', journeyCodes);
+      console.log('[Lleego] Travellers count:', travellers.length, 'Holder docs:', holderDocs.length);
       
       // Call pricing endpoint BEFORE booking to validate/refresh NDC offer
       try {
