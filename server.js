@@ -345,7 +345,7 @@ async function getSabreToken() {
 }
 
 // ─── SABRE: Bargain Finder Max Search ───
-async function buscarSabre({ tipo, origen, destino, salida, regreso, adultos, ninos, infantes, cabinType, stops, tramos }) {
+async function buscarSabre({ tipo, origen, destino, salida, regreso, adultos, ninos, infantes, cabinType, stops, tramos, airlines }) {
   const token = await getSabreToken();
   if (!token) return [];
   try {
@@ -383,7 +383,22 @@ async function buscarSabre({ tipo, origen, destino, salida, regreso, adultos, ni
       }
     }
     
-    // BFM v5 request (matching Sabre's exact format)
+    // Build travel preferences
+    const travelPrefs = {};
+    // Stops filter
+    if (stops === '0' || stops === 0) travelPrefs.MaxStopsQuantity = 0;
+    // Cabin filter: Frontend 0=Economy, 1=First, 2=Business, 3=Premium Economy
+    const sabreCabinMap = { '0': 'Y', '1': 'F', '2': 'C', '3': 'S' };
+    if (cabinType !== undefined && cabinType !== null && cabinType !== '' && sabreCabinMap[String(cabinType)]) {
+      travelPrefs.CabinPref = [{ Cabin: sabreCabinMap[String(cabinType)], PreferLevel: 'Preferred' }];
+    }
+    // Airlines filter
+    const airlinesArr = Array.isArray(airlines) && airlines.length ? airlines : [];
+    if (airlinesArr.length) {
+      travelPrefs.VendorPref = airlinesArr.map(a => ({ Code: a, PreferLevel: 'Preferred' }));
+    }
+
+    // BFM v5 request
     const bfmBody = {
       OTA_AirLowFareSearchRQ: {
         Version: '5',
@@ -391,7 +406,7 @@ async function buscarSabre({ tipo, origen, destino, salida, regreso, adultos, ni
           Source: [{ PseudoCityCode: SABRE_PCC, RequestorID: { Type: '1', ID: '1', CompanyName: { Code: 'TN' } } }]
         },
         OriginDestinationInformation: originDest,
-        TravelPreferences: {},
+        TravelPreferences: travelPrefs,
         TravelerInfoSummary: {
           AirTravelerAvail: [{ PassengerTypeQuantity: paxTypes }]
         },
@@ -400,11 +415,6 @@ async function buscarSabre({ tipo, origen, destino, salida, regreso, adultos, ni
         }
       }
     };
-    
-    // Add stops filter
-    if (stops === '0' || stops === 0) {
-      bfmBody.OTA_AirLowFareSearchRQ.TravelPreferences.MaxStopsQuantity = 0;
-    }
     
     console.log('[Sabre] BFM v5 request:', JSON.stringify(bfmBody).substring(0, 600));
     
@@ -687,7 +697,7 @@ async function getLleegoToken() {
   }
 }
 
-async function buscarLleego({ tipo, origen, destino, salida, regreso, adultos, ninos, infantes, cabinType, stops, tramos }) {
+async function buscarLleego({ tipo, origen, destino, salida, regreso, adultos, ninos, infantes, cabinType, stops, tramos, airlines }) {
   const token = await getLleegoToken();
   if (!token) return [];
   try {
@@ -697,8 +707,9 @@ async function buscarLleego({ tipo, origen, destino, salida, regreso, adultos, n
     for (let i = 0; i < (parseInt(ninos)||0); i++) ages.push(8);
     for (let i = 0; i < (parseInt(infantes)||0); i++) ages.push(1);
 
-    // Cabin mapping: GLAS uses 0=all,1=economy,2=premium,3=business,4=first
-    const cabinMap = { '1': 'Y', '2': 'W', '3': 'C', '4': 'F' };
+    // Cabin mapping: Frontend sends 0=Economy, 1=First, 2=Business, 3=Premium Economy
+    // Lleego expects: Y=Economy, W=Premium Economy, C=Business, F=First
+    const cabinMap = { '0': 'Y', '1': 'F', '2': 'C', '3': 'W' };
     const cabin = cabinMap[String(cabinType)] || '';
     const stopsVal = (stops !== null && stops !== undefined && stops !== '') ? parseInt(stops) : null;
 
@@ -731,6 +742,9 @@ async function buscarLleego({ tipo, origen, destino, salida, regreso, adultos, n
       paxes_distribution: { passengers_ages: ages }
     };
     if (cabin) travelOpts.cabin = cabin;
+    // Airlines filter: Lleego uses companies array
+    const airlinesArr = Array.isArray(airlines) && airlines.length ? airlines : [];
+    if (airlinesArr.length) travelOpts.companies = airlinesArr.map(a => [a]);
 
     const body = {
       query: {
@@ -1079,9 +1093,9 @@ app.post('/buscar-vuelos', async (req, res) => {
     }
   })();
 
-  const lleegoPromise = buscarLleego({ tipo, origen, destino, salida, regreso, adultos, ninos, infantes, cabinType, stops, tramos });
+  const lleegoPromise = buscarLleego({ tipo, origen, destino, salida, regreso, adultos, ninos, infantes, cabinType, stops, tramos, airlines });
   
-  const sabrePromise = buscarSabre({ tipo, origen, destino, salida, regreso, adultos, ninos, infantes, cabinType, stops, tramos });
+  const sabrePromise = buscarSabre({ tipo, origen, destino, salida, regreso, adultos, ninos, infantes, cabinType, stops, tramos, airlines });
 
   // Esperar todos
   const [glasResult, lleegoVuelos, sabreVuelos] = await Promise.all([glasPromise, lleegoPromise, sabrePromise]);
