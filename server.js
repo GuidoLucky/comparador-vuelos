@@ -3580,9 +3580,11 @@ function generarPDFBuffer(opciones, vendedor, nombreCliente) {
         doc.moveDown(0.3);
       }
 
-      // Clase general (sin brand, ya se muestra en cada vuelo)
-      const cabinaOnly = (op.detalle_vuelo || '').split(' - ')[0].trim() || op.detalle_vuelo;
-      doc.fontSize(8).font(REGULAR).fillColor('#555555').text(cabinaOnly, PAGE_LEFT);
+      // Clase de cabina — solo mostrar Business o Primera (Economy/Premium Eco son poco confiables)
+      const cabinaLabel = (op.detalle_vuelo || '').trim();
+      if (cabinaLabel === 'Business' || cabinaLabel === 'Primera') {
+        doc.fontSize(8).font(REGULAR).fillColor('#555555').text(cabinaLabel, PAGE_LEFT);
+      }
       doc.moveDown(0.8);
 
       // ── PRECIOS ──
@@ -3796,18 +3798,9 @@ app.post('/generar-cotizacion', async (req, res) => {
         const cabinShort = firstSegRef.cabin?.short_name || firstSegRef.cabin?.long_name || '';
         const cabinNameMap = { 'Y': 'Economica', 'W': 'Premium Economy', 'C': 'Business', 'F': 'Primera', 'M': 'Economica' };
         const cabinLabel = cabinNameMap[cabinShort] || cabinShort || 'Economica';
-        // Get brand/family from fare_list
         const famBrand = fareList[0]?.family || '';
-        // LCCs (GOL, Jetsmart, etc.) return W but it's really Economy - use brand as primary label
-        const lccCodes = ['G3','JA','FO','H2','WJ','VB','NK','F9','W4','W6'];
-        const isLCC = lccCodes.includes(validating);
-        let detalleVuelo;
-        if (famBrand) {
-          // Has brand: use brand only (e.g. "LIGHT", "CLASSIC", "Flagship First")
-          detalleVuelo = (isLCC || cabinLabel === 'Economica') ? famBrand : `${cabinLabel} - ${famBrand}`;
-        } else {
-          detalleVuelo = isLCC ? 'Economica' : cabinLabel;
-        }
+        // detalle_vuelo = cabin class (shown only if not Economy in PDF)
+        const detalleVuelo = cabinLabel;
 
         // Get penalties - fetch from policy if not cached
         let geaPenalidades = penaltiesCache.get(op.quotationId) || null;
@@ -3954,15 +3947,8 @@ app.post('/generar-cotizacion', async (req, res) => {
 
       const cabin = cabinMap[trip[0]?.legFlights?.[0]?.cabinType] || 'Economica';
       const brand = trip[0]?.legFlights?.[0]?.brandName || '';
-      const airCode = trip[0]?.legFlights?.[0]?.airlineCode || '';
-      const lccCodes = ['G3','JA','FO','H2','WJ','VB','NK','F9','W4','W6'];
-      const isLCC = lccCodes.includes(airCode);
-      let detalle;
-      if (brand) {
-        detalle = (isLCC || cabin === 'Economica') ? brand : `${cabin} - ${brand}`;
-      } else {
-        detalle = isLCC ? 'Economica' : cabin;
-      }
+      // detalle = cabin class (shown only if not Economy in PDF)
+      const detalle = cabin;
 
       // Penalidades
       const penalties = q.penalties || [];
