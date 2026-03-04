@@ -3473,8 +3473,12 @@ function getDescuento(com) {
 function redondearArriba(p) { return Math.ceil(p / 5) * 5; }
 function redondearAbajo(p)  { return Math.floor(p / 5) * 5; }
 function calcularPrecio(neto, tipoTarifa, comOver) {
+  // PNEG o sin comisión significativa: neto + fee, redondeado arriba
   if (tipoTarifa === 'PNEG' || comOver <= 50) return redondearArriba(neto + getFee(neto));
-  return redondearAbajo(neto - getDescuento(comOver));
+  // PUB con comisión/over: (Tarifa+Impuestos) - descuento, redondeado abajo
+  // neto + comOver ≈ Tarifa + Impuestos (el neto ya descuenta la comisión)
+  const precioPublico = neto + comOver;
+  return redondearAbajo(precioPublico - getDescuento(comOver));
 }
 function etiquetaPrecio(precio, tipo, cantidad, totalPax, multiTipos) {
   if (totalPax === 1) return `USD ${precio.toLocaleString('en')}`;
@@ -3635,6 +3639,7 @@ function generarPDFBuffer(opciones, vendedor, nombreCliente) {
 
       for (const pax of op.pasajeros) {
         const precio = calcularPrecio(pax.neto, pax.tipo_tarifa, pax.comision_over);
+        console.log(`[PDF-Precio] neto=${pax.neto} tipo=${pax.tipo_tarifa} comOver=${pax.comision_over} → precioPublico=${pax.neto + pax.comision_over} → venta=${precio}`);
         const linea = etiquetaPrecio(precio, pax.tipo, pax.cantidad, totalPax, multiTipos);
         doc.fontSize(11).font(BOLD).fillColor(NAVY).text(linea, PAGE_LEFT);
         doc.moveDown(0.3);
@@ -3767,15 +3772,23 @@ app.post('/generar-cotizacion', async (req, res) => {
           for (const fare of fareList) {
             const t = (fare.passenger_type_normalized || fare.passenger_type || 'ADT').toUpperCase();
             const qty = fare.quantity || 1;
-            // fare_list values are per passenger
+            // Extract commission from over_fare
+            const overFare = fare.over_fare || {};
+            const comOver = (overFare.commission_value || 0) + (overFare.over_total_value || overFare.over_value || 0);
+            // fare.total is gross (Tarifa+Impuestos), neto = gross - commission
+            const grossPerPax = fare.total || fare.amount || 0;
+            const netoPerPax = grossPerPax - comOver;
             pasajeros.push({
               tipo: t === 'ADT' ? 'adulto' : t === 'CHD' || t === 'CNN' ? 'menor' : 'bebé',
-              cantidad: qty, neto: fare.total || fare.amount || 0,
-              tipo_tarifa: 'PUB', comision_over: 0
+              cantidad: qty, neto: netoPerPax,
+              tipo_tarifa: fare.public === false ? 'PNEG' : 'PUB', comision_over: comOver
             });
           }
         } else {
-          pasajeros.push({ tipo: 'adulto', cantidad: 1, neto: price.total || 0, tipo_tarifa: 'PUB', comision_over: 0 });
+          const overPrice = price.over_price || {};
+          const fbComOver = overPrice.revenue || 0;
+          const fbNeto = overPrice.amount || (price.total || 0) - fbComOver;
+          pasajeros.push({ tipo: 'adulto', cantidad: 1, neto: fbNeto, tipo_tarifa: 'PUB', comision_over: fbComOver });
         }
         
         // AIRPORT_CITY fallback map (same as Tucano uses)
@@ -3888,7 +3901,7 @@ app.post('/generar-cotizacion', async (req, res) => {
           // Fallback: si no reconocemos el código, inferir por precio
           tipoLabel = neto > 200 ? 'menor' : 'beb\u00e9';
         }
-        console.log(`[Cotizacion] Pasajero: typeCode=${code} passengerType=${paxType} => ${tipoLabel} neto=${neto} cant=${rate.passengerQuantity}`);
+        console.log(`[Cotizacion] Pasajero: typeCode=${code} passengerType=${paxType} => ${tipoLabel} neto=${neto} comOver=${comOver} cant=${rate.passengerQuantity}`);
         return { tipo: tipoLabel, cantidad: rate.passengerQuantity, neto, tipo_tarifa: rate.fareType || 'PUB', comision_over: comOver };
       });
 
