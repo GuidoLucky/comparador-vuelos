@@ -3311,7 +3311,7 @@ async function cronVerificarReservas(manual = false) {
       WHERE ${estadoFilter}
         AND order_id IS NOT NULL 
         ${intervaloFilter}
-        AND (fecha_salida IS NULL OR fecha_salida > NOW() - INTERVAL '2 days')
+        AND (fecha_salida IS NULL OR fecha_salida::timestamptz > NOW() - INTERVAL '2 days')
       ORDER BY ultimo_check_cron ASC NULLS FIRST
       LIMIT ${manual ? 50 : 20}
     `);
@@ -3496,8 +3496,8 @@ async function cronCheckInReminder() {
       WHERE estado = 'EMITIDA' 
         AND checkin_notificado = false
         AND fecha_salida IS NOT NULL
-        AND fecha_salida > NOW()
-        AND fecha_salida <= NOW() + INTERVAL '24 hours'
+        AND fecha_salida::timestamptz > NOW()
+        AND fecha_salida::timestamptz <= NOW() + INTERVAL '24 hours'
     `);
     
     if (!r.rows.length) return;
