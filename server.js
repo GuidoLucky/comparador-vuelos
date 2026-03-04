@@ -677,6 +677,108 @@ const penaltiesCache = new Map(); // key: quotationId → penalidades object
 // Limpiar cache cada 30 min (las soluciones expiran)
 setInterval(() => { if (lleegoSolutionsCache.size > 500) lleegoSolutionsCache.clear(); }, 30*60*1000);
 
+// ═══ Reusable: fetch penalties from Lleego policy endpoint ═══
+async function fetchLleegoPolicy(quotationId) {
+  // Return cached if available
+  const cachedPen = penaltiesCache.get(quotationId);
+  if (cachedPen) return cachedPen;
+
+  const cached = lleegoSolutionsCache.get(quotationId);
+  if (!cached) return null;
+  const sol = cached.sol;
+
+  let penalidades = { cambio_antes: null, cambio_durante: null, devolucion_antes: null, devolucion_durante: null, cambio: null, cancelacion: null };
+  try {
+    const llToken = await getLleegoToken();
+    if (!llToken || !cached.searchToken) return null;
+
+    const _assocs2 = sol.data?.associations || [];
+    const _jCodes = [];
+    for (const _a of _assocs2) {
+      const _jR = (_a.journey_references || [])[0]; if (!_jR) continue;
+      const _j = cached.journeys[_jR]; if (!_j) continue;
+      const _fS = (_j.segments || [])[0];
+      const _s = cached.segments[_fS]; if (!_s) continue;
+      const _dd = _s.departure_date ? _s.departure_date.substring(0,10).replace(/-/g,'') : '';
+      const _lS = (_j.segments || []).slice(-1)[0];
+      const _ls = cached.segments[_lS] || _s;
+      _jCodes.push(`${_s.marketing_company}${_s.transport_number}${_dd}${_s.departure||''}${_ls.arrival||''}`);
+    }
+    const _jp = _jCodes.map((j,i) => `&journey0${i}=${j}`).join('');
+    const policyUrl = `https://api-tr.lleego.com/api/v2/transport/policy?token=${cached.searchToken}&solutionID0=${sol.id}${_jp}&locale=es-ar`;
+    console.log('[Lleego] Policy URL:', policyUrl.substring(0, 200));
+    const policyRes = await fetch(policyUrl, {
+      headers: { 'Authorization': `Bearer ${llToken}`, 'x-api-key': LLEEGO_API_KEY, 'lang': 'es-ar' }
+    });
+    if (!policyRes.ok) {
+      const errTxt = await policyRes.text().catch(()=>'');
+      console.log(`[Lleego] Policy FAILED ${policyRes.status}:`, errTxt.substring(0, 300));
+      return null;
+    }
+    const policyData = await policyRes.json();
+    const penalties = policyData.solutions?.[0]?.penalties || policyData.penalties || [];
+    console.log(`[Lleego] Policy OK: ${penalties.length} penalties found`);
+    if (penalties.length) console.log('[Lleego] First penalty:', JSON.stringify(penalties[0]).substring(0, 300));
+
+    for (const p of penalties) {
+      const sn = (p.short_name || '');
+      const snL = sn.toLowerCase();
+      const msg = (p.message || p.description || '').trim();
+      const msgL = msg.toLowerCase();
+      const tipo = (p.type || '').toLowerCase();
+      const amount = p.amount || 0;
+      const currency = p.currency || 'USD';
+      const isNotAllowed = msgL === 'not allowed' || msgL.includes('non-refundable') || msgL.includes('no refundable') || p.refund === false;
+
+      if (tipo === 'refund') {
+        const isAfter = snL.includes('after departure') || msgL.includes('after departure');
+        const isBefore = snL.includes('before departure') || msgL.includes('before departure') || (snL.includes('refund penalty') && !snL.includes('after'));
+        if (isAfter) penalidades.devolucion_durante = { permite: !isNotAllowed, monto: amount, moneda: currency, detalle: msg };
+        if (isBefore || (!isAfter && !penalidades.devolucion_antes)) penalidades.devolucion_antes = { permite: !isNotAllowed, monto: amount, moneda: currency, detalle: msg };
+      }
+      if (tipo === 'change') {
+        const isAfter = snL.includes('after departure') || msgL.includes('after departure');
+        const isBefore = snL.includes('before departure') || msgL.includes('before departure') || (snL.includes('change') && snL.includes('penalty') && !snL.includes('after'));
+        if (isAfter) penalidades.cambio_durante = { permite: !isNotAllowed, monto: amount, moneda: currency, detalle: msg };
+        if (isBefore || (!isAfter && !penalidades.cambio_antes)) penalidades.cambio_antes = { permite: !isNotAllowed, monto: amount, moneda: currency, detalle: msg };
+      }
+      if (!tipo) {
+        if (snL.includes('cancel') && snL.includes('prior')) penalidades.devolucion_antes = { permite: !isNotAllowed, monto: 0, moneda: 'USD', detalle: msg };
+        if (snL.includes('cancel') && snL.includes('after') && !snL.includes('no show')) penalidades.devolucion_durante = { permite: !isNotAllowed, monto: 0, moneda: 'USD', detalle: msg };
+        if (snL.includes('cancel') && snL.includes('- adt') && !snL.includes('prior') && !snL.includes('after')) {
+          if (!penalidades.devolucion_antes) penalidades.devolucion_antes = { permite: !isNotAllowed, monto: 0, moneda: 'USD', detalle: msg };
+          if (!penalidades.devolucion_durante) penalidades.devolucion_durante = { permite: !isNotAllowed, monto: 0, moneda: 'USD', detalle: msg };
+        }
+        if (snL.includes('change') && snL.includes('- adt')) {
+          if (!penalidades.cambio_antes) penalidades.cambio_antes = { permite: !isNotAllowed, monto: 0, moneda: 'USD', detalle: msg };
+          if (!penalidades.cambio_durante) penalidades.cambio_durante = { permite: !isNotAllowed, monto: 0, moneda: 'USD', detalle: msg };
+        }
+      }
+      if (msg.length > 200 && (msg.includes('CANCELLATIONS') || msg.includes('CHANGES'))) {
+        const changeFeeMatch = msg.match(/CHARGE\s+\$[\d.]+\/USD\s+([\d.]+)\s+FOR\s+REISSUE/i);
+        const changeFee = changeFeeMatch ? parseFloat(changeFeeMatch[1]) : 0;
+        const cancelBefore = msg.match(/CANCELLATIONS[\s\S]*?BEFORE DEPARTURE\s*\n\s*(.*)/i);
+        if (cancelBefore) { const nr = cancelBefore[1].toUpperCase().includes('NON-REFUNDABLE'); penalidades.devolucion_antes = { permite: !nr, monto: 0, moneda: 'USD', detalle: nr ? 'No reembolsable' : cancelBefore[1].trim() }; }
+        const cancelAfter = msg.match(/CANCELLATIONS[\s\S]*?AFTER DEPARTURE\s*\n\s*(.*)/i);
+        if (cancelAfter) { const nr = cancelAfter[1].toUpperCase().includes('NON-REFUNDABLE'); penalidades.devolucion_durante = { permite: !nr, monto: 0, moneda: 'USD', detalle: nr ? 'No reembolsable' : cancelAfter[1].trim() }; }
+        const chgBefore = msg.match(/CHANGES[\s\S]*?BEFORE DEPARTURE\s*\n\s*(.*)/i);
+        if (chgBefore) { const np = chgBefore[1].toUpperCase().includes('NOT PERMITTED'); penalidades.cambio_antes = { permite: !np, monto: changeFee, moneda: 'USD', detalle: np ? 'No permitido' : `USD ${changeFee} por cambio` }; }
+        const chgAfter = msg.match(/CHANGES[\s\S]*?AFTER DEPARTURE[\s\S]*?AFTER DEPARTURE\s*\n\s*(.*)/i) || msg.match(/CHANGES[\s\S]*?AFTER DEPARTURE\s*\n\s*(.*)/i);
+        if (chgAfter) { const np = chgAfter[1].toUpperCase().includes('NOT PERMITTED'); penalidades.cambio_durante = { permite: !np, monto: changeFee, moneda: 'USD', detalle: np ? 'No permitido' : `USD ${changeFee} por cambio` }; }
+      }
+    }
+    if (!penalidades.cancelacion && penalidades.devolucion_antes) penalidades.cancelacion = { ...penalidades.devolucion_antes };
+    if (!penalidades.cambio && penalidades.cambio_antes) penalidades.cambio = { ...penalidades.cambio_antes };
+
+    penaltiesCache.set(quotationId, penalidades);
+    console.log('[Lleego] Parsed penalties for', quotationId, ':', JSON.stringify(penalidades));
+    return penalidades;
+  } catch(e) {
+    console.log('[Lleego] fetchLleegoPolicy error:', e.message);
+    return null;
+  }
+}
+
 async function getLleegoToken() {
   if (lleegoTokenCache.token && Date.now() < lleegoTokenCache.expiry) return lleegoTokenCache.token;
   try {
@@ -3070,144 +3172,9 @@ app.get('/detalle-vuelo', async (req, res) => {
       });
     }
     
-    // Fetch conditions from Lleego policy endpoint
+    // Fetch conditions from Lleego policy endpoint (using shared helper)
     let reglas = [];
-    let penalidades = { cambio_antes: null, cambio_durante: null, devolucion_antes: null, devolucion_durante: null, cambio: null, cancelacion: null };
-    try {
-      const llToken = await getLleegoToken();
-      if (llToken && cached.searchToken) {
-        // Build journey codes from cached segment data
-        const _assocs2 = sol.data?.associations || [];
-        const _jCodes = [];
-        for (const _a of _assocs2) {
-          const _jR = (_a.journey_references || [])[0]; if (!_jR) continue;
-          const _j = cached.journeys[_jR]; if (!_j) continue;
-          const _fS = (_j.segments || [])[0];
-          const _s = cached.segments[_fS]; if (!_s) continue;
-          const _dd = _s.departure_date ? _s.departure_date.substring(0,10).replace(/-/g,'') : '';
-          const _lS = (_j.segments || []).slice(-1)[0];
-          const _ls = cached.segments[_lS] || _s;
-          _jCodes.push(`${_s.marketing_company}${_s.transport_number}${_dd}${_s.departure||''}${_ls.arrival||''}`);
-        }
-        const _jp = _jCodes.map((j,i) => `&journey0${i}=${j}`).join('');
-        const policyUrl = `https://api-tr.lleego.com/api/v2/transport/policy?token=${cached.searchToken}&solutionID0=${sol.id}${_jp}&locale=es-ar`;
-        console.log('[Lleego] Policy URL:', policyUrl);
-        const policyRes = await fetch(policyUrl, {
-          headers: { 'Authorization': `Bearer ${llToken}`, 'x-api-key': LLEEGO_API_KEY, 'lang': 'es-ar' }
-        });
-        if (policyRes.ok) {
-          const policyData = await policyRes.json();
-          console.log('[Lleego] Policy response:', JSON.stringify(policyData).substring(0, 1500));
-          
-          // ═══ UNIVERSAL PENALTY PARSER ═══
-          // Handles 3 formats: Sabre (type field), NDC Iberia (long messages), NDC Latam/AA (short_name patterns)
-          const penalties = policyData.solutions?.[0]?.penalties || policyData.penalties || [];
-          
-          for (const p of penalties) {
-            const sn = (p.short_name || '');
-            const snL = sn.toLowerCase();
-            const msg = (p.message || p.description || '').trim();
-            const msgL = msg.toLowerCase();
-            const tipo = (p.type || '').toLowerCase(); // 'refund', 'change', or empty
-            const amount = p.amount || 0;
-            const currency = p.currency || 'USD';
-            const isNotAllowed = msgL === 'not allowed' || msgL.includes('non-refundable') || msgL.includes('no refundable') || p.refund === false;
-            
-            // ─── FORMAT A: Has explicit type field (Sabre GEA, Latam NDC) ───
-            if (tipo === 'refund') {
-              const isAfter = snL.includes('after departure') || msgL.includes('after departure');
-              const isBefore = snL.includes('before departure') || msgL.includes('before departure') || (snL.includes('refund penalty') && !snL.includes('after'));
-              if (isAfter) {
-                penalidades.devolucion_durante = { permite: !isNotAllowed, monto: amount, moneda: currency, detalle: msg };
-              }
-              if (isBefore || (!isAfter && !penalidades.devolucion_antes)) {
-                penalidades.devolucion_antes = { permite: !isNotAllowed, monto: amount, moneda: currency, detalle: msg };
-              }
-            }
-            if (tipo === 'change') {
-              const isAfter = snL.includes('after departure') || msgL.includes('after departure');
-              const isBefore = snL.includes('before departure') || msgL.includes('before departure') || (snL.includes('change') && snL.includes('penalty') && !snL.includes('after'));
-              if (isAfter) {
-                penalidades.cambio_durante = { permite: !isNotAllowed, monto: amount, moneda: currency, detalle: msg };
-              }
-              if (isBefore || (!isAfter && !penalidades.cambio_antes)) {
-                penalidades.cambio_antes = { permite: !isNotAllowed, monto: amount, moneda: currency, detalle: msg };
-              }
-            }
-            
-            // ─── FORMAT B: No type field, short_name patterns (NDC Iberia, NDC American) ───
-            if (!tipo) {
-              // "Cancel Prior to departure" / "Cancel After departure" / "Cancel No show"
-              if (snL.includes('cancel') && snL.includes('prior')) {
-                penalidades.devolucion_antes = { permite: !isNotAllowed, monto: 0, moneda: 'USD', detalle: msg };
-              }
-              if (snL.includes('cancel') && snL.includes('after') && !snL.includes('no show')) {
-                penalidades.devolucion_durante = { permite: !isNotAllowed, monto: 0, moneda: 'USD', detalle: msg };
-              }
-              // "... Cancel - ADT" (American NDC, Iberia NDC per-segment)
-              if (snL.includes('cancel') && snL.includes('- adt') && !snL.includes('prior') && !snL.includes('after')) {
-                if (!penalidades.devolucion_antes) penalidades.devolucion_antes = { permite: !isNotAllowed, monto: 0, moneda: 'USD', detalle: msg };
-                if (!penalidades.devolucion_durante) penalidades.devolucion_durante = { permite: !isNotAllowed, monto: 0, moneda: 'USD', detalle: msg };
-              }
-              // "... Change - ADT"
-              if (snL.includes('change') && snL.includes('- adt')) {
-                if (!penalidades.cambio_antes) penalidades.cambio_antes = { permite: !isNotAllowed, monto: 0, moneda: 'USD', detalle: msg };
-                if (!penalidades.cambio_durante) penalidades.cambio_durante = { permite: !isNotAllowed, monto: 0, moneda: 'USD', detalle: msg };
-              }
-            }
-            
-            // ─── FORMAT C: Long detailed message with CANCELLATIONS/CHANGES sections (Iberia NDC) ───
-            if (msg.length > 200 && (msg.includes('CANCELLATIONS') || msg.includes('CHANGES'))) {
-              // Extract change fee: "CHARGE $212.67/USD 190.00 FOR REISSUE"
-              const changeFeeMatch = msg.match(/CHARGE\s+\$[\d.]+\/USD\s+([\d.]+)\s+FOR\s+REISSUE/i);
-              const changeFee = changeFeeMatch ? parseFloat(changeFeeMatch[1]) : 0;
-              
-              // Cancellation before departure
-              const cancelBefore = msg.match(/CANCELLATIONS[\s\S]*?BEFORE DEPARTURE\s*\n\s*(.*)/i);
-              if (cancelBefore) {
-                const isNonRefund = cancelBefore[1].toUpperCase().includes('NON-REFUNDABLE');
-                penalidades.devolucion_antes = { permite: !isNonRefund, monto: 0, moneda: 'USD', detalle: isNonRefund ? 'No reembolsable' : cancelBefore[1].trim() };
-              }
-              // Cancellation after departure
-              const cancelAfter = msg.match(/CANCELLATIONS[\s\S]*?AFTER DEPARTURE\s*\n\s*(.*)/i);
-              if (cancelAfter) {
-                const isNonRefund = cancelAfter[1].toUpperCase().includes('NON-REFUNDABLE');
-                penalidades.devolucion_durante = { permite: !isNonRefund, monto: 0, moneda: 'USD', detalle: isNonRefund ? 'No reembolsable' : cancelAfter[1].trim() };
-              }
-              // Changes before departure
-              const chgBefore = msg.match(/CHANGES[\s\S]*?BEFORE DEPARTURE\s*\n\s*(.*)/i);
-              if (chgBefore) {
-                const notPermitted = chgBefore[1].toUpperCase().includes('NOT PERMITTED');
-                penalidades.cambio_antes = { permite: !notPermitted, monto: changeFee, moneda: 'USD', detalle: notPermitted ? 'No permitido' : `USD ${changeFee} por cambio` };
-              }
-              // Changes after departure
-              const chgAfter = msg.match(/CHANGES[\s\S]*?AFTER DEPARTURE[\s\S]*?AFTER DEPARTURE\s*\n\s*(.*)/i) ||
-                               msg.match(/CHANGES[\s\S]*?AFTER DEPARTURE\s*\n\s*(.*)/i);
-              if (chgAfter) {
-                const notPermitted = chgAfter[1].toUpperCase().includes('NOT PERMITTED');
-                penalidades.cambio_durante = { permite: !notPermitted, monto: changeFee, moneda: 'USD', detalle: notPermitted ? 'No permitido' : `USD ${changeFee} por cambio` };
-              }
-              
-              reglas.push({ type: 'F', text: msg.substring(0, 500) });
-            }
-          }
-          
-          // Set summary fields
-          if (!penalidades.cancelacion && penalidades.devolucion_antes) penalidades.cancelacion = { ...penalidades.devolucion_antes };
-          if (!penalidades.cambio && penalidades.cambio_antes) penalidades.cambio = { ...penalidades.cambio_antes };
-          
-          console.log('[Lleego] Parsed penalties:', JSON.stringify(penalidades));
-        } else {
-          const errTxt = await policyRes.text().catch(()=>'');
-          console.log(`[Lleego] Policy FAILED ${policyRes.status}:`, errTxt.substring(0, 300));
-        }
-      }
-    } catch(e) {
-      console.log('[Lleego] Policy/penalties error (non-fatal):', e.message);
-    }
-    
-    // Cache GEA penalties
-    if (penalidades && quotationId) penaltiesCache.set(quotationId, penalidades);
+    let penalidades = await fetchLleegoPolicy(quotationId) || { cambio_antes: null, cambio_durante: null, devolucion_antes: null, devolucion_durante: null, cambio: null, cancelacion: null };
 
     return res.json({
       ok: true,
@@ -3726,10 +3693,16 @@ app.post('/generar-cotizacion', async (req, res) => {
         const famBrand = fareList[0]?.family || '';
         const detalleVuelo = famBrand ? `${cabinLabel} - ${famBrand}` : cabinLabel;
 
+        // Get penalties - fetch from policy if not cached
+        let geaPenalidades = penaltiesCache.get(op.quotationId) || null;
+        if (!geaPenalidades) {
+          try { geaPenalidades = await fetchLleegoPolicy(op.quotationId); } catch(e) { console.log('[Cotizacion] GEA policy fetch error:', e.message); }
+        }
+
         return { 
           aerolinea: airlineName, vuelos, 
           detalle_vuelo: detalleVuelo, 
-          pasajeros, penalidades: penaltiesCache.get(op.quotationId) || null, 
+          pasajeros, penalidades: geaPenalidades, 
           equipaje: op.equipaje || null 
         };
       }
