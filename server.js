@@ -1751,8 +1751,11 @@ app.post('/crear-reserva', async (req, res) => {
       const bookingId = bookData.booking?.id || bookData.id || '';
       const orderId = bookingId || lineId || sol.id;
       
-      console.log('[Lleego] Booking OK! PNR:', pnr, 'LineId:', lineId, 'BookingId:', bookingId, 'orderId:', orderId);
-      console.log('[Lleego] Full booking response keys:', JSON.stringify(bookData).substring(0, 1000));
+      // Extract time_limit from booking response
+      const llTimeLimit = bookData.booking?.lines?.[0]?.travel?.last_ticket_date || 
+                          bookData.booking?.lines?.[0]?.travel?.price?.fares?.[0]?.last_ticket_date || null;
+      
+      console.log('[Lleego] Booking OK! PNR:', pnr, 'BookingId:', bookingId, 'LineId:', lineId, 'orderId:', orderId, 'timeLimit:', llTimeLimit);
       
       // Guardar en DB
       if (db) {
@@ -1772,7 +1775,7 @@ app.post('/crear-reserva', async (req, res) => {
           }
           
           // Extract extra data for tracking
-          const timeLimit = sol.time_limits?.last_ticket_date || null;
+          const timeLimit = sol.time_limits?.last_ticket_date || llTimeLimit || null;
           const cabina = cached.segments ? Object.values(cached.segments).find(s=>s.cabin)?.cabin?.short_name || '' : '';
           const fareBasis = (() => {
             const fl = sol.data?.fare_list?.[0];
@@ -1800,7 +1803,7 @@ app.post('/crear-reserva', async (req, res) => {
              JSON.stringify(vueloInfo?.itinerario),
              JSON.stringify(pasajeros),
              JSON.stringify(contacto),
-             'Reserva GEA/Lleego',
+             'Reserva GEA/Lleego' + (lineId ? ` | lineId:${lineId}` : ''),
              req.user?.userId || null,
              req.user?.nombre || null,
              cabina, fareBasis, timeLimit, gdsLabel,
@@ -2127,21 +2130,25 @@ app.post('/reservas/:id/verificar', async (req, res) => {
         let data;
         try { data = JSON.parse(text); } catch(e) { return res.json({ ok: false, error: 'Respuesta no-JSON' }); }
         
-        // Extract status from Lleego response
+        // Extract status from Lleego retrieve response
         const booking = data.booking || data;
         const lines = booking.lines || [];
-        const line = lines[0] || booking;
-        const llStatus = (line.status || booking.status || '').toUpperCase();
-        const pnrFromAPI = line.locator || booking.locator || reserva.pnr;
-        const timeLimitStr = line.time_limit || booking.time_limit || null;
+        const line = lines[0] || {};
+        const bookRef = line.booking_reference || {};
+        const llStatus = (bookRef.status || line.status || booking.status || '').toUpperCase();
+        const pnrFromAPI = bookRef.locator || line.locator || booking.locator || reserva.pnr;
+        const timeLimitStr = line.travel?.last_ticket_date || 
+                             line.travel?.price?.fares?.[0]?.last_ticket_date || 
+                             line.time_limit || null;
         
         console.log(`[Verificar GEA] status=${llStatus}, pnr=${pnrFromAPI}, timeLimit=${timeLimitStr}`);
         
         // Map Lleego status to our states
+        // RSVD=reserved/created, TKT=ticketed/emitted, XXX=cancelled, VOID=voided
         let apiEstado = reserva.estado;
-        if (llStatus.includes('EMIT') || llStatus.includes('TICKET')) apiEstado = 'EMITIDA';
-        else if (llStatus.includes('CANCEL') || llStatus.includes('VOID')) apiEstado = 'CANCELADA';
-        else if (llStatus.includes('CONFIRM') || llStatus.includes('BOOK') || llStatus.includes('PEND')) apiEstado = 'CREADA';
+        if (llStatus.includes('TKT') || llStatus.includes('EMIT') || llStatus.includes('TICKET')) apiEstado = 'EMITIDA';
+        else if (llStatus.includes('XXX') || llStatus.includes('CANCEL') || llStatus.includes('VOID')) apiEstado = 'CANCELADA';
+        else if (llStatus.includes('RSVD') || llStatus.includes('CONFIRM') || llStatus.includes('BOOK') || llStatus.includes('PEND')) apiEstado = 'CREADA';
         
         let estadoActualizado = false;
         if (reserva.estado !== apiEstado) {
