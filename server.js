@@ -2101,7 +2101,7 @@ app.post('/reservas/:id/verificar', async (req, res) => {
         if (!llToken) return res.json({ ok: false, error: 'No se pudo autenticar con Lleego' });
         
         // Fetch booking status from Lleego
-        const statusUrl = `https://api-tr.lleego.com/api/v2/transport/${reserva.order_id}?locale=es-ar`;
+        const statusUrl = `https://api-tr.lleego.com/api/v2/transport/retrieve/${reserva.order_id}?locale=es-ar`;
         console.log('[Verificar GEA] URL:', statusUrl);
         const resp = await fetch(statusUrl, {
           headers: { 'Authorization': `Bearer ${llToken}`, 'x-api-key': LLEEGO_API_KEY, 'lang': 'es-ar' }
