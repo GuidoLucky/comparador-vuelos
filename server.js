@@ -2158,7 +2158,11 @@ app.post('/reservas/:id/verificar', async (req, res) => {
         console.log(`[Verificar GEA] HTTP ${resp.status}:`, text.substring(0, 500));
         
         if (!resp.ok) {
-          return res.json({ ok: false, error: `Lleego respondió ${resp.status}: ${text.substring(0, 200)}` });
+          const code = resp.status;
+          if (code === 403 || code === 404) {
+            return res.json({ ok: false, error: `No se puede verificar esta reserva GEA (error ${code}). Puede ser una reserva antigua con ID incorrecto. Verificala directamente en app.lleego.com` });
+          }
+          return res.json({ ok: false, error: `Lleego respondió ${code}: ${text.substring(0, 200)}` });
         }
         
         let data;
@@ -2286,7 +2290,7 @@ app.post('/reservas/:id/verificar', async (req, res) => {
       ruta: `${f.departureAirportCode} → ${f.arrivalAirportCode}`,
       status: f.status
     }));
-    const vuelosCancelados = vuelos.filter(v => v.status === 'XX' || v.status === 'UC' || v.status === 'UN');
+    const vuelosCancelados = vuelos.filter(v => ['XX','UC','UN','HX','NO'].includes(v.status));
 
     // Pasajeros con tickets
     const pasajeros = (data.passengersInformation || []).map(p => ({
@@ -2308,8 +2312,11 @@ app.post('/reservas/:id/verificar', async (req, res) => {
       apiEstado = 'CANCELADA';
     } else if (vuelos.some(v => v.status === 'OK' || v.status === 'HK')) {
       apiEstado = 'CREADA';
+    } else if (vuelosCancelados.length > 0) {
+      // Hay tramos cancelados y ninguno activo → cancelada
+      apiEstado = 'CANCELADA';
     } else {
-      apiEstado = 'CREADA';
+      apiEstado = reserva.estado; // mantener estado actual si no hay info clara
     }
     console.log(`[Verificar] Estado: ${apiEstado} (orderState=${orderState}, emitidos=${ticketsEmitidos.length}, void=${ticketsVoid.length})`);
 
