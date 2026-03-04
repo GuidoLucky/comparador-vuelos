@@ -1621,7 +1621,9 @@ async function ejecutarRecotizarRes() {
           (t.fee ? '<div class="tr"><span>Fee</span><span>' + t.monedaFee + ' ' + t.fee.toFixed(2) + '</span></div>' : '') +
           (comMonto ? '<div class="tr" style="color:#2ecc71"><span>Comisión</span><span>-' + t.monedaTotal + ' ' + comMonto.toFixed(2) + '</span></div>' : '') +
           (overMonto ? '<div class="tr" style="color:#2ecc71"><span>Over</span><span>-' + t.monedaTotal + ' ' + overMonto.toFixed(2) + '</span></div>' : '') +
-          '<div class="tr total"><span>NETO' + (qty > 1 ? ' (×' + qty + ')' : '') + '</span><span>' + t.monedaTotal + ' ' + netoTotal.toFixed(2) + '</span></div></div>';
+          '<div class="tr total"><span>NETO por pax</span><span>' + t.monedaTotal + ' ' + netoUnit.toFixed(2) + '</span></div>' +
+          (qty > 1 ? '<div class="tr total" style="border-top:1px dashed #444;margin-top:4px;padding-top:4px"><span>NETO ×' + qty + '</span><span>' + t.monedaTotal + ' ' + netoTotal.toFixed(2) + '</span></div>' : '') +
+          '</div>';
       });
       const mon = data.tarifas[0]?.monedaTotal || 'USD';
       html += '<div class="tarifa-card-d" style="border-color:var(--gold)"><div class="tr total"><span>TOTAL NETO</span><span style="color:var(--gold)">' + mon + ' ' + grandNeto.toFixed(2) + '</span></div></div>';
