@@ -241,6 +241,14 @@ if (db) {
       await db.query(`ALTER TABLE reservas ADD COLUMN IF NOT EXISTS emision_data JSONB`);
       await db.query(`ALTER TABLE reservas ADD COLUMN IF NOT EXISTS penalidades_json JSONB`);
       await db.query(`ALTER TABLE reservas ADD COLUMN IF NOT EXISTS usuario_id INTEGER`);
+      await db.query(`ALTER TABLE reservas ADD COLUMN IF NOT EXISTS cabina TEXT`);
+      await db.query(`ALTER TABLE reservas ADD COLUMN IF NOT EXISTS fare_basis TEXT`);
+      await db.query(`ALTER TABLE reservas ADD COLUMN IF NOT EXISTS time_limit TIMESTAMPTZ`);
+      await db.query(`ALTER TABLE reservas ADD COLUMN IF NOT EXISTS ticket_numbers TEXT[]`);
+      await db.query(`ALTER TABLE reservas ADD COLUMN IF NOT EXISTS segmentos_json JSONB`);
+      await db.query(`ALTER TABLE reservas ADD COLUMN IF NOT EXISTS fecha_emision TIMESTAMPTZ`);
+      await db.query(`ALTER TABLE reservas ADD COLUMN IF NOT EXISTS gds TEXT`);
+      await db.query(`ALTER TABLE reservas ADD COLUMN IF NOT EXISTS moneda_original TEXT`);
       
       // Tabla de usuarios
       await db.query(`CREATE TABLE IF NOT EXISTS usuarios (
@@ -1341,8 +1349,9 @@ app.post('/crear-reserva', async (req, res) => {
           await db.query(`INSERT INTO reservas (
             pnr,order_id,quotation_id,tipo_viaje,origen,destino,fecha_salida,
             aerolinea,precio_usd,moneda,adultos,ninos,infantes,estado,
-            itinerario_json,pasajeros_json,contacto_json,notas,usuario_id,vendedor)
-            VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20)`,
+            itinerario_json,pasajeros_json,contacto_json,notas,usuario_id,vendedor,
+            cabina,gds,segmentos_json,moneda_original)
+            VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24)`,
             [pnr, pnr, String(quotationId),
              vueloInfo?.tipo, vueloInfo?.origen, vueloInfo?.destino, vueloInfo?.salida,
              vueloInfo?.aerolinea, vueloInfo?.precioUSD, 'USD',
@@ -1355,7 +1364,10 @@ app.post('/crear-reserva', async (req, res) => {
              JSON.stringify(contacto),
              'Reserva Sabre Directo',
              req.user?.userId || null,
-             req.user?.nombre || null]);
+             req.user?.nombre || null,
+             vueloInfo?.cabina || '', 'Sabre',
+             JSON.stringify(vueloInfo?.itinerario?.flatMap(l=>l.segmentos||[])||[]),
+             'USD']);
           console.log('[DB] Reserva Sabre guardada, PNR:', pnr);
         } catch(dbErr) { console.error('[DB] Error:', dbErr.message); }
       }
@@ -1598,11 +1610,25 @@ app.post('/crear-reserva', async (req, res) => {
             }
           }
           
+          // Extract extra data for tracking
+          const timeLimit = sol.time_limits?.last_ticket_date || null;
+          const cabina = cached.segments ? Object.values(cached.segments).find(s=>s.cabin)?.cabin?.short_name || '' : '';
+          const fareBasis = (() => {
+            const fl = sol.data?.fare_list?.[0];
+            return fl?.farebasis?.[0] || '';
+          })();
+          const gdsLabel = (sol.providers || []).map(p => {
+            const prov = cached.providers?.[p.id];
+            return prov?.category === 'NDC' ? `${prov.name||p.id} NDC` : (prov?.name || p.id);
+          }).join('/');
+          const segmentosDetail = vueloInfo?.itinerario?.flatMap(leg => leg.segmentos || []) || [];
+
           await db.query(`INSERT INTO reservas (
             pnr,order_id,quotation_id,tipo_viaje,origen,destino,fecha_salida,
             aerolinea,precio_usd,moneda,adultos,ninos,infantes,estado,
-            itinerario_json,pasajeros_json,contacto_json,notas,usuario_id,vendedor)
-            VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20)`,
+            itinerario_json,pasajeros_json,contacto_json,notas,usuario_id,vendedor,
+            cabina,fare_basis,time_limit,gds,segmentos_json,moneda_original)
+            VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26)`,
             [pnr, orderId, String(quotationId),
              vueloInfo?.tipo, vueloInfo?.origen, vueloInfo?.destino, vueloInfo?.salida,
              vueloInfo?.aerolinea, vueloInfo?.precioUSD, 'USD',
@@ -1615,7 +1641,10 @@ app.post('/crear-reserva', async (req, res) => {
              JSON.stringify(contacto),
              'Reserva GEA/Lleego',
              req.user?.userId || null,
-             req.user?.nombre || null]);
+             req.user?.nombre || null,
+             cabina, fareBasis, timeLimit, gdsLabel,
+             JSON.stringify(segmentosDetail),
+             vueloInfo?.monedaBase || 'USD']);
           console.log('[DB] Reserva GEA guardada, PNR:', pnr);
           // Save cached penalties if available
           const cachedPenGEA = penaltiesCache.get(quotationId);
@@ -1759,8 +1788,9 @@ app.post('/crear-reserva', async (req, res) => {
           pnr,order_id,order_number,source,search_id,quotation_id,
           tipo_viaje,origen,destino,fecha_salida,
           aerolinea,precio_usd,moneda,adultos,ninos,infantes,estado,
-          itinerario_json,pasajeros_json,contacto_json,usuario_id,vendedor)
-          VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22)
+          itinerario_json,pasajeros_json,contacto_json,usuario_id,vendedor,
+          cabina,gds,segmentos_json,moneda_original)
+          VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26)
           RETURNING id`,
           [data.recordLocator, data.orderId, data.orderNumber, data.source,
            searchId, String(quotationId),
@@ -1774,7 +1804,10 @@ app.post('/crear-reserva', async (req, res) => {
            JSON.stringify(pasajeros),
            JSON.stringify(contacto),
            req.user?.userId || null,
-           req.user?.nombre || null]);
+           req.user?.nombre || null,
+           vueloInfo?.cabina || '', vueloInfo?.gds || 'Tucano',
+           JSON.stringify(vueloInfo?.itinerario?.flatMap(l=>l.segmentos||[])||[]),
+           vueloInfo?.moneda || 'USD']);
 
         for (const p of pasajeros) {
           if (p._clienteId) {
@@ -2017,7 +2050,13 @@ app.post('/reservas/:id/verificar', async (req, res) => {
         emitidoEn: new Date().toISOString(),
         orderState
       };
-      await db.query('UPDATE reservas SET emision_data=$1 WHERE id=$2', [JSON.stringify(emisionData), req.params.id]);
+      const ticketNums = ticketsEmitidos.map(t => `${t.carrier}-${t.numero}`).filter(Boolean);
+      await db.query(`UPDATE reservas SET emision_data=$1, ticket_numbers=$2, fecha_emision=NOW() WHERE id=$3`, 
+        [JSON.stringify(emisionData), ticketNums, req.params.id]);
+    }
+    // Always update time_limit if available
+    if (timeLimit && !reserva.time_limit) {
+      try { await db.query('UPDATE reservas SET time_limit=$1 WHERE id=$2', [timeLimit, req.params.id]); } catch(e) {}
     }
 
     res.json({
@@ -2378,7 +2417,7 @@ app.post('/reservas/:id/emitir', async (req, res) => {
         console.log(`[Sabre] Ticketing response ${ticketRes.status}:`, ticketText.substring(0, 1000));
         
         if (ticketRes.ok) {
-          await db.query("UPDATE reservas SET estado='EMITIDA' WHERE id=$1", [reserva.id]);
+          await db.query("UPDATE reservas SET estado='EMITIDA', fecha_emision=NOW() WHERE id=$1", [reserva.id]);
           return res.json({ ok: true, emitida: true, pnr: reserva.pnr, fuente: 'Sabre' });
         } else {
           let errMsg = `Error ${ticketRes.status}`;
@@ -2416,7 +2455,7 @@ app.post('/reservas/:id/emitir', async (req, res) => {
         console.log(`[Lleego] Emit response ${emitRes.status}:`, emitText.substring(0, 1000));
         
         if (emitRes.ok) {
-          await db.query("UPDATE reservas SET estado='EMITIDA' WHERE id=$1", [reserva.id]);
+          await db.query("UPDATE reservas SET estado='EMITIDA', fecha_emision=NOW() WHERE id=$1", [reserva.id]);
           return res.json({ ok: true, emitida: true, pnr: reserva.pnr, fuente: 'GEA' });
         } else {
           // Parse error message
