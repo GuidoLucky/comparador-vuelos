@@ -2619,20 +2619,89 @@ app.post('/reservas/:id/guardar-tarifa', async (req, res) => {
     if (!r.rows.length) return res.json({ ok: false, error: 'Reserva no encontrada' });
     const reserva = r.rows[0];
 
-    const { pricingId, segmentIds, overrideVC, netoTotal, moneda, fareNumbersInPNR, passengerRefIds } = req.body;
-    if (!pricingId) return res.json({ ok: false, error: 'Sin PricingId - cotizá primero' });
+    const { segmentIds, overrideVC, netoTotal, moneda, fareNumbersInPNR } = req.body;
 
     const token = await getToken();
     const hdrs = getHeaders(token);
 
-    const savePayload = {
-      OrderId: reserva.order_id,
-      PricingId: pricingId,
-      FaresNumberInPNR: fareNumbersInPNR || ["0"],
-      OverrideVC: overrideVC || null,
-      SegmentsReferenceIds: segmentIds || ["1", "2"]
+    // Step 1: RetrieveReservation for fresh data
+    const rrResp = await fetch(`${API_BASE}/FlightReservation/RetrieveReservation`, {
+      method: 'POST', headers: hdrs,
+      body: JSON.stringify({ OrderId: reserva.order_id })
+    });
+    if (!rrResp.ok) return res.json({ ok: false, error: 'No se pudo cargar la reserva' });
+    const rrData = JSON.parse(await rrResp.text());
+
+    const flights = rrData.flightsInformation || [];
+    const passengers = rrData.passengersInformation || [];
+
+    // Step 2: Fresh RetrievePricing to get a valid PricingId
+    const segments = flights.map((f, i) => ({
+      ReferenceId: String(i + 1),
+      NumberInPNR: f.numberInPNR || null,
+      MarketingCarrier: f.marketingAirlineCode || f.airlineCode,
+      OperatingCarrier: f.operatingAirlineCode || f.airlineCode,
+      Departure: f.departureAirportCode,
+      Arrival: f.arrivalAirportCode,
+      DepartureDate: f.departureDate,
+      ArrivalDate: f.arrivalDate,
+      FlightNumber: (f.flightNumber || '').replace(/^[A-Z]{2}\s*/, ''),
+      BookingClass: f.bookingClass || '',
+      BrandId: '',
+      Grp: null
+    }));
+    const typeMap = { 0: 'ADT', 1: 'CNN', 2: 'INF' };
+    const paxWithType = passengers.filter(p => (typeMap[p.type] || p.typeCode) !== 'INF').map(p => ({
+      ReferenceId: p.referenceId || p.reference,
+      Type: typeMap[p.type] || p.typeCode || 'ADT',
+      DiscountType: typeMap[p.type] || p.typeCode || 'ADT'
+    }));
+    const paxRefIds = paxWithType.map(p => p.ReferenceId);
+    const segRefIds = segments.map(s => s.ReferenceId);
+
+    const pricingPayload = {
+      OrderId: reserva.order_id, OrderRecord: null, Source: 0, StrategyType: 0,
+      FareType: 0, Currency: moneda || 'USD', Nationality: null,
+      OverrideValidatingCarrier: overrideVC || null, Office: null, ACCodes: null,
+      CorporateCodeGlas: null, ExcemptTaxes: '', AdditionalData: {},
+      PassengerReferenceIds: paxRefIds, PassengersWithType: paxWithType,
+      SegmentReferenceIds: segRefIds, Segments: segments
     };
 
+    console.log('[SavePricing] Step 1: Fresh RetrievePricing...');
+    let prResp, prText, freshPricingId = null, freshFareNumbers = null;
+    for (const ep of [
+      `${API_BASE}/FlightReservationPricing/RetrievePricing`,
+      `${API_BASE}/FlightReservationPricing/RetrievePricingByText`
+    ]) {
+      prResp = await fetch(ep, { method: 'POST', headers: hdrs, body: JSON.stringify(pricingPayload) });
+      prText = await prResp.text();
+      console.log(`[SavePricing] Pricing ${ep.split('/').pop()} HTTP ${prResp.status}`);
+      if (prResp.ok && prText.length > 5) {
+        const prData = JSON.parse(prText);
+        freshPricingId = prData.pricingId || prData.PricingId;
+        const freshFares = prData.storedFares || prData.fares || [];
+        if (freshFares.length && freshFares[0].numberInPNR != null) {
+          freshFareNumbers = [...new Set(freshFares.map(f => String(f.numberInPNR)))];
+        }
+        break;
+      }
+    }
+
+    if (!freshPricingId) {
+      return res.json({ ok: false, error: 'No se pudo obtener tarifa fresca. La reserva puede estar expirada en la aerolínea.' });
+    }
+
+    // Step 3: SavePricing immediately with fresh PricingId
+    const savePayload = {
+      OrderId: reserva.order_id,
+      PricingId: freshPricingId,
+      FaresNumberInPNR: freshFareNumbers || fareNumbersInPNR || ["1"],
+      OverrideVC: overrideVC || null,
+      SegmentsReferenceIds: segRefIds
+    };
+
+    console.log('[SavePricing] Step 2: SavePricing with fresh ID:', freshPricingId);
     console.log('[SavePricing] Payload:', JSON.stringify(savePayload));
 
     const resp = await fetch(`${API_BASE}/FlightReservationPricing/SavePricing`, {
@@ -2649,22 +2718,19 @@ app.post('/reservas/:id/guardar-tarifa', async (req, res) => {
     let saveData;
     try { saveData = JSON.parse(text); } catch(e) { saveData = {}; }
     
-    // Check if Tucano actually saved - empty arrays means it didn't
     const savedSegs = saveData.segmentReferenceIds || [];
     const savedPax = saveData.passengerReferenceIds || [];
     const actuallyWorked = savedSegs.length > 0 || savedPax.length > 0;
     console.log(`[SavePricing] Saved segments: ${savedSegs.length}, passengers: ${savedPax.length}, success: ${actuallyWorked}`);
 
-    // Actualizar precio en DB local
     if (netoTotal) {
       await db.query('UPDATE reservas SET precio_usd=$1, precio_venta_usd=$2, updated_at=NOW() WHERE id=$3', [netoTotal, netoTotal, req.params.id]);
-      console.log('[SavePricing] DB actualizada con neto:', netoTotal);
     }
 
     if (actuallyWorked) {
-      res.json({ ok: true, mensaje: 'Tarifa guardada exitosamente en Tucano y en sistema. Precio actualizado.' });
+      res.json({ ok: true, mensaje: 'Tarifa guardada en Tucano y en sistema.' });
     } else {
-      res.json({ ok: true, mensaje: 'Precio actualizado en sistema, pero Tucano no confirmó el guardado (puede que la tarifa haya expirado en la aerolínea). Verificá en SCIWeb.', warning: true });
+      res.json({ ok: true, mensaje: 'Precio actualizado en sistema, pero Tucano no confirmó el guardado. Verificá en SCIWeb.', warning: true });
     }
   } catch(e) {
     console.error('[SavePricing] Error:', e.message);
