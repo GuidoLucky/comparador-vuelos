@@ -2092,6 +2092,73 @@ app.post('/reservas/:id/verificar', async (req, res) => {
 
     if (!reserva.order_id) return res.json({ ok: false, error: 'Sin orderId guardado' });
 
+    // ─── GEA/Lleego reservations ───
+    const isGEA = (reserva.gds && (reserva.gds.includes('NDC') || reserva.gds.includes('Lleego') || reserva.gds.includes('GEA'))) || 
+                  (reserva.notas && reserva.notas.includes('GEA'));
+    if (isGEA) {
+      try {
+        const llToken = await getLleegoToken();
+        if (!llToken) return res.json({ ok: false, error: 'No se pudo autenticar con Lleego' });
+        
+        // Fetch booking status from Lleego
+        const statusUrl = `https://api-tr.lleego.com/api/v2/transport/${reserva.order_id}?locale=es-ar`;
+        console.log('[Verificar GEA] URL:', statusUrl);
+        const resp = await fetch(statusUrl, {
+          headers: { 'Authorization': `Bearer ${llToken}`, 'x-api-key': LLEEGO_API_KEY, 'lang': 'es-ar' }
+        });
+        const text = await resp.text();
+        console.log(`[Verificar GEA] HTTP ${resp.status}:`, text.substring(0, 500));
+        
+        if (!resp.ok) {
+          return res.json({ ok: false, error: `Lleego respondió ${resp.status}: ${text.substring(0, 200)}` });
+        }
+        
+        let data;
+        try { data = JSON.parse(text); } catch(e) { return res.json({ ok: false, error: 'Respuesta no-JSON' }); }
+        
+        // Extract status from Lleego response
+        const booking = data.booking || data;
+        const lines = booking.lines || [];
+        const line = lines[0] || booking;
+        const llStatus = (line.status || booking.status || '').toUpperCase();
+        const pnrFromAPI = line.locator || booking.locator || reserva.pnr;
+        const timeLimitStr = line.time_limit || booking.time_limit || null;
+        
+        console.log(`[Verificar GEA] status=${llStatus}, pnr=${pnrFromAPI}, timeLimit=${timeLimitStr}`);
+        
+        // Map Lleego status to our states
+        let apiEstado = reserva.estado;
+        if (llStatus.includes('EMIT') || llStatus.includes('TICKET')) apiEstado = 'EMITIDA';
+        else if (llStatus.includes('CANCEL') || llStatus.includes('VOID')) apiEstado = 'CANCELADA';
+        else if (llStatus.includes('CONFIRM') || llStatus.includes('BOOK') || llStatus.includes('PEND')) apiEstado = 'CREADA';
+        
+        let estadoActualizado = false;
+        if (reserva.estado !== apiEstado) {
+          await db.query('UPDATE reservas SET estado=$1, updated_at=NOW() WHERE id=$2', [apiEstado, req.params.id]);
+          estadoActualizado = true;
+        }
+        // Update time_limit if available
+        if (timeLimitStr) {
+          try { await db.query('UPDATE reservas SET time_limit=$1 WHERE id=$2', [timeLimitStr, req.params.id]); } catch(e) {}
+        }
+        
+        return res.json({
+          ok: true,
+          estadoAPI: apiEstado,
+          estadoAnterior: reserva.estado,
+          estadoActualizado,
+          pnr: pnrFromAPI,
+          timeLimit: timeLimitStr,
+          fuente: 'GEA',
+          mensaje: `Estado GEA: ${llStatus}${timeLimitStr ? ' | Límite: ' + timeLimitStr : ''}`
+        });
+      } catch(e) {
+        console.error('[Verificar GEA] Error:', e.message);
+        return res.json({ ok: false, error: 'Error verificando en GEA: ' + e.message });
+      }
+    }
+
+    // ─── Tucano/GLAS reservations ───
     const token = await getToken();
     const hdrs = getHeaders(token);
 
@@ -3887,7 +3954,15 @@ app.post('/generar-cotizacion', async (req, res) => {
 
       const cabin = cabinMap[trip[0]?.legFlights?.[0]?.cabinType] || 'Economica';
       const brand = trip[0]?.legFlights?.[0]?.brandName || '';
-      const detalle = brand ? `${cabin} - ${brand}` : cabin;
+      const airCode = trip[0]?.legFlights?.[0]?.airlineCode || '';
+      const lccCodes = ['G3','JA','FO','H2','WJ','VB','NK','F9','W4','W6'];
+      const isLCC = lccCodes.includes(airCode);
+      let detalle;
+      if (brand) {
+        detalle = (isLCC || cabin === 'Economica') ? brand : `${cabin} - ${brand}`;
+      } else {
+        detalle = isLCC ? 'Economica' : cabin;
+      }
 
       // Penalidades
       const penalties = q.penalties || [];
