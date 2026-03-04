@@ -1699,10 +1699,10 @@ const equipajeMap = {}; // quotationId → equipaje data
 function toggleCotizar(quotationId, searchId, checked) {
   if (checked) {
     if (!vuelosCotizar.find(v => v.quotationId === quotationId)) {
-      // Buscar equipaje del vuelo en todosLosVuelos
+      // Buscar equipaje y cabina del vuelo en todosLosVuelos
       const vuelo = todosLosVuelos.find(v => v.id === quotationId);
       if (vuelo?.equipaje) equipajeMap[quotationId] = vuelo.equipaje;
-      vuelosCotizar.push({ quotationId, searchId });
+      vuelosCotizar.push({ quotationId, searchId, cabina: vuelo?.cabina || '' });
     }
   } else {
     vuelosCotizar = vuelosCotizar.filter(v => v.quotationId !== quotationId);
