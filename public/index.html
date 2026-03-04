@@ -1604,18 +1604,24 @@ async function ejecutarRecotizarRes() {
       let html = '';
       if (data.brand) { html += '<div style="margin-bottom:8px;font-size:11px;color:var(--gold)">✈ Brand: <b>' + data.brand + '</b></div>'; }
       let grandTotal = 0; let grandNeto = 0;
+      // Get passenger counts from reservation
+      const paxCounts = { ADT: reservaActual?.adultos || 1, CHD: reservaActual?.ninos || 0, CNN: reservaActual?.ninos || 0, INF: reservaActual?.infantes || 0, INS: reservaActual?.infantes || 0 };
       data.tarifas.forEach(t => {
-        grandTotal += t.total;
+        const tipoUpper = (t.tipo || 'ADT').toUpperCase();
+        const qty = paxCounts[tipoUpper] || paxCounts['ADT'] || 1;
+        grandTotal += t.total * qty;
         const comMonto = (t.comisionObtenida?.valueApplied||0) + (t.comisionCedida?.valueApplied||0);
         const overMonto = t.overComision?.ceded?.valueApplied || t.overComision?.obtained?.valueApplied || t.overComision?.valueApplied || t.overComision?.amount || 0;
-        const neto = t.total + (t.fee||0) - comMonto - overMonto; grandNeto += neto;
-        html += '<div class="tarifa-card-d"><div class="th">' + t.tipo + ' × 1</div>' +
+        const netoUnit = t.total + (t.fee||0) - comMonto - overMonto;
+        const netoTotal = netoUnit * qty;
+        grandNeto += netoTotal;
+        html += '<div class="tarifa-card-d"><div class="th">' + t.tipo + ' × ' + qty + '</div>' +
           '<div class="tr"><span>Tarifa base</span><span>' + t.monedaBase + ' ' + t.tarifaBase.toFixed(2) + '</span></div>' +
           '<div class="tr"><span>Impuestos</span><span>' + t.monedaImpuestos + ' ' + t.impuestos.toFixed(2) + '</span></div>' +
           (t.fee ? '<div class="tr"><span>Fee</span><span>' + t.monedaFee + ' ' + t.fee.toFixed(2) + '</span></div>' : '') +
           (comMonto ? '<div class="tr" style="color:#2ecc71"><span>Comisión</span><span>-' + t.monedaTotal + ' ' + comMonto.toFixed(2) + '</span></div>' : '') +
           (overMonto ? '<div class="tr" style="color:#2ecc71"><span>Over</span><span>-' + t.monedaTotal + ' ' + overMonto.toFixed(2) + '</span></div>' : '') +
-          '<div class="tr total"><span>NETO</span><span>' + t.monedaTotal + ' ' + neto.toFixed(2) + '</span></div></div>';
+          '<div class="tr total"><span>NETO' + (qty > 1 ? ' (×' + qty + ')' : '') + '</span><span>' + t.monedaTotal + ' ' + netoTotal.toFixed(2) + '</span></div></div>';
       });
       const mon = data.tarifas[0]?.monedaTotal || 'USD';
       html += '<div class="tarifa-card-d" style="border-color:var(--gold)"><div class="tr total"><span>TOTAL NETO</span><span style="color:var(--gold)">' + mon + ' ' + grandNeto.toFixed(2) + '</span></div></div>';
