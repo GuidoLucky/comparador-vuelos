@@ -328,6 +328,7 @@ function logout() {
   <div class="nav-tabs">
     <button class="nav-tab active" onclick="mostrarVista('buscar',this)">🔍 Buscar vuelos</button>
     <button class="nav-tab" onclick="mostrarVista('reservas',this)">📋 Mis reservas</button>
+    <button class="nav-tab" onclick="mostrarVista('emitidas',this)">✈️ Emitidas</button>
     <button class="nav-tab" id="adminTab" style="display:none" onclick="mostrarVista('admin',this)">⚙️ Usuarios</button>
   </div>
   <div class="search-card">
@@ -737,6 +738,20 @@ document.addEventListener('keydown',e=>{if(e.key==='Enter')buscar();});
 </div>
 
 <!-- VISTA ADMIN (gestión de usuarios) -->
+
+<!-- VISTA EMITIDAS -->
+<div id="vistaEmitidas" style="display:none;max-width:1200px;margin:0 auto;padding:20px 0;">
+  <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;flex-wrap:wrap;gap:10px;">
+    <h2 style="font-size:20px;font-weight:700;">✈️ Reservas Emitidas</h2>
+    <div style="display:flex;gap:8px;align-items:center;">
+      <input type="text" id="emitSearch" placeholder="🔍 PNR, ruta, pasajero..." style="padding:8px 12px;background:var(--dark2);border:1px solid var(--border);border-radius:8px;color:var(--text);font-family:'Sora',sans-serif;font-size:12px;outline:none;width:200px;">
+      <button onclick="cargarEmitidas()" style="background:none;border:1px solid var(--border);color:var(--muted);border-radius:6px;padding:6px 14px;font-size:12px;cursor:pointer;font-family:'Sora',sans-serif;">🔄</button>
+    </div>
+  </div>
+  <div id="emitidasStats" style="display:flex;gap:12px;margin-bottom:16px;flex-wrap:wrap;"></div>
+  <div id="emitidasTabla" style="overflow-x:auto;"></div>
+</div>
+
 <div id="vistaAdmin" style="display:none;max-width:900px;margin:0 auto;padding:20px 0;">
   <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px;">
     <h2 style="font-size:20px;font-weight:700;">⚙️ Gestión de Usuarios</h2>
@@ -1285,6 +1300,7 @@ function mostrarVista(vista, btn) {
   var resultados = document.getElementById('resultados');
   var vistaReservas = document.getElementById('vistaReservas');
   var vistaAdmin = document.getElementById('vistaAdmin');
+  var vistaEmitidas = document.getElementById('vistaEmitidas');
   var markupBar = document.getElementById('markupBar');
   var cotizarBar = document.getElementById('cotizarBar');
   // Hide all first
@@ -1292,6 +1308,7 @@ function mostrarVista(vista, btn) {
   if (resultados) resultados.style.display = 'none';
   if (vistaReservas) vistaReservas.style.display = 'none';
   if (vistaAdmin) vistaAdmin.style.display = 'none';
+  if (vistaEmitidas) vistaEmitidas.style.display = 'none';
   if (markupBar) markupBar.style.display = 'none';
   if (cotizarBar) cotizarBar.style.display = 'none';
   
@@ -1303,6 +1320,9 @@ function mostrarVista(vista, btn) {
   } else if (vista === 'admin') {
     if (vistaAdmin) vistaAdmin.style.display = 'block';
     cargarUsuarios();
+  } else if (vista === 'emitidas') {
+    if (vistaEmitidas) vistaEmitidas.style.display = 'block';
+    cargarEmitidas();
   } else {
     if (vistaReservas) vistaReservas.style.display = 'block';
     cargarReservas();
@@ -1760,6 +1780,102 @@ cargarMarkup();
 if (currentUser?.nombre) {
   const sel = document.getElementById('cotizarVendedor');
   if (sel) sel.value = currentUser.nombre;
+}
+
+// ─── EMITIDAS: Base de reservas emitidas ───
+let emitidasData = [];
+
+document.getElementById('emitSearch')?.addEventListener('input', () => {
+  clearTimeout(window._emitTimer);
+  window._emitTimer = setTimeout(cargarEmitidas, 400);
+});
+
+async function cargarEmitidas() {
+  const cont = document.getElementById('emitidasTabla');
+  cont.innerHTML = '<div class="estado"><div class="spinner"></div><p>Cargando emitidas...</p></div>';
+  const q = document.getElementById('emitSearch')?.value?.trim() || '';
+  const params = new URLSearchParams({ estado: 'EMITIDA' });
+  if (q) params.set('q', q);
+  try {
+    emitidasData = await fetch('/reservas?' + params).then(r=>r.json());
+    renderEmitidasStats();
+    renderEmitidasTabla();
+  } catch(e) { cont.innerHTML = '<div class="no-results">Error: ' + e.message + '</div>'; }
+}
+
+function renderEmitidasStats() {
+  const total = emitidasData.length;
+  let totalUSD = 0;
+  const aeros = {};
+  emitidasData.forEach(r => {
+    totalUSD += (r.precio_usd || 0);
+    const a = r.aerolinea || '?';
+    aeros[a] = (aeros[a] || 0) + 1;
+  });
+  const aerosStr = Object.entries(aeros).map(([k,v]) => '<span style="color:var(--gold)">' + k + '</span>:' + v).join(' · ');
+  document.getElementById('emitidasStats').innerHTML =
+    '<div class="res-stat emitida"><div class="num">' + total + '</div><div class="lbl">Emitidas</div></div>' +
+    '<div class="res-stat" style="background:rgba(201,168,76,0.08);border-color:var(--gold)"><div class="num" style="color:var(--gold)">USD ' + Math.round(totalUSD).toLocaleString('es-AR') + '</div><div class="lbl">Facturado total</div></div>' +
+    '<div class="res-stat" style="background:var(--dark3);border-color:var(--border)"><div class="num" style="font-size:12px;color:var(--text)">' + aerosStr + '</div><div class="lbl">Por aerolínea</div></div>';
+}
+
+function renderEmitidasTabla() {
+  const cont = document.getElementById('emitidasTabla');
+  if (!emitidasData.length) { cont.innerHTML = '<div class="no-results">📭 No hay reservas emitidas</div>'; return; }
+  const rows = emitidasData.map(r => {
+    const pax = [];
+    if (r.adultos) pax.push(r.adultos + 'ADT');
+    if (r.ninos) pax.push(r.ninos + 'CHD');
+    if (r.infantes) pax.push(r.infantes + 'INF');
+    const fechaSal = r.fecha_salida ? new Date(r.fecha_salida).toLocaleDateString('es-AR', { day:'2-digit', month:'short' }) : '-';
+    const fechaEmit = r.fecha_emision ? new Date(r.fecha_emision).toLocaleDateString('es-AR', { day:'2-digit', month:'short', hour:'2-digit', minute:'2-digit' }) : '-';
+    const tickets = r.ticket_numbers ? (Array.isArray(r.ticket_numbers) ? r.ticket_numbers : []).join(', ') : '-';
+    const ed = r.emision_data ? (typeof r.emision_data === 'string' ? JSON.parse(r.emision_data) : r.emision_data) : null;
+    const ticketsFromEd = (!tickets || tickets === '-') && ed?.tickets ? ed.tickets.map(t => (t.carrier||'') + '-' + (t.numero||'')).join(', ') : tickets;
+    const gds = r.gds || '-';
+    const cabina = r.cabina || '-';
+    const tl = r.time_limit ? new Date(r.time_limit).toLocaleDateString('es-AR', { day:'2-digit', month:'short', hour:'2-digit', minute:'2-digit' }) : '-';
+    // Penalidades resumen
+    let penStr = '-';
+    try {
+      const pen = r.penalidades_json ? (typeof r.penalidades_json === 'string' ? JSON.parse(r.penalidades_json) : r.penalidades_json) : null;
+      if (pen) {
+        const parts = [];
+        if (pen.cambio_antes?.permite) parts.push('Cambio: $' + (pen.cambio_antes.monto||0));
+        else if (pen.cambio_antes) parts.push('Cambio: No');
+        if (pen.devolucion_antes?.permite) parts.push('Dev: $' + (pen.devolucion_antes.monto||0));
+        else if (pen.devolucion_antes) parts.push('Dev: No');
+        if (parts.length) penStr = parts.join(' | ');
+      }
+    } catch(e) {}
+    const vendedor = r.vendedor || '-';
+    // Pasajeros nombres
+    let paxNames = '-';
+    try {
+      const pjson = r.pasajeros_json ? (typeof r.pasajeros_json === 'string' ? JSON.parse(r.pasajeros_json) : r.pasajeros_json) : [];
+      if (Array.isArray(pjson) && pjson.length) {
+        paxNames = pjson.map(p => (p.apellido||'') + ' ' + (p.nombre||'')).join(', ');
+        if (paxNames.length > 40) paxNames = paxNames.substring(0,37) + '...';
+      }
+    } catch(e) {}
+    return '<tr onclick="verDetalleReserva(' + r.id + ')" style="cursor:pointer">' +
+      '<td><span class="res-pnr">' + (r.pnr||'-') + '</span></td>' +
+      '<td>' + (r.origen||'?') + '→' + (r.destino||'?') + '</td>' +
+      '<td style="color:var(--gold)">' + (r.aerolinea||'-') + '</td>' +
+      '<td class="res-fecha">' + fechaSal + '</td>' +
+      '<td style="font-size:10px">' + paxNames + '</td>' +
+      '<td class="res-precio">$' + (r.precio_usd||0).toLocaleString('es-AR',{minimumFractionDigits:0}) + '</td>' +
+      '<td style="font-size:10px;color:var(--muted)">' + gds + '</td>' +
+      '<td style="font-size:10px">' + cabina + '</td>' +
+      '<td style="font-size:9px;color:var(--muted);max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="' + ticketsFromEd + '">' + ticketsFromEd + '</td>' +
+      '<td style="font-size:10px">' + fechaEmit + '</td>' +
+      '<td style="font-size:10px;max-width:130px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="' + penStr + '">' + penStr + '</td>' +
+      '<td style="font-size:10px;color:var(--muted)">' + vendedor + '</td>' +
+    '</tr>';
+  }).join('');
+  cont.innerHTML = '<table class="res-table" style="font-size:11px"><thead><tr>' +
+    '<th>PNR</th><th>Ruta</th><th>Aero</th><th>Salida</th><th>Pasajeros</th><th>USD</th><th>GDS</th><th>Cabina</th><th>Tickets</th><th>Emitido</th><th>Penalidades</th><th>Vendedor</th>' +
+    '</tr></thead><tbody>' + rows + '</tbody></table>';
 }
 
 // ─── ADMIN: Gestión de Usuarios ───
