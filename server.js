@@ -1749,9 +1749,10 @@ app.post('/crear-reserva', async (req, res) => {
       // Try to find voucher/line ID for the Lleego web URL
       const lineId = bookData.booking?.lines?.[0]?.id || '';
       const bookingId = bookData.booking?.id || bookData.id || '';
-      const orderId = lineId || bookingId || sol.id;
+      const orderId = bookingId || lineId || sol.id;
       
       console.log('[Lleego] Booking OK! PNR:', pnr, 'LineId:', lineId, 'BookingId:', bookingId, 'orderId:', orderId);
+      console.log('[Lleego] Full booking response keys:', JSON.stringify(bookData).substring(0, 1000));
       
       // Guardar en DB
       if (db) {
@@ -2100,12 +2101,22 @@ app.post('/reservas/:id/verificar', async (req, res) => {
         const llToken = await getLleegoToken();
         if (!llToken) return res.json({ ok: false, error: 'No se pudo autenticar con Lleego' });
         
-        // Fetch booking status from Lleego
-        const statusUrl = `https://api-tr.lleego.com/api/v2/transport/retrieve/${reserva.order_id}?locale=es-ar`;
+        // Fetch booking status from Lleego - try retrieve endpoint
+        let statusUrl = `https://api-tr.lleego.com/api/v2/transport/retrieve/${reserva.order_id}?locale=es-ar`;
         console.log('[Verificar GEA] URL:', statusUrl);
-        const resp = await fetch(statusUrl, {
+        let resp = await fetch(statusUrl, {
           headers: { 'Authorization': `Bearer ${llToken}`, 'x-api-key': LLEEGO_API_KEY, 'lang': 'es-ar' }
         });
+        
+        // If 403/404, try with locator (PNR) as fallback
+        if (!resp.ok && reserva.pnr) {
+          console.log(`[Verificar GEA] First attempt failed ${resp.status}, trying with locator...`);
+          statusUrl = `https://api-tr.lleego.com/api/v2/transport/retrieve/${reserva.order_id}?locator=${reserva.pnr}&locale=es-ar`;
+          resp = await fetch(statusUrl, {
+            headers: { 'Authorization': `Bearer ${llToken}`, 'x-api-key': LLEEGO_API_KEY, 'lang': 'es-ar' }
+          });
+        }
+        
         const text = await resp.text();
         console.log(`[Verificar GEA] HTTP ${resp.status}:`, text.substring(0, 500));
         
