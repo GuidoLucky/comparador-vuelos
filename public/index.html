@@ -44,11 +44,11 @@ header{background:var(--dark2);border-bottom:1px solid var(--border);padding:14p
 
 .results-layout{display:grid;grid-template-columns:175px 1fr;gap:20px;}
 @media(max-width:768px){.results-layout{grid-template-columns:1fr;}}
-.filtros-panel{background:var(--dark2);border:1px solid var(--border);border-radius:10px;padding:10px;height:fit-content;position:sticky;top:12px;min-width:140px;}
-.filtros-title{font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:1.5px;margin-bottom:16px;}
-.filtro-grupo{margin-bottom:10px;}
-.filtro-grupo-title{font-size:10px;font-weight:600;color:var(--text);margin-bottom:5px;text-transform:uppercase;letter-spacing:0.04em;}
-.filtro-btn{display:flex;align-items:center;gap:5px;background:var(--dark3);border:1px solid var(--border);border-radius:5px;padding:4px 7px;cursor:pointer;margin-bottom:3px;width:100%;font-family:'Sora',sans-serif;font-size:11px;color:var(--muted);transition:all 0.15s;text-align:left;}
+.filtros-panel{background:var(--dark2);border:1px solid var(--border);border-radius:10px;padding:8px;height:fit-content;position:sticky;top:12px;min-width:140px;}
+.filtros-title{font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:1.5px;margin-bottom:10px;}
+.filtro-grupo{margin-bottom:8px;}
+.filtro-grupo-title{font-size:9px;font-weight:600;color:var(--text);margin-bottom:4px;text-transform:uppercase;letter-spacing:0.04em;}
+.filtro-btn{display:flex;align-items:center;gap:4px;background:var(--dark3);border:1px solid var(--border);border-radius:4px;padding:3px 6px;cursor:pointer;margin-bottom:2px;width:100%;font-family:'Sora',sans-serif;font-size:10px;color:var(--muted);transition:all 0.15s;text-align:left;}
 .filtro-btn:hover{border-color:var(--gold);color:var(--text);}
 .filtro-btn.active{border-color:var(--gold);background:rgba(201,168,76,0.1);color:var(--gold);}
 .filtro-dot{width:6px;height:6px;border-radius:50%;flex-shrink:0;}
@@ -360,6 +360,18 @@ function logout() {
           <option value="2">Hasta 2 escalas</option>
         </select>
       </div>
+      <div class="field" style="min-width:110px;"><label>Cabina</label>
+        <select id="advCabin">
+          <option value="">Todas</option>
+          <option value="0">Economy</option>
+          <option value="3">Premium Eco</option>
+          <option value="2">Business</option>
+          <option value="1">First</option>
+        </select>
+      </div>
+      <div class="field" style="min-width:100px;"><label>Aerolíneas</label>
+        <input type="text" id="advAirlines" placeholder="AR,LA..." maxlength="50" style="text-transform:uppercase;width:100px;" oninput="this.value=this.value.toUpperCase()">
+      </div>
       <div class="field"><label>Moneda</label>
         <div class="moneda-toggle">
           <button class="moneda-btn active" id="btn-usd" onclick="setMoneda('USD')">USD</button>
@@ -367,34 +379,6 @@ function logout() {
         </div>
       </div>
       <button class="btn-buscar" id="btnBuscar" onclick="buscar()">⚡ Buscar</button>
-    </div>
-    <!-- Búsqueda avanzada -->
-    <div style="margin-top:12px;border-top:1px solid var(--border);padding-top:10px;">
-      <button onclick="document.getElementById('advSearch').style.display=document.getElementById('advSearch').style.display==='none'?'flex':'none';this.querySelector('.adv-arrow').textContent=document.getElementById('advSearch').style.display==='none'?'▸':'▾'" style="background:none;border:none;color:var(--gold);font-family:'Sora',sans-serif;font-size:12px;font-weight:600;cursor:pointer;padding:0;display:flex;align-items:center;gap:4px;"><span class="adv-arrow">▸</span> Búsqueda avanzada</button>
-      <div id="advSearch" style="display:none;gap:10px;flex-wrap:wrap;margin-top:10px;align-items:flex-end;">
-        <div class="field" style="min-width:160px;">
-          <label>Aerolíneas</label>
-          <input type="text" id="advAirlines" placeholder="AR,AA,LA,DL..." maxlength="50" style="text-transform:uppercase" oninput="this.value=this.value.toUpperCase()">
-        </div>
-        <div class="field" style="min-width:140px;">
-          <label>Cabina</label>
-          <select id="advCabin">
-            <option value="">Todas</option>
-            <option value="0">Economy (EC)</option>
-            <option value="2">Business (BU)</option>
-            <option value="1">First (FI)</option>
-            <option value="3">Premium Economy (PE)</option>
-          </select>
-        </div>
-        <div class="field" style="min-width:140px;">
-          <label>Tipo de vuelo</label>
-          <select id="advFlightType">
-            <option value="">Todos</option>
-            <option value="1">Non Stop</option>
-            <option value="2">Directo</option>
-          </select>
-        </div>
-      </div>
     </div>
   </div>
   <div id="mainContent">
@@ -413,7 +397,7 @@ let tipoActual='roundtrip';
 let monedaActual='USD';
 let tcUsdArs=1200;
 let todosLosVuelos=[];
-let filtros={escalas:-1,maxPrecioUSD:null,aerolineas:[],ordenar:'precio',fuente:''};
+let filtros={escalas:-1,maxPrecioUSD:null,minPrecioUSD:null,aerolineas:[],ordenar:'precio',fuente:'',maxDurIda:null,maxDurVuelta:null};
 
 // Cargar tipo de cambio al iniciar
 fetch('/tipo-cambio').then(r=>r.json()).then(d=>{
@@ -567,11 +551,15 @@ function aplicarFiltrosYRender(){
   if(filtros.escalas>=0)vuelos=vuelos.filter(v=>v.escalas===filtros.escalas);
   if(filtros.aerolineas.length>0)vuelos=vuelos.filter(v=>filtros.aerolineas.includes(v.aerolinea));
   if(filtros.maxPrecioUSD)vuelos=vuelos.filter(v=>v.precioUSD<=filtros.maxPrecioUSD);
+  if(filtros.minPrecioUSD)vuelos=vuelos.filter(v=>v.precioUSD>=filtros.minPrecioUSD);
   if(filtros.fuente)vuelos=vuelos.filter(v=>v.fuente===filtros.fuente);
+  if(filtros.maxDurIda)vuelos=vuelos.filter(v=>!v.itinerario[0]||v.itinerario[0].duracionMin<=filtros.maxDurIda);
+  if(filtros.maxDurVuelta)vuelos=vuelos.filter(v=>!v.itinerario[1]||v.itinerario[1].duracionMin<=filtros.maxDurVuelta);
   if(filtros.ordenar==='precio')vuelos.sort((a,b)=>a.precioUSD-b.precioUSD);
   else if(filtros.ordenar==='duracion')vuelos.sort((a,b)=>(a.itinerario[0]?.duracionMin||999)-(b.itinerario[0]?.duracionMin||999));
   else if(filtros.ordenar==='salida')vuelos.sort((a,b)=>new Date(a.itinerario[0]?.salida)-new Date(b.itinerario[0]?.salida));
 
+  // Stats
   const cuentas={0:0,1:0,2:0};
   todosLosVuelos.forEach(v=>{cuentas[Math.min(v.escalas,2)]++;});
   const aerosMap={};
@@ -583,9 +571,21 @@ function aplicarFiltrosYRender(){
   const precioMinUSD=Math.min(...todosLosVuelos.map(v=>v.precioUSD));
   const precioMaxUSD=Math.max(...todosLosVuelos.map(v=>v.precioUSD));
   const currentMaxUSD=filtros.maxPrecioUSD||precioMaxUSD;
+  const currentMinUSD=filtros.minPrecioUSD||precioMinUSD;
   const sym=simboloMoneda();
   const conv=monedaActual==='ARS'?tcUsdArs:1;
-  const tcLabel=monedaActual==='ARS'?`<span class="tc-badge">BSP: $${Math.round(tcUsdArs).toLocaleString()}</span>`:'';
+
+  // Duration stats
+  const durIda=todosLosVuelos.map(v=>v.itinerario[0]?.duracionMin||0).filter(d=>d>0);
+  const durVuelta=todosLosVuelos.map(v=>v.itinerario[1]?.duracionMin||0).filter(d=>d>0);
+  const maxDurIdaAll=durIda.length?Math.max(...durIda):0;
+  const minDurIdaAll=durIda.length?Math.min(...durIda):0;
+  const maxDurVueltaAll=durVuelta.length?Math.max(...durVuelta):0;
+  const minDurVueltaAll=durVuelta.length?Math.min(...durVuelta):0;
+  const curDurIda=filtros.maxDurIda||maxDurIdaAll;
+  const curDurVuelta=filtros.maxDurVuelta||maxDurVueltaAll;
+
+  function fmtDur(m){return m?`${Math.floor(m/60)}h${m%60?` ${m%60}m`:''}`:'–';}
 
   document.getElementById('mainContent').innerHTML=`
     <div class="results-layout">
@@ -596,16 +596,26 @@ function aplicarFiltrosYRender(){
           <button class="filtro-btn ${filtros.escalas===-1?'active':''}" onclick="setFE(-1)"><div class="filtro-dot" style="background:var(--blue)"></div>Todos<span class="filtro-count">${todosLosVuelos.length}</span></button>
           <button class="filtro-btn ${filtros.escalas===0?'active':''}" onclick="setFE(0)"><div class="filtro-dot" style="background:var(--green)"></div>Directo<span class="filtro-count">${cuentas[0]}</span></button>
           <button class="filtro-btn ${filtros.escalas===1?'active':''}" onclick="setFE(1)"><div class="filtro-dot" style="background:var(--orange)"></div>1 escala<span class="filtro-count">${cuentas[1]}</span></button>
-          <button class="filtro-btn ${filtros.escalas===2?'active':''}" onclick="setFE(2)"><div class="filtro-dot" style="background:var(--red)"></div>2+ escalas<span class="filtro-count">${cuentas[2]}</span></button>
+          <button class="filtro-btn ${filtros.escalas===2?'active':''}" onclick="setFE(2)"><div class="filtro-dot" style="background:var(--red)"></div>2+<span class="filtro-count">${cuentas[2]}</span></button>
         </div>
         <div class="filtro-grupo">
-          <div class="filtro-grupo-title">Precio máximo ${tcLabel}</div>
+          <div class="filtro-grupo-title">Precio</div>
+          <div class="range-labels" style="margin-bottom:2px"><span style="font-size:9px">Min</span><span style="color:var(--gold);font-size:9px">${sym} ${Math.round(currentMinUSD*conv).toLocaleString()}</span></div>
+          <input type="range" class="range-slider" min="${precioMinUSD}" max="${precioMaxUSD}" value="${currentMinUSD}" oninput="setFPMin(this.value)" style="margin-bottom:4px">
+          <div class="range-labels" style="margin-bottom:2px"><span style="font-size:9px">Max</span><span style="color:var(--gold);font-size:9px">${sym} ${Math.round(currentMaxUSD*conv).toLocaleString()}</span></div>
           <input type="range" class="range-slider" min="${precioMinUSD}" max="${precioMaxUSD}" value="${currentMaxUSD}" oninput="setFP(this.value)">
-          <div class="range-labels">
-            <span>${sym} ${Math.round(precioMinUSD*conv).toLocaleString()}</span>
-            <span style="color:var(--gold)">${sym} ${Math.round(currentMaxUSD*conv).toLocaleString()}</span>
-          </div>
+          <div class="range-labels"><span>${sym} ${Math.round(precioMinUSD*conv).toLocaleString()}</span><span>${sym} ${Math.round(precioMaxUSD*conv).toLocaleString()}</span></div>
         </div>
+        ${maxDurIdaAll>0?`<div class="filtro-grupo">
+          <div class="filtro-grupo-title">Duración ida</div>
+          <input type="range" class="range-slider" min="${minDurIdaAll}" max="${maxDurIdaAll}" value="${curDurIda}" oninput="setDurIda(this.value)">
+          <div class="range-labels"><span>${fmtDur(minDurIdaAll)}</span><span style="color:var(--gold)">${fmtDur(curDurIda)}</span></div>
+        </div>`:''}
+        ${maxDurVueltaAll>0?`<div class="filtro-grupo">
+          <div class="filtro-grupo-title">Duración vuelta</div>
+          <input type="range" class="range-slider" min="${minDurVueltaAll}" max="${maxDurVueltaAll}" value="${curDurVuelta}" oninput="setDurVuelta(this.value)">
+          <div class="range-labels"><span>${fmtDur(minDurVueltaAll)}</span><span style="color:var(--gold)">${fmtDur(curDurVuelta)}</span></div>
+        </div>`:''}
         <div class="filtro-grupo">
           <div class="filtro-grupo-title">Aerolínea</div>
           ${Object.entries(aerosMap).map(([code,name])=>`<button class="filtro-btn ${filtros.aerolineas.includes(code)?'active':''}" onclick="toggleAero('${code}')"><span style="font-weight:700;color:var(--gold)">${code}</span> ${name}</button>`).join('')}
@@ -635,10 +645,13 @@ function aplicarFiltrosYRender(){
 
 function setFE(n){filtros.escalas=n;aplicarFiltrosYRender();}
 function setFP(v){filtros.maxPrecioUSD=parseFloat(v);aplicarFiltrosYRender();}
+function setFPMin(v){filtros.minPrecioUSD=parseFloat(v);aplicarFiltrosYRender();}
+function setDurIda(v){filtros.maxDurIda=parseInt(v);aplicarFiltrosYRender();}
+function setDurVuelta(v){filtros.maxDurVuelta=parseInt(v);aplicarFiltrosYRender();}
 function toggleAero(code){filtros.aerolineas.includes(code)?filtros.aerolineas=filtros.aerolineas.filter(a=>a!==code):filtros.aerolineas.push(code);aplicarFiltrosYRender();}
 function setOrden(v){filtros.ordenar=v;aplicarFiltrosYRender();}
 function setFuente(v){filtros.fuente=v;aplicarFiltrosYRender();}
-function limpiarFiltros(){filtros={escalas:-1,maxPrecioUSD:null,aerolineas:[],ordenar:'precio',fuente:''};aplicarFiltrosYRender();}
+function limpiarFiltros(){filtros={escalas:-1,maxPrecioUSD:null,minPrecioUSD:null,aerolineas:[],ordenar:'precio',fuente:'',maxDurIda:null,maxDurVuelta:null};aplicarFiltrosYRender();}
 
 async function buscar(){
   const adultos=document.getElementById('adultos').value;
@@ -649,10 +662,8 @@ async function buscar(){
   // Búsqueda avanzada
   const advAirlines = (document.getElementById('advAirlines').value || '').trim();
   const advCabin = document.getElementById('advCabin').value;
-  const advFlightType = document.getElementById('advFlightType').value;
   if (advAirlines) body.airlines = advAirlines.split(',').map(a => a.trim()).filter(Boolean);
   if (advCabin) body.cabinType = parseInt(advCabin);
-  if (advFlightType) body.flightType = parseInt(advFlightType);
   if(tipoActual==='multidestino'){
     const tramosEls=document.getElementById('tramos-container').querySelectorAll('.tramo-row-multi');
     const tramos=[];
