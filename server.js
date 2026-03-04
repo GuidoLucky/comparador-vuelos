@@ -293,6 +293,21 @@ if (db) {
       }
       
       console.log('[DB] Migración OK');
+
+      // Notificaciones y cron
+      await db.query(`CREATE TABLE IF NOT EXISTS notificaciones (
+        id SERIAL PRIMARY KEY,
+        reserva_id INTEGER,
+        pnr TEXT,
+        tipo TEXT,
+        mensaje TEXT,
+        detalle JSONB DEFAULT '{}',
+        leida BOOLEAN DEFAULT false,
+        created_at TIMESTAMPTZ DEFAULT NOW()
+      )`);
+      await db.query(`ALTER TABLE reservas ADD COLUMN IF NOT EXISTS ultimo_check_cron TIMESTAMPTZ`);
+      await db.query(`ALTER TABLE reservas ADD COLUMN IF NOT EXISTS checkin_notificado BOOLEAN DEFAULT false`);
+      console.log('[DB] Notificaciones OK');
     } catch(e) { console.warn('[DB] Migración:', e.message); }
   })();
 }
@@ -3226,7 +3241,319 @@ app.post('/reservas/:id/pdf', async (req, res) => {
   }
 });
 
-app.listen(PORT, () => console.log(`✅ Puerto ${PORT}`));
+// ─── NOTIFICACIONES API ───
+app.get('/notificaciones', async (req, res) => {
+  if (!db) return res.json({ ok: false });
+  try {
+    const { leidas } = req.query;
+    let q = 'SELECT * FROM notificaciones ORDER BY created_at DESC LIMIT 50';
+    if (leidas === 'false') q = 'SELECT * FROM notificaciones WHERE leida=false ORDER BY created_at DESC LIMIT 50';
+    const r = await db.query(q);
+    res.json({ ok: true, notificaciones: r.rows });
+  } catch(e) { res.json({ ok: false, error: e.message }); }
+});
+
+app.get('/notificaciones/count', async (req, res) => {
+  if (!db) return res.json({ ok: false, count: 0 });
+  try {
+    const r = await db.query('SELECT COUNT(*) as c FROM notificaciones WHERE leida=false');
+    res.json({ ok: true, count: parseInt(r.rows[0].c) });
+  } catch(e) { res.json({ ok: false, count: 0 }); }
+});
+
+app.put('/notificaciones/:id/leer', async (req, res) => {
+  if (!db) return res.json({ ok: false });
+  try {
+    await db.query('UPDATE notificaciones SET leida=true WHERE id=$1', [req.params.id]);
+    res.json({ ok: true });
+  } catch(e) { res.json({ ok: false, error: e.message }); }
+});
+
+app.put('/notificaciones/leer-todas', async (req, res) => {
+  if (!db) return res.json({ ok: false });
+  try {
+    await db.query('UPDATE notificaciones SET leida=true WHERE leida=false');
+    res.json({ ok: true });
+  } catch(e) { res.json({ ok: false, error: e.message }); }
+});
+
+// Manual trigger for testing
+app.post('/cron/verificar', async (req, res) => {
+  try {
+    await cronVerificarReservas();
+    res.json({ ok: true, mensaje: 'Verificación ejecutada' });
+  } catch(e) { res.json({ ok: false, error: e.message }); }
+});
+app.post('/cron/checkin', async (req, res) => {
+  try {
+    await cronCheckInReminder();
+    res.json({ ok: true, mensaje: 'Check-in reminder ejecutado' });
+  } catch(e) { res.json({ ok: false, error: e.message }); }
+});
+
+// ─── CRON: Auto-verificar reservas ───
+async function cronVerificarReservas() {
+  if (!db) return;
+  try {
+    // Get reservas that need checking: only EMITIDA (already ticketed)
+    const r = await db.query(`
+      SELECT id, pnr, order_id, estado, gds, notas, fecha_salida, aerolinea
+      FROM reservas 
+      WHERE estado = 'EMITIDA' 
+        AND order_id IS NOT NULL 
+        AND (ultimo_check_cron IS NULL OR ultimo_check_cron < NOW() - INTERVAL '6 hours')
+        AND (fecha_salida IS NULL OR fecha_salida > NOW() - INTERVAL '2 days')
+      ORDER BY ultimo_check_cron ASC NULLS FIRST
+      LIMIT 20
+    `);
+    
+    if (!r.rows.length) return;
+    console.log(`[Cron-Verify] Verificando ${r.rows.length} reservas...`);
+    
+    for (const reserva of r.rows) {
+      try {
+        // Mark as checked first to avoid re-processing on error
+        await db.query('UPDATE reservas SET ultimo_check_cron=NOW() WHERE id=$1', [reserva.id]);
+        
+        const estadoAnterior = reserva.estado;
+        
+        // Determine if GEA or Tucano
+        const isGEA = (reserva.gds && (reserva.gds.includes('NDC') || reserva.gds.includes('Lleego') || reserva.gds.includes('GEA'))) || 
+                      (reserva.notas && reserva.notas.includes('GEA'));
+        
+        let apiEstado = null;
+        let mensaje = '';
+        let detalle = {};
+        
+        if (isGEA) {
+          // ── GEA verify ──
+          const llToken = await getLleegoToken();
+          if (!llToken) continue;
+          
+          let resp = await fetch(`https://api-tr.lleego.com/api/v2/transport/retrieve/${reserva.order_id}?locale=es-ar`, {
+            headers: { 'Authorization': `Bearer ${llToken}`, 'x-api-key': LLEEGO_API_KEY, 'lang': 'es-ar' }
+          });
+          if (!resp.ok && reserva.pnr) {
+            resp = await fetch(`https://api-tr.lleego.com/api/v2/transport/retrieve/${reserva.order_id}?locator=${reserva.pnr}&locale=es-ar`, {
+              headers: { 'Authorization': `Bearer ${llToken}`, 'x-api-key': LLEEGO_API_KEY, 'lang': 'es-ar' }
+            });
+          }
+          if (!resp.ok) continue;
+          
+          const data = JSON.parse(await resp.text());
+          const line = data.booking?.lines?.[0] || {};
+          const bookRef = line.booking_reference || {};
+          const llStatus = (bookRef.status || line.status || '').toUpperCase();
+          
+          if (llStatus.includes('TKT') || llStatus.includes('EMIT')) apiEstado = 'EMITIDA';
+          else if (llStatus.includes('XXX') || llStatus.includes('CANCEL') || llStatus.includes('VOID')) apiEstado = 'CANCELADA';
+          else if (llStatus.includes('RSVD') || llStatus.includes('CONFIRM')) apiEstado = 'CREADA';
+          
+          // Check for schedule changes in segments
+          const segments = line.travel?.journeys?.flatMap(j => j.segments || []) || [];
+          for (const seg of segments) {
+            if (seg.status === 'UN' || seg.status === 'UC' || seg.status === 'XX') {
+              const segInfo = `${seg.marketing_company || ''}${seg.transport_number || ''} ${seg.departure || ''}→${seg.arrival || ''}`;
+              mensaje = `Vuelo ${segInfo}: segmento cancelado/modificado`;
+              detalle.segmento_afectado = segInfo;
+              detalle.status_segmento = seg.status;
+            }
+          }
+          
+        } else {
+          // ── Tucano verify ──
+          const token = await getToken();
+          if (!token) continue;
+          const hdrs = getHeaders(token);
+          
+          const resp = await fetch(`${API_BASE}/FlightReservation/RetrieveReservation`, {
+            method: 'POST', headers: hdrs,
+            body: JSON.stringify({ OrderId: reserva.order_id })
+          });
+          
+          if (!resp.ok) {
+            const errorText = await resp.text();
+            if (errorText.includes('no cuenta con vuelos') || errorText.includes('no ha sido posible cargar')) {
+              apiEstado = 'CANCELADA';
+              mensaje = 'La reserva ya no tiene vuelos asociados';
+            } else continue;
+          } else {
+            const data = JSON.parse(await resp.text());
+            const tickets = (data.ticketsInformation || []);
+            const ticketsEmitidos = tickets.filter(t => t.status === 'E');
+            const ticketsVoid = tickets.filter(t => t.status === 'A' || t.status === 'V');
+            const vuelos = (data.flightsInformation || []);
+            const vuelosCancelados = vuelos.filter(v => ['XX','UC','UN','HX','NO'].includes(v.status));
+            
+            // Detect state
+            if (vuelosCancelados.length === vuelos.length && vuelos.length > 0) {
+              apiEstado = 'CANCELADA';
+            } else if (ticketsEmitidos.length > 0) {
+              apiEstado = 'EMITIDA';
+            } else if (ticketsVoid.length > 0 && ticketsEmitidos.length === 0) {
+              apiEstado = 'CANCELADA';
+            } else {
+              apiEstado = 'CREADA';
+            }
+            
+            // Status descriptions for notifications
+            const statusDesc = {
+              'XX': 'cancelado', 'HX': 'cancelado por aerolínea', 'UC': 'no confirmado',
+              'UN': 'no disponible', 'NO': 'sin acción / cancelado', 'SC': 'cambio de itinerario',
+              'TK': 'cambio de horario', 'WL': 'en lista de espera'
+            };
+            
+            // Detect segment-level changes
+            const cambios = [];
+            for (const v of vuelos) {
+              const segInfo = `${v.flightNumber || ''} ${v.departureAirportCode || ''}→${v.arrivalAirportCode || ''}`;
+              
+              // Cancelled/problematic segments
+              if (['XX','HX','UC','UN','NO','SC','WL'].includes(v.status)) {
+                cambios.push({ segInfo, tipo: 'cancelado', status: v.status, desc: statusDesc[v.status] || v.status });
+              }
+              
+              // Schedule change (TK with different times)
+              if (v.status === 'TK' && v.originalDepartureDateTime && v.departureDateTime && v.originalDepartureDateTime !== v.departureDateTime) {
+                cambios.push({ segInfo, tipo: 'horario', status: v.status, 
+                  desc: 'horario cambiado', original: v.originalDepartureDateTime, nuevo: v.departureDateTime });
+              }
+            }
+            
+            if (cambios.length) {
+              const firstCambio = cambios[0];
+              if (firstCambio.tipo === 'horario') {
+                mensaje = `Vuelo ${firstCambio.segInfo}: ${firstCambio.desc}`;
+                detalle.cambios = cambios;
+                detalle.horario_original = firstCambio.original;
+                detalle.horario_nuevo = firstCambio.nuevo;
+              } else {
+                mensaje = cambios.length === 1 
+                  ? `Vuelo ${firstCambio.segInfo}: ${firstCambio.desc} (${firstCambio.status})`
+                  : `${cambios.length} tramos con cambios: ${cambios.map(c => `${c.segInfo} ${c.desc}`).join(', ')}`;
+                detalle.cambios = cambios;
+              }
+            }
+            
+            // Save emission data if newly emitted
+            if (apiEstado === 'EMITIDA' && estadoAnterior !== 'EMITIDA') {
+              const ticketNums = ticketsEmitidos.map(t => `${t.validatigCarrierNumericCode || ''}-${t.numero || t.number}`).filter(Boolean);
+              try {
+                await db.query(`UPDATE reservas SET emision_data=$1, ticket_numbers=$2, fecha_emision=NOW() WHERE id=$3`, 
+                  [JSON.stringify({ tickets: ticketsEmitidos, emitidoEn: new Date().toISOString() }), ticketNums, reserva.id]);
+              } catch(e) {}
+            }
+          }
+        }
+        
+        // Create notifications if something changed
+        if (apiEstado && apiEstado !== estadoAnterior) {
+          await db.query('UPDATE reservas SET estado=$1, updated_at=NOW() WHERE id=$2', [apiEstado, reserva.id]);
+          const notifMsg = mensaje || `Estado cambió de ${estadoAnterior} a ${apiEstado}`;
+          await db.query(`INSERT INTO notificaciones (reserva_id, pnr, tipo, mensaje, detalle) VALUES ($1,$2,$3,$4,$5)`,
+            [reserva.id, reserva.pnr, 'ESTADO_CAMBIO', notifMsg, JSON.stringify({ ...detalle, estado_anterior: estadoAnterior, estado_nuevo: apiEstado })]);
+          console.log(`[Cron-Verify] ${reserva.pnr}: ${estadoAnterior} → ${apiEstado}`);
+        } else if (mensaje) {
+          // Schedule/segment change without state change — avoid duplicate notifications
+          const existing = await db.query(
+            `SELECT id FROM notificaciones WHERE reserva_id=$1 AND tipo='VUELO_CAMBIO' AND mensaje=$2 AND created_at > NOW() - INTERVAL '24 hours'`,
+            [reserva.id, mensaje]
+          );
+          if (!existing.rows.length) {
+            await db.query(`INSERT INTO notificaciones (reserva_id, pnr, tipo, mensaje, detalle) VALUES ($1,$2,$3,$4,$5)`,
+              [reserva.id, reserva.pnr, 'VUELO_CAMBIO', mensaje, JSON.stringify(detalle)]);
+            console.log(`[Cron-Verify] ${reserva.pnr}: ${mensaje}`);
+          }
+        }
+        
+        // Small delay between API calls
+        await new Promise(r => setTimeout(r, 2000));
+        
+      } catch(e) {
+        console.error(`[Cron-Verify] Error reserva ${reserva.pnr}:`, e.message);
+      }
+    }
+  } catch(e) { console.error('[Cron-Verify] Error general:', e.message); }
+}
+
+// ─── CRON: Recordatorio de Check-in (24hs antes) ───
+async function cronCheckInReminder() {
+  if (!db) return;
+  try {
+    // Get EMITIDA reservas departing in ~24hs that haven't been notified
+    const r = await db.query(`
+      SELECT id, pnr, aerolinea, fecha_salida, origen, destino, itinerario_json, contacto_json
+      FROM reservas 
+      WHERE estado = 'EMITIDA' 
+        AND checkin_notificado = false
+        AND fecha_salida IS NOT NULL
+        AND fecha_salida > NOW()
+        AND fecha_salida <= NOW() + INTERVAL '24 hours'
+    `);
+    
+    if (!r.rows.length) return;
+    console.log(`[Cron-CheckIn] ${r.rows.length} vuelos para check-in pronto`);
+    
+    for (const reserva of r.rows) {
+      try {
+        const salida = new Date(reserva.fecha_salida);
+        const horasAntes = Math.round((salida - Date.now()) / 3600000);
+        
+        // Try to get the first segment info from itinerario
+        let primerVuelo = '';
+        try {
+          const itin = typeof reserva.itinerario_json === 'string' ? JSON.parse(reserva.itinerario_json) : reserva.itinerario_json;
+          if (Array.isArray(itin) && itin[0]) {
+            const leg = itin[0];
+            const segs = leg.segmentos || [leg];
+            const seg = segs[0] || {};
+            primerVuelo = seg.vuelo || `${reserva.aerolinea || ''} ${reserva.origen || ''}→${reserva.destino || ''}`;
+          }
+        } catch(e) {}
+        if (!primerVuelo) primerVuelo = `${reserva.aerolinea || ''} ${reserva.origen || ''}→${reserva.destino || ''}`;
+        
+        const horaStr = salida.toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit', timeZone: 'America/Argentina/Buenos_Aires' });
+        const fechaStr = salida.toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit', timeZone: 'America/Argentina/Buenos_Aires' });
+        
+        const mensaje = `Check-in disponible: ${primerVuelo} sale ${fechaStr} a las ${horaStr} (~${horasAntes}hs)`;
+        
+        await db.query(`INSERT INTO notificaciones (reserva_id, pnr, tipo, mensaje, detalle) VALUES ($1,$2,$3,$4,$5)`,
+          [reserva.id, reserva.pnr, 'CHECKIN_REMINDER', mensaje, JSON.stringify({ 
+            vuelo: primerVuelo, fecha_salida: reserva.fecha_salida, horas_antes: horasAntes 
+          })]);
+        
+        await db.query('UPDATE reservas SET checkin_notificado=true WHERE id=$1', [reserva.id]);
+        console.log(`[Cron-CheckIn] ${reserva.pnr}: ${mensaje}`);
+        
+      } catch(e) {
+        console.error(`[Cron-CheckIn] Error reserva ${reserva.pnr}:`, e.message);
+      }
+    }
+  } catch(e) { console.error('[Cron-CheckIn] Error general:', e.message); }
+}
+
+// Start cron jobs after server is ready
+function startCronJobs() {
+  console.log('[Cron] Iniciando tareas programadas...');
+  
+  // Auto-verify every 6 hours
+  setInterval(cronVerificarReservas, 6 * 60 * 60 * 1000);
+  // Check-in reminders every 1 hour
+  setInterval(cronCheckInReminder, 60 * 60 * 1000);
+  
+  // Run once on startup after a 30-second delay (let APIs warm up)
+  setTimeout(() => {
+    cronVerificarReservas();
+    cronCheckInReminder();
+  }, 30000);
+  
+  console.log('[Cron] ✅ Auto-verify: cada 6hs | Check-in: cada 1h');
+}
+
+app.listen(PORT, () => {
+  console.log(`✅ Puerto ${PORT}`);
+  startCronJobs();
+});
 
 // ─── DETALLE DE VUELO (desglose de precio) ───
 app.get('/detalle-vuelo', async (req, res) => {
