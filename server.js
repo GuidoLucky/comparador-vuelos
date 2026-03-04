@@ -3775,7 +3775,7 @@ app.post('/generar-cotizacion', async (req, res) => {
 
       const trip = q.trip || [];
       const vuelos = [];
-      const cabinMap = { 0: 'Primera', 1: 'Economica', 2: 'Business', 3: 'Premium Economy' };
+      const cabinMap = { 0: 'Economica', 1: 'Premium Economy', 2: 'Business', 3: 'Primera' };
 
       // Mapeo de aeropuertos comunes a ciudades (fallback cuando la API no da city name)
       const AIRPORT_CITY = {
