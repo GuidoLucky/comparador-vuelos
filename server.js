@@ -2485,7 +2485,7 @@ app.post('/reservas/:id/recotizar', async (req, res) => {
     const fares = prData.storedFares || prData.fares || prData.pricingOptions || prData.quotations || [];
     if (Array.isArray(fares)) {
       for (const fare of fares) {
-        console.log('[Recotizar] Fare keys:', Object.keys(fare).join(','), 'passengerDiscountType:', fare.passengerDiscountType);
+        console.log('[Recotizar] Fare keys:', Object.keys(fare).join(','), 'passengerDiscountType:', fare.passengerDiscountType, 'numberInPNR:', fare.numberInPNR, 'paxRefIds:', fare.passengersReferenceIds);
         console.log('[Recotizar] Commission:', JSON.stringify(fare.commissionRule));
         console.log('[Recotizar] OverComm:', JSON.stringify(fare.overCommissionRule));
         const fv = fare.fareValues || fare;
@@ -2511,7 +2511,9 @@ app.post('/reservas/:id/recotizar', async (req, res) => {
           comisionCedida: fare.commissionRule?.ceded || null,
           overComision: fare.overCommissionRule || null,
           sellingAmount: fare.sellingFareValues?.sellingPriceAmount || 0,
-          sellingCurrency: fare.sellingFareValues?.sellingPriceCurrency || ''
+          sellingCurrency: fare.sellingFareValues?.sellingPriceCurrency || '',
+          numberInPNR: fare.numberInPNR ?? fare.fareNumberInPNR ?? null,
+          passengersReferenceIds: fare.passengersReferenceIds || fare.passengerReferenceIds || []
         });
       }
     }
@@ -2585,6 +2587,10 @@ app.post('/reservas/:id/recotizar', async (req, res) => {
     const brands = [...new Set(flights.map(f => f.brandName).filter(Boolean))];
     const brandLabel = brands.join(' / ') || null;
 
+    // Extract numberInPNR values for SavePricing
+    const fareNumbersInPNR = tarifas.map(t => t.numberInPNR).filter(n => n !== null && n !== undefined).map(String);
+    const passengerRefIds = prData.passengerReferenceIds || [...new Set(tarifas.flatMap(t => t.passengersReferenceIds))];
+
     res.json({
       ok: true,
       pnr: rrData.recordLocator,
@@ -2594,6 +2600,8 @@ app.post('/reservas/:id/recotizar', async (req, res) => {
       brand: brandLabel,
       orderId: reserva.order_id,
       segmentIds: segRefIdsForSave,
+      fareNumbersInPNR: fareNumbersInPNR.length ? fareNumbersInPNR : ["0"],
+      passengerRefIds,
       rawKeys: Object.keys(prData),
       rawPreview: JSON.stringify(prData).substring(0, 800)
     });
@@ -2611,7 +2619,7 @@ app.post('/reservas/:id/guardar-tarifa', async (req, res) => {
     if (!r.rows.length) return res.json({ ok: false, error: 'Reserva no encontrada' });
     const reserva = r.rows[0];
 
-    const { pricingId, segmentIds, overrideVC, netoTotal, moneda } = req.body;
+    const { pricingId, segmentIds, overrideVC, netoTotal, moneda, fareNumbersInPNR, passengerRefIds } = req.body;
     if (!pricingId) return res.json({ ok: false, error: 'Sin PricingId - cotizá primero' });
 
     const token = await getToken();
@@ -2620,7 +2628,7 @@ app.post('/reservas/:id/guardar-tarifa', async (req, res) => {
     const savePayload = {
       OrderId: reserva.order_id,
       PricingId: pricingId,
-      FaresNumberInPNR: ["0"],
+      FaresNumberInPNR: fareNumbersInPNR || ["0"],
       OverrideVC: overrideVC || null,
       SegmentsReferenceIds: segmentIds || ["1", "2"]
     };
@@ -2638,13 +2646,26 @@ app.post('/reservas/:id/guardar-tarifa', async (req, res) => {
       return res.json({ ok: false, error: `API respondió ${resp.status}: ${text.substring(0, 200)}` });
     }
 
+    let saveData;
+    try { saveData = JSON.parse(text); } catch(e) { saveData = {}; }
+    
+    // Check if Tucano actually saved - empty arrays means it didn't
+    const savedSegs = saveData.segmentReferenceIds || [];
+    const savedPax = saveData.passengerReferenceIds || [];
+    const actuallyWorked = savedSegs.length > 0 || savedPax.length > 0;
+    console.log(`[SavePricing] Saved segments: ${savedSegs.length}, passengers: ${savedPax.length}, success: ${actuallyWorked}`);
+
     // Actualizar precio en DB local
     if (netoTotal) {
       await db.query('UPDATE reservas SET precio_usd=$1, precio_venta_usd=$2, updated_at=NOW() WHERE id=$3', [netoTotal, netoTotal, req.params.id]);
       console.log('[SavePricing] DB actualizada con neto:', netoTotal);
     }
 
-    res.json({ ok: true, mensaje: 'Tarifa guardada exitosamente. Precio actualizado.' });
+    if (actuallyWorked) {
+      res.json({ ok: true, mensaje: 'Tarifa guardada exitosamente en Tucano y en sistema. Precio actualizado.' });
+    } else {
+      res.json({ ok: true, mensaje: 'Precio actualizado en sistema, pero Tucano no confirmó el guardado (puede que la tarifa haya expirado en la aerolínea). Verificá en SCIWeb.', warning: true });
+    }
   } catch(e) {
     console.error('[SavePricing] Error:', e.message);
     res.json({ ok: false, error: e.message });
