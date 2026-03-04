@@ -135,12 +135,50 @@
 </style>
 </head>
 <body>
+<script>
+// Auth: override fetch para incluir token automáticamente
+const _originalFetch = window.fetch;
+window.fetch = function(url, opts = {}) {
+  const token = localStorage.getItem('lt_session');
+  if (token) {
+    opts.headers = opts.headers || {};
+    if (opts.headers instanceof Headers) {
+      opts.headers.set('X-Session-Token', token);
+    } else {
+      opts.headers['X-Session-Token'] = token;
+    }
+  }
+  return _originalFetch(url, opts).then(res => {
+    if (res.status === 401 && !url.includes('/api/login')) {
+      localStorage.removeItem('lt_session');
+      window.location.href = '/login.html';
+    }
+    return res;
+  });
+};
+function logout() {
+  fetch('/api/logout', { method: 'POST' }).catch(()=>{});
+  localStorage.removeItem('lt_session');
+  localStorage.removeItem('lt_vendedor');
+  localStorage.removeItem('lt_nombre');
+  localStorage.removeItem('lt_email');
+  window.location.href = '/login.html';
+}
+</script>
 
 <div class="nav">
   <span class="brand">Lucky Tour</span>
   <a href="/">Buscador</a>
   <a href="/reservas.html" class="active">Reservas</a>
+  <div style="margin-left:auto;display:flex;align-items:center;gap:10px;">
+    <span id="userInfo" style="font-size:11px;color:#8b949e;"></span>
+    <button onclick="logout()" style="background:none;border:1px solid #30363d;color:#8b949e;padding:4px 12px;border-radius:6px;font-size:11px;cursor:pointer;font-family:inherit;">Salir</button>
+  </div>
 </div>
+<script>
+const _ltNombre = localStorage.getItem('lt_nombre');
+if (_ltNombre) document.getElementById('userInfo').textContent = _ltNombre;
+</script>
 
 <div class="container">
   <div class="page-header">
@@ -590,7 +628,7 @@ async function ejecutarRecotizar() {
       if (data.penalidades) {
         const pen = data.penalidades;
         function condRow(label, d) {
-          if (!d) return `<tr><td style="padding:4px 8px;color:#666">${label}</td><td style="padding:4px 8px;text-align:right">—</td><td style="padding:4px 8px"><span style="font-size:11px;padding:2px 6px;border-radius:3px;background:#f5f5f5;color:#999">Sin info</span></td></tr>`;
+          if (!d) return `<tr><td style="padding:4px 8px;color:#666">${label}</td><td style="padding:4px 8px;text-align:right">—</td><td style="padding:4px 8px"><span style="font-size:11px;padding:2px 6px;border-radius:3px;background:#f5f5f5;color:#999">No disponible</span></td></tr>`;
           const permite = d.permite !== false;
           const badge = permite 
             ? '<span style="font-size:11px;padding:2px 6px;border-radius:3px;background:#e8f5e9;color:#2e7d32;border:1px solid #c8e6c9">Permite</span>'
