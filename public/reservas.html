@@ -610,7 +610,8 @@ async function ejecutarRecotizar() {
             ${t.fee ? `<div class="tarifa-row"><span>Fee Tucano</span><span>${t.monedaFee} ${t.fee.toLocaleString('es-AR', {minimumFractionDigits:2})}</span></div>` : ''}
             ${comisionMonto ? `<div class="tarifa-row" style="color:#2e7d32"><span>Comisión ${comDisplayVal}</span><span>- ${t.monedaTotal} ${comisionMonto.toLocaleString('es-AR', {minimumFractionDigits:2})}</span></div>` : ''}
             ${overMonto ? `<div class="tarifa-row" style="color:#2e7d32"><span>Over ${overDisplayVal}</span><span>- ${t.monedaTotal} ${overMonto.toLocaleString('es-AR', {minimumFractionDigits:2})}</span></div>` : ''}
-            <div class="tarifa-row total"><span>NETO${qty > 1 ? ' (×' + qty + ')' : ''}</span><span>${t.monedaTotal} ${netoTotal.toLocaleString('es-AR', {minimumFractionDigits:2})}</span></div>
+            <div class="tarifa-row total"><span>NETO por pax</span><span>${t.monedaTotal} ${netoUnit.toLocaleString('es-AR', {minimumFractionDigits:2})}</span></div>
+            ${qty > 1 ? `<div class="tarifa-row total" style="border-top:1px dashed #ccc;margin-top:4px;padding-top:4px"><span>NETO ×${qty}</span><span>${t.monedaTotal} ${netoTotal.toLocaleString('es-AR', {minimumFractionDigits:2})}</span></div>` : ''}
           </div>
         `;
       });
