@@ -1440,6 +1440,12 @@ function renderReservasTabla() {
     if (r.adultos) paxDetail.push(r.adultos + ' ADT');
     if (r.ninos) paxDetail.push(r.ninos + ' CHD');
     if (r.infantes) paxDetail.push(r.infantes + ' INF');
+    // Extract passenger last names
+    let apellidos = '';
+    try {
+      const pj = typeof r.pasajeros_json === 'string' ? JSON.parse(r.pasajeros_json) : (r.pasajeros_json || []);
+      apellidos = pj.map(p => p.apellido || p.lastName || '').filter(Boolean).join(', ');
+    } catch(e) {}
     const fecha = r.fecha_salida ? new Date(r.fecha_salida).toLocaleDateString('es-AR', { day:'2-digit', month:'short' }) : '-';
     const creado = r.created_at ? new Date(r.created_at).toLocaleDateString('es-AR', { day:'2-digit', month:'short', hour:'2-digit', minute:'2-digit' }) : '';
     return '<tr onclick="verDetalleReserva(' + r.id + ')">' +
@@ -1447,7 +1453,7 @@ function renderReservasTabla() {
       '<td><span class="res-ruta">' + (r.origen||'?') + ' → ' + (r.destino||'?') + '</span></td>' +
       '<td style="color:var(--muted)">' + (r.aerolinea||'-') + '</td>' +
       '<td class="res-fecha">' + fecha + '</td>' +
-      '<td>' + (paxDetail.join(', ')||'-') + '</td>' +
+      '<td>' + (paxDetail.join(', ')||'-') + (apellidos ? '<br><span style="font-size:10px;color:var(--gold)">' + apellidos + '</span>' : '') + '</td>' +
       '<td class="res-precio">USD ' + (r.precio_usd||0).toLocaleString('es-AR',{minimumFractionDigits:0}) + '</td>' +
       '<td><span class="badge-res badge-' + r.estado + '">' + r.estado + '</span></td>' +
     '</tr>';
