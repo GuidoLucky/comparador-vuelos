@@ -545,7 +545,7 @@ function procesarVuelosSabre(data, paxCounts) {
                 vuelo: `${carrier.marketing || ''}${carrier.marketingFlightNumber || ''}`,
                 aerolinea: carrier.marketing || '',
                 operador: carrier.operating || carrier.marketing || '',
-                cabina: 'Y',
+                cabina: sched.cabin?.short_name || sched.cabin || carrier.cabinCode || 'Y',
                 duracion: sched.elapsedTime || 0
               });
             }
@@ -3626,9 +3626,13 @@ app.post('/generar-cotizacion', async (req, res) => {
         // Get penalties from cache
         const cachedPenCotSabre = penaltiesCache.get(op.quotationId) || null;
 
+        // Get cabin from cached data or op
+        const sabreCabinNameMap = { 'Y': 'Economica', 'W': 'Premium Economy', 'C': 'Business', 'F': 'Primera', 'S': 'Premium Economy' };
+        const sabreCabinLabel = sabreCabinNameMap[op.cabina] || op.cabina || 'Economica';
+
         return {
           aerolinea: cached.validatingCarrier || '',
-          vuelos, detalle_vuelo: 'Economica', pasajeros, penalidades: cachedPenCotSabre,
+          vuelos, detalle_vuelo: sabreCabinLabel, pasajeros, penalidades: cachedPenCotSabre,
           equipaje: {
             handOn: { label: 'Incluida', incluido: true },
             carryOn: { label: 'No informado', incluido: false },
@@ -3712,9 +3716,19 @@ app.post('/generar-cotizacion', async (req, res) => {
         const validating = assocs[0]?.validating_company || '';
         const airlineName = cached.companies[validating]?.name || validating;
         
+        // Get cabin from segment references
+        const firstSegRefs = Object.values(assocs[0]?.segment_references || {});
+        const firstSegRef = firstSegRefs[0] || {};
+        const cabinShort = firstSegRef.cabin?.short_name || firstSegRef.cabin?.long_name || '';
+        const cabinNameMap = { 'Y': 'Economica', 'W': 'Premium Economy', 'C': 'Business', 'F': 'Primera', 'M': 'Economica' };
+        const cabinLabel = cabinNameMap[cabinShort] || cabinShort || 'Economica';
+        // Get brand/family from fare_list
+        const famBrand = fareList[0]?.family || '';
+        const detalleVuelo = famBrand ? `${cabinLabel} - ${famBrand}` : cabinLabel;
+
         return { 
           aerolinea: airlineName, vuelos, 
-          detalle_vuelo: 'Economica', 
+          detalle_vuelo: detalleVuelo, 
           pasajeros, penalidades: penaltiesCache.get(op.quotationId) || null, 
           equipaje: op.equipaje || null 
         };
