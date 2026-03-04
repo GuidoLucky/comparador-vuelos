@@ -1628,7 +1628,7 @@ async function ejecutarRecotizarRes() {
       const mon = data.tarifas[0]?.monedaTotal || 'USD';
       html += '<div class="tarifa-card-d" style="border-color:var(--gold)"><div class="tr total"><span>TOTAL NETO</span><span style="color:var(--gold)">' + mon + ' ' + grandNeto.toFixed(2) + '</span></div></div>';
       if (data.pricingId) {
-        window._lastPricing = { pricingId:data.pricingId, segmentIds:data.segmentIds, netoTotal:grandNeto, moneda:mon };
+        window._lastPricing = { pricingId:data.pricingId, segmentIds:data.segmentIds, fareNumbersInPNR:data.fareNumbersInPNR, netoTotal:grandNeto, moneda:mon };
         html += '<button class="btn-act btn-act-success" onclick="guardarTarifaRes()" style="margin-top:8px">💾 Guardar tarifa</button>';
       }
       rd.innerHTML = html;
@@ -1642,7 +1642,7 @@ async function guardarTarifaRes() {
   try {
     const res = await fetch('/reservas/' + reservaActual.id + '/guardar-tarifa', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(window._lastPricing) });
     const data = await res.json(); if (!data.ok) throw new Error(data.error);
-    alert('✅ ' + data.mensaje); cerrarModalRes(); cargarReservas();
+    alert((data.warning ? '⚠️ ' : '✅ ') + data.mensaje); cerrarModalRes(); cargarReservas();
   } catch(e) { alert('Error: ' + e.message); }
 }
 
