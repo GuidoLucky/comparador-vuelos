@@ -582,8 +582,12 @@ async function ejecutarRecotizar() {
       let html = '';
       let grandTotal = 0;
       let grandNeto = 0;
+      // Get passenger counts from current reservation
+      const paxCounts = { ADT: reservaActual?.adultos || 1, CHD: reservaActual?.ninos || 0, CNN: reservaActual?.ninos || 0, INF: reservaActual?.infantes || 0, INS: reservaActual?.infantes || 0 };
       data.tarifas.forEach(t => {
-        grandTotal += t.total;
+        const tipoUpper = (t.tipo || 'ADT').toUpperCase();
+        const qty = paxCounts[tipoUpper] || paxCounts['ADT'] || 1;
+        grandTotal += t.total * qty;
         // Comisión + Over se descuentan del neto
         const comObt = t.comisionObtenida?.valueApplied || 0;
         const comCed = t.comisionCedida?.valueApplied || 0;
@@ -592,12 +596,13 @@ async function ejecutarRecotizar() {
         const overMonto = t.overComision?.ceded?.valueApplied || t.overComision?.obtained?.valueApplied || t.overComision?.valueApplied || t.overComision?.amount || 0;
         const overDisplayVal = t.overComision?.ceded?.displayValue || t.overComision?.obtained?.displayValue || t.overComision?.displayValue || '';
         // Neto = total + fee - comisión - over
-        const neto = t.total + t.fee - comisionMonto - overMonto;
-        grandNeto += neto;
+        const netoUnit = t.total + t.fee - comisionMonto - overMonto;
+        const netoTotal = netoUnit * qty;
+        grandNeto += netoTotal;
         
         html += `
           <div class="tarifa-card">
-            <div class="tarifa-header">${t.tipo} × 1 ${t.pasajero ? '— ' + t.pasajero : ''}</div>
+            <div class="tarifa-header">${t.tipo} × ${qty} ${t.pasajero ? '— ' + t.pasajero : ''}</div>
             ${t.tipoTarifa ? `<div class="tarifa-row" style="color:#666;font-size:12px"><span>Tipo: ${t.tipoTarifa}${t.validadora ? ' / ' + t.validadora : ''}</span></div>` : ''}
             <div class="tarifa-row"><span>Tarifa base</span><span>${t.monedaBase} ${t.tarifaBase.toLocaleString('es-AR', {minimumFractionDigits:2})}</span></div>
             <div class="tarifa-row"><span>Impuestos</span><span>${t.monedaImpuestos} ${t.impuestos.toLocaleString('es-AR', {minimumFractionDigits:2})}</span></div>
@@ -605,14 +610,19 @@ async function ejecutarRecotizar() {
             ${t.fee ? `<div class="tarifa-row"><span>Fee Tucano</span><span>${t.monedaFee} ${t.fee.toLocaleString('es-AR', {minimumFractionDigits:2})}</span></div>` : ''}
             ${comisionMonto ? `<div class="tarifa-row" style="color:#2e7d32"><span>Comisión ${comDisplayVal}</span><span>- ${t.monedaTotal} ${comisionMonto.toLocaleString('es-AR', {minimumFractionDigits:2})}</span></div>` : ''}
             ${overMonto ? `<div class="tarifa-row" style="color:#2e7d32"><span>Over ${overDisplayVal}</span><span>- ${t.monedaTotal} ${overMonto.toLocaleString('es-AR', {minimumFractionDigits:2})}</span></div>` : ''}
-            <div class="tarifa-row total"><span>NETO a pagar</span><span>${t.monedaTotal} ${neto.toLocaleString('es-AR', {minimumFractionDigits:2})}</span></div>
+            <div class="tarifa-row total"><span>NETO${qty > 1 ? ' (×' + qty + ')' : ''}</span><span>${t.monedaTotal} ${netoTotal.toLocaleString('es-AR', {minimumFractionDigits:2})}</span></div>
           </div>
         `;
       });
       const mon = data.tarifas[0]?.monedaTotal || 'USD';
-      const totalComisiones = data.tarifas.reduce((s, t) => s + (t.comisionCedida?.valueApplied || 0) + (t.comisionObtenida?.valueApplied || 0), 0);
-      const totalOver = data.tarifas.reduce((s, t) => s + (t.overComision?.ceded?.valueApplied || t.overComision?.obtained?.valueApplied || t.overComision?.valueApplied || t.overComision?.amount || 0), 0);
-      const totalFees = data.tarifas.reduce((s, t) => s + (t.fee || 0), 0);
+      let totalComisiones = 0, totalOver = 0, totalFees = 0;
+      data.tarifas.forEach(t => {
+        const tipoUpper = (t.tipo || 'ADT').toUpperCase();
+        const qty = paxCounts[tipoUpper] || paxCounts['ADT'] || 1;
+        totalComisiones += ((t.comisionCedida?.valueApplied || 0) + (t.comisionObtenida?.valueApplied || 0)) * qty;
+        totalOver += (t.overComision?.ceded?.valueApplied || t.overComision?.obtained?.valueApplied || t.overComision?.valueApplied || t.overComision?.amount || 0) * qty;
+        totalFees += (t.fee || 0) * qty;
+      });
       const totalDescuentos = totalComisiones + totalOver;
       html += `<div class="tarifa-card" style="background:#e8f5e9;border-color:#4caf50;">
         <div class="tarifa-row" style="padding:2px 0;font-size:13px">
