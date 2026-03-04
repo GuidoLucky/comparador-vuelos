@@ -3280,7 +3280,7 @@ app.put('/notificaciones/leer-todas', async (req, res) => {
 // Manual trigger for testing
 app.post('/cron/verificar', async (req, res) => {
   try {
-    await cronVerificarReservas();
+    await cronVerificarReservas(true);
     res.json({ ok: true, mensaje: 'Verificación ejecutada' });
   } catch(e) { res.json({ ok: false, error: e.message }); }
 });
@@ -3292,23 +3292,25 @@ app.post('/cron/checkin', async (req, res) => {
 });
 
 // ─── CRON: Auto-verificar reservas ───
-async function cronVerificarReservas() {
+async function cronVerificarReservas(manual = false) {
   if (!db) return;
   try {
-    // Get reservas that need checking: only EMITIDA (already ticketed)
+    // Manual: all except CANCELADA. Automático: solo EMITIDA
+    const estadoFilter = manual ? "estado IN ('CREADA','EMITIDA')" : "estado = 'EMITIDA'";
+    const intervaloFilter = manual ? '' : "AND (ultimo_check_cron IS NULL OR ultimo_check_cron < NOW() - INTERVAL '6 hours')";
     const r = await db.query(`
       SELECT id, pnr, order_id, estado, gds, notas, fecha_salida, aerolinea
       FROM reservas 
-      WHERE estado = 'EMITIDA' 
+      WHERE ${estadoFilter}
         AND order_id IS NOT NULL 
-        AND (ultimo_check_cron IS NULL OR ultimo_check_cron < NOW() - INTERVAL '6 hours')
+        ${intervaloFilter}
         AND (fecha_salida IS NULL OR fecha_salida > NOW() - INTERVAL '2 days')
       ORDER BY ultimo_check_cron ASC NULLS FIRST
-      LIMIT 20
+      LIMIT ${manual ? 50 : 20}
     `);
     
     if (!r.rows.length) return;
-    console.log(`[Cron-Verify] Verificando ${r.rows.length} reservas...`);
+    console.log(`[Cron-Verify${manual ? '-MANUAL' : ''}] Verificando ${r.rows.length} reservas...`);
     
     for (const reserva of r.rows) {
       try {
