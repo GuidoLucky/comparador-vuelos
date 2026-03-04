@@ -742,9 +742,9 @@ async function buscarLleego({ tipo, origen, destino, salida, regreso, adultos, n
       paxes_distribution: { passengers_ages: ages }
     };
     if (cabin) travelOpts.cabin = cabin;
-    // Airlines filter: Lleego uses companies array
+    // Airlines filter: Lleego uses companies: [["ADD", "AR", "LA"]] format
     const airlinesArr = Array.isArray(airlines) && airlines.length ? airlines : [];
-    if (airlinesArr.length) travelOpts.companies = airlinesArr.map(a => [a]);
+    if (airlinesArr.length) travelOpts.companies = [["ADD", ...airlinesArr]];
 
     const body = {
       query: {
