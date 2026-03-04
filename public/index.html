@@ -1370,7 +1370,7 @@ async function verDetalle(quotationId, searchId, e) {
     // ─── CONDICIONES (tabla estilo SCIWeb) ───
     var pen = d.penalidades || {};
     function renderCondRow(label, data, isDevolucion) {
-      if (!data) return '<tr><td class="cond-label">' + label + '</td><td class="cond-monto">—</td><td><span class="cond-badge no-permite">Sin info</span></td></tr>';
+      if (!data) return '<tr><td class="cond-label">' + label + '</td><td class="cond-monto">—</td><td><span class="cond-badge no-permite">No disponible</span></td></tr>';
       var permite = data.permite !== false;
       var badge = permite ? '<span class="cond-badge permite">Permite</span>' : '<span class="cond-badge no-permite">No permite</span>';
       var montoVal = isDevolucion && permite ? ((data.monto || 0) + 100) : (data.monto || 0);
