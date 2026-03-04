@@ -1693,9 +1693,9 @@ app.post('/crear-reserva', async (req, res) => {
         console.log('[Lleego] Pre-booking pricing error (continuing):', _pe.message);
       }
       
-      // If offer expired, don't attempt booking
+      // If offer expired, abort — don't waste a booking attempt
       if (pricingFailed) {
-        console.log('[Lleego] Pricing failed but attempting booking anyway (pricing is optional validation)');
+        throw new Error('La tarifa expiró o ya no está disponible. Buscá de nuevo para obtener tarifas actualizadas.');
       }
       
       const bookRes = await fetch('https://api-tr.lleego.com/api/v2/transport/booking?locale=es-ar', {
@@ -2182,10 +2182,10 @@ app.post('/reservas/:id/verificar', async (req, res) => {
         console.log(`[Verificar GEA] status=${llStatus}, pnr=${pnrFromAPI}, timeLimit=${timeLimitStr}`);
         
         // Map Lleego status to our states
-        // RSVD=reserved/created, TKT=ticketed/emitted, XXX=cancelled, VOID=voided
+        // RSVD=reserved/created, TKT=ticketed/emitted, XXX/CNLD=cancelled, VOID=voided
         let apiEstado = reserva.estado;
         if (llStatus.includes('TKT') || llStatus.includes('EMIT') || llStatus.includes('TICKET')) apiEstado = 'EMITIDA';
-        else if (llStatus.includes('XXX') || llStatus.includes('CANCEL') || llStatus.includes('VOID')) apiEstado = 'CANCELADA';
+        else if (llStatus.includes('XXX') || llStatus.includes('CANCEL') || llStatus.includes('VOID') || llStatus.includes('CNLD')) apiEstado = 'CANCELADA';
         else if (llStatus.includes('RSVD') || llStatus.includes('CONFIRM') || llStatus.includes('BOOK') || llStatus.includes('PEND')) apiEstado = 'CREADA';
         
         let estadoActualizado = false;
@@ -3355,7 +3355,7 @@ async function cronVerificarReservas(manual = false) {
           const llStatus = (bookRef.status || line.status || '').toUpperCase();
           
           if (llStatus.includes('TKT') || llStatus.includes('EMIT')) apiEstado = 'EMITIDA';
-          else if (llStatus.includes('XXX') || llStatus.includes('CANCEL') || llStatus.includes('VOID')) apiEstado = 'CANCELADA';
+          else if (llStatus.includes('XXX') || llStatus.includes('CANCEL') || llStatus.includes('VOID') || llStatus.includes('CNLD')) apiEstado = 'CANCELADA';
           else if (llStatus.includes('RSVD') || llStatus.includes('CONFIRM')) apiEstado = 'CREADA';
           
           // Check for schedule changes in segments
