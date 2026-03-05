@@ -2668,10 +2668,10 @@ app.post('/reservas/:id/guardar-tarifa', async (req, res) => {
       SegmentReferenceIds: segRefIds, Segments: segments
     };
 
-    console.log('[SavePricing] Step 1: Fresh pricing (ByText + RetrievePricing, como SCIWeb)...');
+    console.log('[SavePricing] Step 1: Fresh pricing (ByText primero como warmup, luego RetrievePricing para el ID)...');
     let freshPricingId = null, freshFareNumbers = null;
 
-    // SCIWeb usa Source:1, StrategyType:3, OrderRecord=PNR, DiscountType="" para ByText
+    // Paso 1: ByText como warmup (Source:1, StrategyType:3, igual que SCIWeb) — ignorar resultado
     const pricingPayloadByText = {
       ...pricingPayload,
       OrderRecord: reserva.pnr || null,
@@ -2679,31 +2679,16 @@ app.post('/reservas/:id/guardar-tarifa', async (req, res) => {
       StrategyType: 3,
       PassengersWithType: paxWithType.map(p => ({ ...p, DiscountType: '' }))
     };
-
-    // Paso 1: ByText — capturar su PricingId (SCIWeb lo usa para SavePricing)
     try {
       const btResp = await fetch(`${API_BASE}/FlightReservationPricing/RetrievePricingByText`, {
         method: 'POST', headers: hdrs, body: JSON.stringify(pricingPayloadByText)
       });
-      const btText = await btResp.text();
-      console.log(`[SavePricing] RetrievePricingByText HTTP ${btResp.status}`);
-      if (btResp.ok && btText.length > 5) {
-        const btData = JSON.parse(btText);
-        const btPricingId = btData.pricingId || btData.PricingId;
-        const btFares = btData.fares || btData.storedFares || [];
-        if (btPricingId) {
-          freshPricingId = btPricingId;
-          console.log('[SavePricing] Usando PricingId de ByText:', freshPricingId);
-        }
-        if (btFares.length && btFares[0].numberInPNR != null) {
-          freshFareNumbers = [String(btFares[0].numberInPNR)];
-        }
-      }
+      console.log(`[SavePricing] RetrievePricingByText HTTP ${btResp.status} (warmup)`);
     } catch(e) {
-      console.log('[SavePricing] RetrievePricingByText error:', e.message);
+      console.log('[SavePricing] RetrievePricingByText error (continuing):', e.message);
     }
 
-    // Paso 2: RetrievePricing — siempre llamar (como SCIWeb), usar su ID solo si ByText falló
+    // Paso 2: RetrievePricing — obtener el PricingId fresco para SavePricing
     const prResp = await fetch(`${API_BASE}/FlightReservationPricing/RetrievePricing`, {
       method: 'POST', headers: hdrs, body: JSON.stringify(pricingPayload)
     });
@@ -2711,16 +2696,10 @@ app.post('/reservas/:id/guardar-tarifa', async (req, res) => {
     console.log(`[SavePricing] RetrievePricing HTTP ${prResp.status}`);
     if (prResp.ok && prText.length > 5) {
       const prData = JSON.parse(prText);
-      // Solo sobreescribir si ByText no dio ID
-      if (!freshPricingId) {
-        freshPricingId = prData.pricingId || prData.PricingId;
-        console.log('[SavePricing] Usando PricingId de RetrievePricing (fallback):', freshPricingId);
-      }
-      if (!freshFareNumbers) {
-        const prFares = prData.fares || prData.storedFares || [];
-        if (prFares.length && prFares[0].numberInPNR != null) {
-          freshFareNumbers = [String(prFares[0].numberInPNR)];
-        }
+      freshPricingId = prData.pricingId || prData.PricingId;
+      const prFares = prData.fares || prData.storedFares || [];
+      if (prFares.length && prFares[0].numberInPNR != null) {
+        freshFareNumbers = [String(prFares[0].numberInPNR)];
       }
     }
 
