@@ -2668,10 +2668,10 @@ app.post('/reservas/:id/guardar-tarifa', async (req, res) => {
       SegmentReferenceIds: segRefIds, Segments: segments
     };
 
-    console.log('[SavePricing] Step 1: Fresh pricing (ByText primero como warmup, luego RetrievePricing para el ID)...');
+    console.log('[SavePricing] Step 1: Fresh pricing (ByText warmup + RetrievePricing, como SCIWeb)...');
     let freshPricingId = null, freshFareNumbers = null;
 
-    // Paso 1: ByText como warmup (Source:1, StrategyType:3, igual que SCIWeb) — ignorar resultado
+    // ByText warmup con params de SCIWeb (Source:1, StrategyType:3, OrderRecord=PNR)
     const pricingPayloadByText = {
       ...pricingPayload,
       OrderRecord: reserva.pnr || null,
@@ -2688,7 +2688,7 @@ app.post('/reservas/:id/guardar-tarifa', async (req, res) => {
       console.log('[SavePricing] RetrievePricingByText error (continuing):', e.message);
     }
 
-    // Paso 2: RetrievePricing — obtener el PricingId fresco para SavePricing
+    // RetrievePricing para obtener el PricingId fresco
     const prResp = await fetch(`${API_BASE}/FlightReservationPricing/RetrievePricing`, {
       method: 'POST', headers: hdrs, body: JSON.stringify(pricingPayload)
     });
@@ -2735,8 +2735,12 @@ app.post('/reservas/:id/guardar-tarifa', async (req, res) => {
     
     const savedSegs = saveData.segmentReferenceIds || [];
     const savedPax = saveData.passengerReferenceIds || [];
-    const actuallyWorked = savedSegs.length > 0 || savedPax.length > 0;
-    console.log(`[SavePricing] Saved segments: ${savedSegs.length}, passengers: ${savedPax.length}, success: ${actuallyWorked}`);
+    // Para Sabre: arrays con datos = confirmado
+    // Para Amadeus: Tucano devuelve arrays vacíos aunque haya guardado OK — si orderId coincide, es éxito
+    const confirmedBySabre = savedSegs.length > 0 || savedPax.length > 0;
+    const confirmedByAmadeus = !confirmedBySabre && saveData.orderId === reserva.order_id;
+    const actuallyWorked = confirmedBySabre || confirmedByAmadeus;
+    console.log(`[SavePricing] Saved segments: ${savedSegs.length}, passengers: ${savedPax.length}, amadeus: ${confirmedByAmadeus}, success: ${actuallyWorked}`);
 
     if (netoTotal) {
       await db.query('UPDATE reservas SET precio_usd=$1, precio_venta_usd=$2, updated_at=NOW() WHERE id=$3', [netoTotal, netoTotal, req.params.id]);
