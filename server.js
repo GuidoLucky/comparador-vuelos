@@ -2148,7 +2148,7 @@ app.post('/reservas/:id/verificar', async (req, res) => {
         // If 403/404, try with locator (PNR) as fallback
         if (!resp.ok && reserva.pnr) {
           console.log(`[Verificar GEA] First attempt failed ${resp.status}, trying with locator...`);
-          statusUrl = `https://api-tr.lleego.com/api/v2/transport/retrieve/${reserva.order_id}?locator=${reserva.pnr}&locale=es-ar`;
+          statusUrl = `https://api-tr.lleego.com/api/v2/transport/retrieve/${reserva.pnr}?locale=es-ar`;
           resp = await fetch(statusUrl, {
             headers: { 'Authorization': `Bearer ${llToken}`, 'x-api-key': LLEEGO_API_KEY, 'lang': 'es-ar' }
           });
@@ -2680,7 +2680,7 @@ app.post('/reservas/:id/guardar-tarifa', async (req, res) => {
       if (prResp.ok && prText.length > 5) {
         const prData = JSON.parse(prText);
         freshPricingId = prData.pricingId || prData.PricingId;
-        const freshFares = prData.storedFares || prData.fares || [];
+        const freshFares = prData.fares || prData.storedFares || [];
         if (freshFares.length && freshFares[0].numberInPNR != null) {
           freshFareNumbers = [...new Set(freshFares.map(f => String(f.numberInPNR)))];
         }
