@@ -2988,6 +2988,81 @@ app.post('/reservas/:id/emitir', async (req, res) => {
   }
 });
 
+// ─── CANCELAR RESERVA ───
+app.post('/reservas/:id/cancelar', async (req, res) => {
+  if (!db) return res.json({ ok: false, error: 'Sin DB' });
+  try {
+    const r = await db.query('SELECT * FROM reservas WHERE id=$1', [req.params.id]);
+    if (!r.rows.length) return res.json({ ok: false, error: 'Reserva no encontrada' });
+    const reserva = r.rows[0];
+    if (!reserva.order_id) return res.json({ ok: false, error: 'Sin orderId' });
+
+    if (reserva.estado === 'CANCELADA') {
+      return res.json({ ok: false, error: 'La reserva ya está cancelada' });
+    }
+    if (reserva.estado === 'EMITIDA') {
+      return res.json({ ok: false, error: 'No se puede cancelar una reserva emitida desde aquí. Contactar a la aerolínea.' });
+    }
+
+    // ─── GEA/Lleego cancel ───
+    const isGEA = (reserva.gds && (reserva.gds.includes('NDC') || reserva.gds.includes('Lleego'))) ||
+                  (reserva.notas && reserva.notas.includes('GEA'));
+    if (isGEA) {
+      try {
+        const llToken = await getLleegoToken();
+        if (!llToken) throw new Error('No se pudo autenticar con Lleego');
+        const cancelUrl = `https://api-tr.lleego.com/api/v2/transport/cancel/${reserva.order_id}?locale=es-ar`;
+        console.log('[Cancelar GEA] URL:', cancelUrl);
+        const cancelResp = await fetch(cancelUrl, {
+          method: 'POST',
+          headers: { 'Authorization': `Bearer ${llToken}`, 'x-api-key': LLEEGO_API_KEY, 'lang': 'es-ar', 'Content-Type': 'application/json' },
+          body: JSON.stringify({})
+        });
+        const cancelText = await cancelResp.text();
+        console.log(`[Cancelar GEA] HTTP ${cancelResp.status}:`, cancelText.substring(0, 300));
+        if (!cancelResp.ok && cancelResp.status !== 404) {
+          return res.json({ ok: false, error: `Lleego respondió ${cancelResp.status}: ${cancelText.substring(0, 200)}` });
+        }
+        await db.query('UPDATE reservas SET estado=$1, updated_at=NOW() WHERE id=$2', ['CANCELADA', reserva.id]);
+        console.log(`[Cancelar GEA] Reserva ${reserva.pnr} cancelada OK`);
+        return res.json({ ok: true, mensaje: `Reserva ${reserva.pnr} cancelada correctamente en GEA.` });
+      } catch(e) {
+        return res.json({ ok: false, error: 'Error cancelando en GEA: ' + e.message });
+      }
+    }
+
+    // ─── Tucano/GLAS cancel ───
+    try {
+      const token = await getToken();
+      const cancelResp = await fetch(`${API_BASE}/FlightReservation/CancelPNRV2`, {
+        method: 'POST',
+        headers: getHeaders(token),
+        body: JSON.stringify({ OrderId: reserva.order_id })
+      });
+      const cancelText = await cancelResp.text();
+      console.log(`[Cancelar Tucano] HTTP ${cancelResp.status}:`, cancelText.substring(0, 300));
+
+      let cancelData = {};
+      try { cancelData = JSON.parse(cancelText); } catch(e) {}
+
+      if (!cancelResp.ok) {
+        return res.json({ ok: false, error: `Tucano respondió ${cancelResp.status}: ${cancelText.substring(0, 200)}` });
+      }
+
+      // Actualizar estado en DB
+      await db.query('UPDATE reservas SET estado=$1, updated_at=NOW() WHERE id=$2', ['CANCELADA', reserva.id]);
+      console.log(`[Cancelar Tucano] Reserva ${reserva.pnr} cancelada OK`);
+      return res.json({ ok: true, mensaje: `Reserva ${reserva.pnr} cancelada correctamente.` });
+    } catch(e) {
+      return res.json({ ok: false, error: 'Error cancelando en Tucano: ' + e.message });
+    }
+
+  } catch(e) {
+    console.error('[Cancelar] Error:', e.message);
+    res.json({ ok: false, error: e.message });
+  }
+});
+
 // ─── GENERAR PDF DE RESERVA ───
 app.post('/reservas/:id/pdf', async (req, res) => {
   if (!db) return res.json({ ok: false, error: 'Sin DB' });
@@ -3381,25 +3456,10 @@ app.post('/reservas/:id/pdf', async (req, res) => {
       const multiTipos = preciosVenta.length > 1;
       doc.font(BOLD).fontSize(9).fillColor(NAVY).text(totalPax === 1 ? 'PRECIO' : 'PRECIOS', LEFT, y);
       y = doc.y + 6;
-      // Si hay precio_venta_usd guardado en DB (cotizado por el vendedor), usarlo directamente
-      const precioVentaDB = reserva.precio_venta_usd ? parseFloat(reserva.precio_venta_usd) : null;
       for (const pp of preciosVenta) {
         // Adjust cantidad to match real passengers of this type
         const realCantidad = multiTipos ? pp.cantidad : totalPax;
-        let precioVenta;
-        if (precioVentaDB && !multiTipos) {
-          // Usar precio de venta guardado (el que cotizó el vendedor)
-          precioVenta = precioVentaDB;
-          console.log('[PDF] Usando precio_venta_usd de DB:', precioVentaDB);
-        } else if (precioVentaDB && multiTipos) {
-          // Distribuir proporcionalmente entre tipos de pasajero
-          const netoTotal = preciosVenta.reduce((s, p) => s + p.neto * p.cantidad, 0);
-          const ratio = netoTotal > 0 ? (pp.neto * pp.cantidad) / netoTotal : 1 / preciosVenta.length;
-          precioVenta = Math.round(precioVentaDB * ratio);
-        } else {
-          // Fallback: calcular desde neto
-          precioVenta = calcularPrecio(pp.neto, pp.tipo_tarifa, pp.comision_over);
-        }
+        const precioVenta = calcularPrecio(pp.neto, pp.tipo_tarifa, pp.comision_over);
         const linea = etiquetaPrecio(precioVenta, pp.tipo, realCantidad, totalPax, multiTipos);
         doc.font(BOLD).fontSize(11).fillColor(NAVY).text(linea, LEFT, y);
         y = doc.y + 4;
