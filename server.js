@@ -2668,11 +2668,12 @@ app.post('/reservas/:id/guardar-tarifa', async (req, res) => {
       SegmentReferenceIds: segRefIds, Segments: segments
     };
 
-    console.log('[SavePricing] Step 1: Fresh RetrievePricing...');
+    console.log('[SavePricing] Step 1: Fresh RetrievePricing (ByText first, like SCIWeb)...');
     let prResp, prText, freshPricingId = null, freshFareNumbers = null;
+    // SCIWeb calls ByText FIRST to activate Amadeus pricing, then RetrievePricing for fresh ID
     for (const ep of [
-      `${API_BASE}/FlightReservationPricing/RetrievePricing`,
-      `${API_BASE}/FlightReservationPricing/RetrievePricingByText`
+      `${API_BASE}/FlightReservationPricing/RetrievePricingByText`,
+      `${API_BASE}/FlightReservationPricing/RetrievePricing`
     ]) {
       prResp = await fetch(ep, { method: 'POST', headers: hdrs, body: JSON.stringify(pricingPayload) });
       prText = await prResp.text();
@@ -2680,6 +2681,7 @@ app.post('/reservas/:id/guardar-tarifa', async (req, res) => {
       if (prResp.ok && prText.length > 5) {
         const prData = JSON.parse(prText);
         freshPricingId = prData.pricingId || prData.PricingId;
+        // Use fares (fresh) not storedFares (old history) — take only first fare's numberInPNR
         const freshFares = prData.fares || prData.storedFares || [];
         if (freshFares.length && freshFares[0].numberInPNR != null) {
           freshFareNumbers = [String(freshFares[0].numberInPNR)];
