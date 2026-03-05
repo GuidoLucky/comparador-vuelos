@@ -2668,25 +2668,30 @@ app.post('/reservas/:id/guardar-tarifa', async (req, res) => {
       SegmentReferenceIds: segRefIds, Segments: segments
     };
 
-    console.log('[SavePricing] Step 1: Fresh RetrievePricing (ByText first, like SCIWeb)...');
-    let prResp, prText, freshPricingId = null, freshFareNumbers = null;
-    // SCIWeb calls ByText FIRST to activate Amadeus pricing, then RetrievePricing for fresh ID
-    for (const ep of [
-      `${API_BASE}/FlightReservationPricing/RetrievePricingByText`,
-      `${API_BASE}/FlightReservationPricing/RetrievePricing`
-    ]) {
-      prResp = await fetch(ep, { method: 'POST', headers: hdrs, body: JSON.stringify(pricingPayload) });
-      prText = await prResp.text();
-      console.log(`[SavePricing] Pricing ${ep.split('/').pop()} HTTP ${prResp.status}`);
-      if (prResp.ok && prText.length > 5) {
-        const prData = JSON.parse(prText);
-        freshPricingId = prData.pricingId || prData.PricingId;
-        // Use fares (fresh) not storedFares (old history) — take only first fare's numberInPNR
-        const freshFares = prData.fares || prData.storedFares || [];
-        if (freshFares.length && freshFares[0].numberInPNR != null) {
-          freshFareNumbers = [String(freshFares[0].numberInPNR)];
-        }
-        break;
+    console.log('[SavePricing] Step 1: Fresh pricing (ByText + RetrievePricing, como SCIWeb)...');
+    let freshPricingId = null, freshFareNumbers = null;
+    // SCIWeb siempre llama los DOS endpoints antes de SavePricing — no hacer break
+    // ByText puede fallar (400) pero igual hay que llamar RetrievePricing después
+    try {
+      const btResp = await fetch(`${API_BASE}/FlightReservationPricing/RetrievePricingByText`, {
+        method: 'POST', headers: hdrs, body: JSON.stringify(pricingPayload)
+      });
+      console.log(`[SavePricing] RetrievePricingByText HTTP ${btResp.status}`);
+    } catch(e) {
+      console.log('[SavePricing] RetrievePricingByText error (continuing):', e.message);
+    }
+    // Siempre llamar RetrievePricing para obtener el PricingId fresco
+    const prResp = await fetch(`${API_BASE}/FlightReservationPricing/RetrievePricing`, {
+      method: 'POST', headers: hdrs, body: JSON.stringify(pricingPayload)
+    });
+    const prText = await prResp.text();
+    console.log(`[SavePricing] RetrievePricing HTTP ${prResp.status}`);
+    if (prResp.ok && prText.length > 5) {
+      const prData = JSON.parse(prText);
+      freshPricingId = prData.pricingId || prData.PricingId;
+      const freshFares = prData.fares || prData.storedFares || [];
+      if (freshFares.length && freshFares[0].numberInPNR != null) {
+        freshFareNumbers = [String(freshFares[0].numberInPNR)];
       }
     }
 
