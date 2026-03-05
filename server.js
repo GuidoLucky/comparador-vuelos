@@ -2682,7 +2682,7 @@ app.post('/reservas/:id/guardar-tarifa', async (req, res) => {
         freshPricingId = prData.pricingId || prData.PricingId;
         const freshFares = prData.fares || prData.storedFares || [];
         if (freshFares.length && freshFares[0].numberInPNR != null) {
-          freshFareNumbers = [...new Set(freshFares.map(f => String(f.numberInPNR)))];
+          freshFareNumbers = [String(freshFares[0].numberInPNR)];
         }
         break;
       }
