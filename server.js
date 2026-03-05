@@ -225,6 +225,114 @@ const SCIWEB_USER = process.env.SCIWEB_USER;
 const SCIWEB_PASS = process.env.SCIWEB_PASS;
 const API_BASE = 'https://api-gwc.glas.travel/api';
 const COMPANY_ID = '3036';
+
+// ─── EMAIL CONFIG ───
+const GMAIL_USER = process.env.GMAIL_USER || 'guido@luckytourviajes.com';
+const GMAIL_PASS = process.env.GMAIL_PASS || '';
+
+let emailTransporter = null;
+if (GMAIL_PASS) {
+  emailTransporter = nodemailer.createTransport({
+    service: 'gmail',
+    auth: { user: GMAIL_USER, pass: GMAIL_PASS }
+  });
+  console.log('[Email] Transporter configurado para', GMAIL_USER);
+} else {
+  console.warn('[Email] GMAIL_PASS no configurado, emails desactivados');
+}
+
+async function enviarEmailReserva(reserva, pasajeros) {
+  if (!emailTransporter) return;
+  try {
+    const paxNombres = pasajeros.map(p => `${p.apellido}, ${p.nombre} (${p.tipo || 'ADT'})`).join('<br>');
+    
+    // Build itinerary from itinerario_json or segmentos_json
+    const itinerario = reserva.itinerario_json || [];
+    let segmentosHtml = '';
+    if (Array.isArray(itinerario)) {
+      for (const leg of itinerario) {
+        const segs = leg.segmentos || leg.segments || [leg];
+        for (const s of segs) {
+          const origen = s.origen || s.departure || s.departureAirportCode || '';
+          const destino = s.destino || s.arrival || s.arrivalAirportCode || '';
+          const salida = s.salida || s.departureDate || s.departure_date || '';
+          const llegada = s.llegada || s.arrivalDate || s.arrival_date || '';
+          const vuelo = s.vuelo || s.flightNumber || s.flight_number || '';
+          const aerolinea = s.aerolinea || s.airlineCode || s.marketing_company || '';
+          segmentosHtml += `
+            <tr>
+              <td style="padding:8px;border-bottom:1px solid #eee;">${aerolinea} ${vuelo}</td>
+              <td style="padding:8px;border-bottom:1px solid #eee;">${origen} → ${destino}</td>
+              <td style="padding:8px;border-bottom:1px solid #eee;">${salida ? new Date(salida).toLocaleString('es-AR', {dateStyle:'short',timeStyle:'short'}) : ''}</td>
+              <td style="padding:8px;border-bottom:1px solid #eee;">${llegada ? new Date(llegada).toLocaleString('es-AR', {dateStyle:'short',timeStyle:'short'}) : ''}</td>
+            </tr>`;
+        }
+      }
+    }
+
+    const precioNeto = reserva.precio_usd ? `USD ${parseFloat(reserva.precio_usd).toFixed(2)}` : 'A confirmar';
+    const gds = reserva.gds || (reserva.notas || '').includes('GEA') ? 'GEA/Lleego' : 'Tucano';
+
+    const html = `
+    <div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto;background:#f9f9f9;padding:20px;">
+      <div style="background:#1a1a2e;color:white;padding:20px;border-radius:8px 8px 0 0;text-align:center;">
+        <h1 style="margin:0;font-size:24px;">✈️ Lucky Tour</h1>
+        <p style="margin:5px 0;opacity:0.8;">Nueva Reserva Creada</p>
+      </div>
+      <div style="background:white;padding:24px;border-radius:0 0 8px 8px;box-shadow:0 2px 8px rgba(0,0,0,0.1);">
+        
+        <div style="background:#f0f7ff;border-left:4px solid #0066cc;padding:12px;margin-bottom:20px;border-radius:4px;">
+          <strong>PNR: ${reserva.pnr}</strong> &nbsp;|&nbsp; 
+          Estado: <span style="color:#e67e00;font-weight:bold;">${reserva.estado}</span> &nbsp;|&nbsp;
+          GDS: ${gds}
+        </div>
+
+        <h3 style="color:#333;margin-bottom:10px;">👤 Pasajeros</h3>
+        <p style="margin:0 0 20px 0;">${paxNombres}</p>
+
+        <h3 style="color:#333;margin-bottom:10px;">🛫 Itinerario</h3>
+        ${segmentosHtml ? `
+        <table style="width:100%;border-collapse:collapse;margin-bottom:20px;">
+          <thead>
+            <tr style="background:#f5f5f5;">
+              <th style="padding:8px;text-align:left;">Vuelo</th>
+              <th style="padding:8px;text-align:left;">Ruta</th>
+              <th style="padding:8px;text-align:left;">Salida</th>
+              <th style="padding:8px;text-align:left;">Llegada</th>
+            </tr>
+          </thead>
+          <tbody>${segmentosHtml}</tbody>
+        </table>` : `<p style="color:#666;">Ver detalle en sistema</p>`}
+
+        <div style="background:#fff8e1;border:1px solid #ffc107;padding:12px;border-radius:4px;margin-bottom:20px;">
+          <strong>💰 Neto: ${precioNeto}</strong>
+          ${reserva.time_limit ? `&nbsp;|&nbsp; ⏰ Límite emisión: <strong>${reserva.time_limit}</strong>` : ''}
+        </div>
+
+        <div style="text-align:center;margin-top:20px;">
+          <a href="https://comparador-vuelos-production.up.railway.app" 
+             style="background:#0066cc;color:white;padding:10px 24px;border-radius:6px;text-decoration:none;font-weight:bold;">
+            Ver en Sistema
+          </a>
+        </div>
+
+        <p style="color:#999;font-size:12px;margin-top:24px;text-align:center;">
+          Lucky Tour Viajes · Este email fue generado automáticamente
+        </p>
+      </div>
+    </div>`;
+
+    await emailTransporter.sendMail({
+      from: `"Lucky Tour" <${GMAIL_USER}>`,
+      to: GMAIL_USER,
+      subject: `✈️ Nueva Reserva ${reserva.pnr} - ${reserva.origen || ''} → ${reserva.destino || ''}`,
+      html
+    });
+    console.log(`[Email] Reserva ${reserva.pnr} enviada a ${GMAIL_USER}`);
+  } catch(e) {
+    console.error('[Email] Error enviando email:', e.message);
+  }
+}
 const WHOLESALER_ID = '538';
 
 // DB
@@ -1510,6 +1618,11 @@ app.post('/crear-reserva', async (req, res) => {
              JSON.stringify(vueloInfo?.itinerario?.flatMap(l=>l.segmentos||[])||[]),
              'USD']);
           console.log('[DB] Reserva Sabre guardada, PNR:', pnr);
+          // Send confirmation email
+          try {
+            const resRow = await db.query('SELECT * FROM reservas WHERE pnr=$1 ORDER BY id DESC LIMIT 1', [pnr]);
+            if (resRow.rows.length) await enviarEmailReserva(resRow.rows[0], pasajeros);
+          } catch(emailErr) { console.error('[Email] Error:', emailErr.message); }
         } catch(dbErr) { console.error('[DB] Error:', dbErr.message); }
       }
       
@@ -1844,6 +1957,11 @@ app.post('/crear-reserva', async (req, res) => {
              JSON.stringify(segmentosDetail),
              vueloInfo?.monedaBase || 'USD']);
           console.log('[DB] Reserva GEA guardada, PNR:', pnr);
+          // Send confirmation email
+          try {
+            const resRow = await db.query('SELECT * FROM reservas WHERE pnr=$1 ORDER BY id DESC LIMIT 1', [pnr]);
+            if (resRow.rows.length) await enviarEmailReserva(resRow.rows[0], pasajeros);
+          } catch(emailErr) { console.error('[Email] Error:', emailErr.message); }
           // Save cached penalties if available
           const cachedPenGEA = penaltiesCache.get(quotationId);
           if (cachedPenGEA) {
@@ -2014,6 +2132,11 @@ app.post('/crear-reserva', async (req, res) => {
           }
         }
         console.log('[DB] Reserva guardada, PNR:', data.recordLocator);
+          // Send confirmation email
+          try {
+            const resRow = await db.query('SELECT * FROM reservas WHERE pnr=$1 ORDER BY id DESC LIMIT 1', [data.recordLocator]);
+            if (resRow.rows.length) await enviarEmailReserva(resRow.rows[0], pasajeros);
+          } catch(emailErr) { console.error('[Email] Error:', emailErr.message); }
           // Save cached penalties if available
           const cachedPenTuc = penaltiesCache.get(quotationId);
           if (cachedPenTuc) {
@@ -2670,8 +2793,6 @@ app.post('/reservas/:id/guardar-tarifa', async (req, res) => {
 
     console.log('[SavePricing] Step 1: Fresh pricing (ByText warmup + RetrievePricing, como SCIWeb)...');
     let freshPricingId = null, freshFareNumbers = null;
-
-    // ByText warmup con params de SCIWeb (Source:1, StrategyType:3, OrderRecord=PNR)
     const pricingPayloadByText = {
       ...pricingPayload,
       OrderRecord: reserva.pnr || null,
@@ -2687,8 +2808,6 @@ app.post('/reservas/:id/guardar-tarifa', async (req, res) => {
     } catch(e) {
       console.log('[SavePricing] RetrievePricingByText error (continuing):', e.message);
     }
-
-    // RetrievePricing para obtener el PricingId fresco
     const prResp = await fetch(`${API_BASE}/FlightReservationPricing/RetrievePricing`, {
       method: 'POST', headers: hdrs, body: JSON.stringify(pricingPayload)
     });
@@ -2735,8 +2854,6 @@ app.post('/reservas/:id/guardar-tarifa', async (req, res) => {
     
     const savedSegs = saveData.segmentReferenceIds || [];
     const savedPax = saveData.passengerReferenceIds || [];
-    // Para Sabre: arrays con datos = confirmado
-    // Para Amadeus: Tucano devuelve arrays vacíos aunque haya guardado OK — si orderId coincide, es éxito
     const confirmedBySabre = savedSegs.length > 0 || savedPax.length > 0;
     const confirmedByAmadeus = !confirmedBySabre && saveData.orderId === reserva.order_id;
     const actuallyWorked = confirmedBySabre || confirmedByAmadeus;
