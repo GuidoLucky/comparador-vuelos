@@ -1665,6 +1665,28 @@ async function verificarEstadoRes() {
 
 async function cambiarEstadoRes(estado) {
   if (!reservaActual) return;
+  
+  // Para cancelar, usar el endpoint que cancela en la aerolínea también
+  if (estado === 'CANCELADA') {
+    const pnr = reservaActual.pnr || '';
+    const gds = reservaActual.gds || '';
+    const proveedor = gds.includes('NDC') || gds.includes('Lleego') || (reservaActual.notas||'').includes('GEA') ? 'GEA/Lleego' : 'Tucano';
+    if (!confirm(`¿Cancelar reserva ${pnr} en ${proveedor}?\n\nEsta acción cancelará la reserva en la aerolínea. No se puede deshacer.`)) return;
+    try {
+      const res = await fetch('/reservas/' + reservaActual.id + '/cancelar', { method:'POST', headers:{'Content-Type':'application/json'} });
+      const data = await res.json();
+      if (data.ok) {
+        alert('✅ ' + data.mensaje);
+        cerrarModalRes();
+        cargarReservas();
+      } else {
+        alert('❌ Error: ' + data.error);
+      }
+    } catch(e) { alert('Error: ' + e.message); }
+    return;
+  }
+
+  // Para otros estados (EMITIDA manual), solo actualizar en DB
   if (!confirm('¿Marcar como ' + estado.toLowerCase() + '?')) return;
   try {
     const res = await fetch('/reservas/' + reservaActual.id + '/estado', { method:'PUT', headers:{'Content-Type':'application/json'}, body:JSON.stringify({estado}) });
