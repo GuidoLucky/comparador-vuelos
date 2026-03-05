@@ -2670,16 +2670,26 @@ app.post('/reservas/:id/guardar-tarifa', async (req, res) => {
 
     console.log('[SavePricing] Step 1: Fresh pricing (ByText + RetrievePricing, como SCIWeb)...');
     let freshPricingId = null, freshFareNumbers = null;
-    // SCIWeb siempre llama los DOS endpoints antes de SavePricing — no hacer break
-    // ByText puede fallar (400) pero igual hay que llamar RetrievePricing después
+
+    // SCIWeb usa Source:1, StrategyType:3, OrderRecord=PNR, DiscountType="" para ByText
+    const pricingPayloadByText = {
+      ...pricingPayload,
+      OrderRecord: reserva.pnr || null,
+      Source: 1,
+      StrategyType: 3,
+      PassengersWithType: paxWithType.map(p => ({ ...p, DiscountType: '' }))
+    };
+
+    // Llamar ByText primero (puede fallar, igual continuar — SCIWeb lo hace siempre)
     try {
       const btResp = await fetch(`${API_BASE}/FlightReservationPricing/RetrievePricingByText`, {
-        method: 'POST', headers: hdrs, body: JSON.stringify(pricingPayload)
+        method: 'POST', headers: hdrs, body: JSON.stringify(pricingPayloadByText)
       });
       console.log(`[SavePricing] RetrievePricingByText HTTP ${btResp.status}`);
     } catch(e) {
       console.log('[SavePricing] RetrievePricingByText error (continuing):', e.message);
     }
+
     // Siempre llamar RetrievePricing para obtener el PricingId fresco
     const prResp = await fetch(`${API_BASE}/FlightReservationPricing/RetrievePricing`, {
       method: 'POST', headers: hdrs, body: JSON.stringify(pricingPayload)
