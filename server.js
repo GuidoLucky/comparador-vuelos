@@ -2999,7 +2999,14 @@ app.post('/reservas/:id/emitir', async (req, res) => {
             'Content-Type': 'application/json',
             'x-api-key': LLEEGO_API_KEY,
             'lang': 'es-ar'
-          }
+          },
+          body: JSON.stringify({
+            query: {
+              payment: { type: '1', cash: false },
+              referer: 'https://app.lleego.com',
+              voucher_url: 'https://app.lleego.com'
+            }
+          })
         });
         const emitText = await emitRes.text();
         console.log(`[Lleego] Emit response ${emitRes.status}:`, emitText.substring(0, 1000));
