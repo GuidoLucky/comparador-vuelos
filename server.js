@@ -296,12 +296,12 @@ async function enviarEmailReserva(reserva, pasajeros) {
       const destino = s.destino || s.destination?.iata || s.arrivalAirportCode || s.llegada_iata || (typeof s.destination === 'string' ? s.destination : '') || '';
       const salida = s.salida || s.departure_date_time || s.departureDate || s.departure_date || s.fecha_salida || '';
       const llegada = s.llegada || s.arrival_date_time || s.arrivalDate || s.arrival_date || s.fecha_llegada || '';
-      // GEA: number field for flight number, company.short_name for airline
       const vuelo = s.vuelo || s.number || s.flightNumber || s.flight_number || s.numero_vuelo || '';
       const aerolineaSeg = s.aerolinea || s.company?.short_name || s.airlineCode || s.marketing_company || s.carrier || '';
+      const vueloLabel = (aerolineaSeg || vuelo) ? `${aerolineaSeg} ${vuelo}`.trim() : '';
       segmentosHtml += `
         <tr>
-          <td style="padding:8px;border-bottom:1px solid #eee;">${aerolineaSeg} ${vuelo}</td>
+          ${vueloLabel ? `<td style="padding:8px;border-bottom:1px solid #eee;">${vueloLabel}</td>` : ''}
           <td style="padding:8px;border-bottom:1px solid #eee;">${origen} → ${destino}</td>
           <td style="padding:8px;border-bottom:1px solid #eee;">${fmtFecha(salida)}</td>
           <td style="padding:8px;border-bottom:1px solid #eee;">${fmtFecha(llegada)}</td>
@@ -332,7 +332,6 @@ async function enviarEmailReserva(reserva, pasajeros) {
         <table style="width:100%;border-collapse:collapse;margin-bottom:20px;">
           <thead>
             <tr style="background:#f5f5f5;">
-              <th style="padding:8px;text-align:left;">Vuelo</th>
               <th style="padding:8px;text-align:left;">Ruta</th>
               <th style="padding:8px;text-align:left;">Salida</th>
               <th style="padding:8px;text-align:left;">Llegada</th>
@@ -2093,6 +2092,9 @@ app.post('/crear-reserva', async (req, res) => {
     const rTextOk = rText;
     const data = JSON.parse(rTextOk);
     console.log('[Reserva] PNR:', data.recordLocator, 'Order:', data.orderNumber);
+    console.log('[Reserva] data keys:', JSON.stringify(Object.keys(data)));
+    if (data.timeLimit || data.TimeLimitDate || data.time_limit) console.log('[Reserva] timeLimit:', data.timeLimit || data.TimeLimitDate || data.time_limit);
+    console.log('[Reserva] vueloInfo keys:', JSON.stringify(Object.keys(vueloInfo||{})));
 
     // Guardar en DB
     if (db) {
@@ -2134,13 +2136,17 @@ app.post('/crear-reserva', async (req, res) => {
           }
         }
 
+        // Extract time_limit from Tucano pricing data
+        const tucanoTimeLimit = vueloInfo?.timeLimit || vueloInfo?.time_limit || 
+                                 data.timeLimit || data.time_limit || null;
+
         const resIns = await db.query(`INSERT INTO reservas (
           pnr,order_id,order_number,source,search_id,quotation_id,
           tipo_viaje,origen,destino,fecha_salida,
           aerolinea,precio_usd,moneda,adultos,ninos,infantes,estado,
           itinerario_json,pasajeros_json,contacto_json,usuario_id,vendedor,
-          cabina,gds,segmentos_json,moneda_original)
-          VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26)
+          cabina,gds,segmentos_json,moneda_original,time_limit)
+          VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27)
           RETURNING id`,
           [data.recordLocator, data.orderId, data.orderNumber, data.source,
            searchId, String(quotationId),
@@ -2157,7 +2163,8 @@ app.post('/crear-reserva', async (req, res) => {
            req.user?.nombre || null,
            vueloInfo?.cabina || '', vueloInfo?.gds || 'Tucano',
            JSON.stringify(vueloInfo?.itinerario?.flatMap(l=>l.segmentos?.length ? l.segmentos : [l])||[]),
-           vueloInfo?.moneda || 'USD']);
+           vueloInfo?.moneda || 'USD',
+           tucanoTimeLimit]);
 
         for (const p of pasajeros) {
           if (p._clienteId) {
