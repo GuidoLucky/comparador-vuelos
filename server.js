@@ -1712,13 +1712,13 @@ app.post('/crear-reserva', async (req, res) => {
         try {
           await db.query(`INSERT INTO reservas (
             pnr,order_id,quotation_id,tipo_viaje,origen,destino,fecha_salida,
-            aerolinea,precio_usd,moneda,adultos,ninos,infantes,estado,
+            aerolinea,precio_usd,precio_venta_usd,moneda,adultos,ninos,infantes,estado,
             itinerario_json,pasajeros_json,contacto_json,notas,usuario_id,vendedor,
             cabina,gds,segmentos_json,moneda_original)
-            VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24)`,
+            VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25)`,
             [pnr, pnr, String(quotationId),
              vueloInfo?.tipo, vueloInfo?.origen, vueloInfo?.destino, vueloInfo?.salida,
-             vueloInfo?.aerolinea, vueloInfo?.precioUSD, 'USD',
+             vueloInfo?.aerolinea, vueloInfo?.precioUSD, vueloInfo?.precioVentaUSD || null, 'USD',
              pasajeros.filter(p=>p.tipo==='ADT').length,
              pasajeros.filter(p=>p.tipo==='CHD').length,
              pasajeros.filter(p=>p.tipo==='INF').length,
@@ -2051,13 +2051,13 @@ app.post('/crear-reserva', async (req, res) => {
 
           await db.query(`INSERT INTO reservas (
             pnr,order_id,quotation_id,tipo_viaje,origen,destino,fecha_salida,
-            aerolinea,precio_usd,moneda,adultos,ninos,infantes,estado,
+            aerolinea,precio_usd,precio_venta_usd,moneda,adultos,ninos,infantes,estado,
             itinerario_json,pasajeros_json,contacto_json,notas,usuario_id,vendedor,
             cabina,fare_basis,time_limit,gds,segmentos_json,moneda_original)
-            VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26)`,
+            VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27)`,
             [pnr, orderId, String(quotationId),
              vueloInfo?.tipo, vueloInfo?.origen, vueloInfo?.destino, vueloInfo?.salida,
-             vueloInfo?.aerolinea, vueloInfo?.precioUSD, 'USD',
+             vueloInfo?.aerolinea, vueloInfo?.precioUSD, vueloInfo?.precioVentaUSD || null, 'USD',
              pasajeros.filter(p=>p.tipo==='ADT').length,
              pasajeros.filter(p=>p.tipo==='CHD').length,
              pasajeros.filter(p=>p.tipo==='INF').length,
@@ -2225,15 +2225,15 @@ app.post('/crear-reserva', async (req, res) => {
         const resIns = await db.query(`INSERT INTO reservas (
           pnr,order_id,order_number,source,search_id,quotation_id,
           tipo_viaje,origen,destino,fecha_salida,
-          aerolinea,precio_usd,moneda,adultos,ninos,infantes,estado,
+          aerolinea,precio_usd,precio_venta_usd,moneda,adultos,ninos,infantes,estado,
           itinerario_json,pasajeros_json,contacto_json,usuario_id,vendedor,
           cabina,gds,segmentos_json,moneda_original,time_limit)
-          VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27)
+          VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28)
           RETURNING id`,
           [data.recordLocator, data.orderId, data.orderNumber, data.source,
            searchId, String(quotationId),
            vueloInfo?.tipo, vueloInfo?.origen, vueloInfo?.destino, vueloInfo?.salida,
-           vueloInfo?.aerolinea, vueloInfo?.precioUSD, vueloInfo?.moneda,
+           vueloInfo?.aerolinea, vueloInfo?.precioUSD, vueloInfo?.precioVentaUSD || null, vueloInfo?.moneda,
            pasajeros.filter(p=>p.tipo==='ADT').length,
            pasajeros.filter(p=>p.tipo==='CHD').length,
            pasajeros.filter(p=>p.tipo==='INF').length,
