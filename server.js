@@ -1524,10 +1524,7 @@ app.post('/get-fare-breakdown', async (req, res) => {
       else tipo = rate.sellingPriceAmount > 200 ? 'menor' : 'bebé';
 
       // comOver = tarifa + impuestos - neto (igual a "Descuentos" en SCIWeb)
-      const rateBase = rate.amounts?.base || rate.baseAmount || 0;
-      const rateTaxes = rate.amounts?.taxes || rate.taxesAmount || 0;
-      const rateGross = rateBase + rateTaxes;
-      const comOver = rateGross > 0 ? Math.max(0, rateGross - (rate.sellingPriceAmount || 0)) : 0;
+      const comOver = rate.discountAmount || 0;
       return {
         tipo,
         codigo: code,
@@ -4758,11 +4755,7 @@ app.post('/generar-cotizacion', async (req, res) => {
 
       const pasajeros = rates.map(rate => {
         const neto = rate.sellingPriceAmount;
-        // comOver = tarifa + impuestos - neto (igual a "Descuentos" en SCIWeb)
-        const rateBase = rate.amounts?.base || rate.baseAmount || 0;
-        const rateTaxes = rate.amounts?.taxes || rate.taxesAmount || 0;
-        const rateGross = rateBase + rateTaxes;
-        const comOver = rateGross > 0 ? Math.max(0, rateGross - (rate.sellingPriceAmount || 0)) : 0;
+        const comOver = rate.discountAmount || 0;
         const code = rate.passengerTypeCode;
         const codeStr = String(code || '').toUpperCase();
         const paxType = rate.passengerType; // some APIs use numeric passengerType
