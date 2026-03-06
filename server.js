@@ -4735,44 +4735,6 @@ app.post('/generar-cotizacion', async (req, res) => {
       }
       
       // ─── Tucano: use GLAS API ───
-      // If custom prices provided, use them directly
-      if (op.preciosVenta?.length) {
-        const token2 = await getToken();
-        const r2 = await fetch(`${API_BASE}/FlightSearch/ItineraryDetailRemake?searchId=${op.searchId}&quotationId=${op.quotationId}`, {
-          headers: getHeaders(token2)
-        });
-        const text2 = await r2.text();
-        let d2; try { d2 = JSON.parse(text2); } catch(e) { throw new Error('Error al obtener detalle'); }
-        const q2 = d2.quote;
-        const rates2 = q2.flightRates || [];
-        const pasajerosCustom = op.preciosVenta.map(pv => {
-          const rate = rates2.find(r => {
-            const code = String(r.passengerTypeCode||'').toUpperCase();
-            if (pv.tipo === 'adulto') return code === 'ADT' || code === 'AD' || r.passengerType === 0;
-            if (pv.tipo === 'menor') return ['CHD','CNN','CH','CLD'].includes(code) || r.passengerType === 1;
-            if (pv.tipo === 'bebé') return ['INF','INS'].includes(code) || r.passengerType === 2;
-            return false;
-          }) || {};
-          const comOver = (rate.commissionRule?.ceded?.valueApplied||0) + (rate.overCommissionRule?.ceded?.valueApplied||0);
-          return { tipo: pv.tipo, cantidad: pv.cantidad, neto: pv.precioUnitario, tipo_tarifa: rate.fareType||'PNEG', comision_over: 0 };
-        });
-        // Build vuelos from detail
-        const trip2 = q2.trip || [];
-        const vuelos2 = [];
-        for (const seg of trip2) {
-          const dep = new Date(seg.departureDateTime||seg.departure); const arr = new Date(seg.arrivalDateTime||seg.arrival);
-          vuelos2.push({
-            fecha: `${String(dep.getDate()).padStart(2,'0')}/${String(dep.getMonth()+1).padStart(2,'0')}`,
-            origen: seg.departureAirport||seg.departure, destino: seg.arrivalAirport||seg.arrival,
-            salida: `${String(dep.getHours()).padStart(2,'0')}.${String(dep.getMinutes()).padStart(2,'0')}`,
-            llegada: `${String(arr.getHours()).padStart(2,'0')}.${String(arr.getMinutes()).padStart(2,'0')}`,
-            numero_vuelo: seg.flightNumber||'', brand: ''
-          });
-        }
-        const cachedPenTucC = penaltiesCache.get(op.quotationId) || null;
-        return { aerolinea: '', vuelos: vuelos2, detalle_vuelo: '', pasajeros: pasajerosCustom, penalidades: cachedPenTucC, equipaje: op.equipaje||null };
-      }
-
       const r = await fetch(`${API_BASE}/FlightSearch/ItineraryDetailRemake?searchId=${op.searchId}&quotationId=${op.quotationId}`, {
         headers: getHeaders(token)
       });
@@ -4810,6 +4772,11 @@ app.post('/generar-cotizacion', async (req, res) => {
         console.log(`[Cotizacion] Pasajero: typeCode=${code} passengerType=${paxType} => ${tipoLabel} neto=${neto} comOver=${comOver} cant=${rate.passengerQuantity}`);
         return { tipo: tipoLabel, cantidad: rate.passengerQuantity, neto, tipo_tarifa: rate.fareType || 'PUB', comision_over: comOver };
       });
+
+      // Override con precios de venta confirmados si vienen del frontend
+      const pasajerosFinales = op.preciosVenta?.length
+        ? op.preciosVenta.map(pv => ({ tipo: pv.tipo, cantidad: pv.cantidad, neto: pv.precioUnitario, tipo_tarifa: 'PNEG', comision_over: 0 }))
+        : pasajeros;
 
       const trip = q.trip || [];
       const vuelos = [];
@@ -4962,7 +4929,7 @@ app.post('/generar-cotizacion', async (req, res) => {
 
       return {
         aerolinea: d.airlinesDictionary?.[q.validatingCarrier] || q.validatingCarrier,
-        vuelos, detalle_vuelo: detalle, pasajeros, penalidades, equipaje
+        vuelos, detalle_vuelo: detalle, pasajeros: pasajerosFinales, penalidades, equipaje
       };
     }));
 
