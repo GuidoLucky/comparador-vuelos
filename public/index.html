@@ -967,10 +967,10 @@ function renderModalReserva(searchId, quotationId, hasDiff) {
     </div>
 
     <button class="btn-modal-submit" id="btnConfirmar" onclick="confirmarReserva('${searchId}','${quotationId}')">Confirmar Reserva</button>
-  \`;
+  `;
 
   renderPaxForm(paxActivo);
-  cargarFareBreakdown('${searchId}', '${quotationId}');
+  cargarFareBreakdown(searchId, quotationId);
 }
 
 function renderPaxForm(idx) {
