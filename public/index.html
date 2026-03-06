@@ -2053,15 +2053,158 @@ const equipajeMap = {}; // quotationId → equipaje data
 function toggleCotizar(quotationId, searchId, checked) {
   if (checked) {
     if (!vuelosCotizar.find(v => v.quotationId === quotationId)) {
-      // Buscar equipaje y cabina del vuelo en todosLosVuelos
-      const vuelo = todosLosVuelos.find(v => v.id === quotationId);
-      if (vuelo?.equipaje) equipajeMap[quotationId] = vuelo.equipaje;
-      vuelosCotizar.push({ quotationId, searchId, cabina: vuelo?.cabina || '' });
+      // Mostrar modal de precio de venta antes de agregar
+      abrirModalPrecioCotizar(quotationId, searchId);
     }
   } else {
     vuelosCotizar = vuelosCotizar.filter(v => v.quotationId !== quotationId);
+    delete preciosVentaCotizar[quotationId];
+    actualizarBarraCotizar();
   }
+}
+
+const preciosVentaCotizar = {}; // quotationId → [{tipo, cantidad, precioUnitario}]
+
+async function abrirModalPrecioCotizar(quotationId, searchId) {
+  const vuelo = todosLosVuelos.find(v => v.id === quotationId);
+
+  // Crear modal
+  const overlay = document.createElement('div');
+  overlay.id = 'modalPrecioCotizar';
+  overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.7);z-index:2000;display:flex;align-items:center;justify-content:center;';
+  overlay.innerHTML = `
+    <div style="background:var(--dark1);border:1px solid var(--gold);border-radius:14px;padding:28px;max-width:480px;width:90%;position:relative;">
+      <div style="font-size:16px;font-weight:700;color:var(--gold);margin-bottom:4px;">💰 Precio de venta</div>
+      <div style="font-size:12px;color:var(--muted);margin-bottom:16px;">${vuelo?.aerolinea || ''} · ${vuelo?.itinerario?.map(l=>l.origen+'→'+l.destino).join(' | ') || ''}</div>
+      <div id="modalPrecioBreakdown" style="margin-bottom:16px;">
+        <div style="color:var(--muted);font-size:12px;">⏳ Cargando tarifas...</div>
+      </div>
+      <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:8px;">
+        <button onclick="cerrarModalPrecioCotizar(false,'${quotationId}')" 
+          style="background:none;border:1px solid var(--border);color:var(--muted);border-radius:7px;font-family:'Sora',sans-serif;font-size:12px;padding:8px 16px;cursor:pointer;">
+          Cancelar
+        </button>
+        <button id="btnConfirmarPrecioCotizar" onclick="confirmarPrecioCotizar('${quotationId}','${searchId}')"
+          style="background:var(--gold);color:#000;border:none;border-radius:7px;font-family:'Sora',sans-serif;font-size:13px;font-weight:700;padding:8px 20px;cursor:pointer;">
+          ✓ Confirmar y agregar
+        </button>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(overlay);
+
+  // Cargar breakdown
+  try {
+    const res = await fetch('/get-fare-breakdown', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ searchId, quotationId })
+    }).then(r => r.json());
+
+    const container = document.getElementById('modalPrecioBreakdown');
+    if (!container) return;
+
+    if (!res.ok || !res.breakdown?.length) {
+      container.innerHTML = '<div style="color:#e74c3c;font-size:12px;">❌ No se pudo obtener tarifas</div>';
+      return;
+    }
+
+    // Store in fareBreakdownData temporarily keyed by quotationId
+    window._cotizarBreakdown = window._cotizarBreakdown || {};
+    window._cotizarBreakdown[quotationId] = res.breakdown.map(b => ({
+      ...b,
+      precioVentaSugerido: calcularPrecioVentaPorTipo(b.neto, b.tipo_tarifa, b.comision_over),
+      precioVenta: calcularPrecioVentaPorTipo(b.neto, b.tipo_tarifa, b.comision_over)
+    }));
+
+    renderModalPrecioBreakdown(quotationId);
+  } catch(e) {
+    const container = document.getElementById('modalPrecioBreakdown');
+    if (container) container.innerHTML = `<div style="color:#e74c3c;font-size:12px;">❌ Error: ${e.message}</div>`;
+  }
+}
+
+function renderModalPrecioBreakdown(quotationId) {
+  const container = document.getElementById('modalPrecioBreakdown');
+  if (!container) return;
+  const breakdown = window._cotizarBreakdown?.[quotationId] || [];
+  const tipoLabel = { adulto: 'Adulto', menor: 'Menor', 'bebé': 'Bebé' };
+  const total = breakdown.reduce((s, b) => s + b.precioVenta * b.cantidad, 0);
+
+  let html = '<div style="display:flex;flex-direction:column;gap:10px;">';
+  for (let i = 0; i < breakdown.length; i++) {
+    const b = breakdown[i];
+    html += `
+      <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;">
+        <div style="min-width:100px;">
+          <div style="font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:1px;">${tipoLabel[b.tipo]||b.tipo} × ${b.cantidad}</div>
+          <div style="font-size:10px;color:var(--muted);">Neto: USD ${b.neto.toFixed(2)}</div>
+        </div>
+        <div>
+          <div style="font-size:10px;color:var(--muted);margin-bottom:3px;">Precio venta c/u (USD)</div>
+          <input type="number" value="${b.precioVenta.toFixed(2)}" min="0" step="0.01"
+            style="background:var(--dark3);border:1px solid var(--gold);border-radius:6px;color:var(--text);font-family:'Sora',sans-serif;font-size:14px;font-weight:700;padding:6px 10px;width:120px;outline:none;"
+            oninput="onCotizarPrecioChange('${quotationId}', ${i}, this.value)">
+        </div>
+        <div style="font-size:11px;color:var(--muted);">
+          Subtotal: <span id="cot_sub_${quotationId}_${i}" style="color:var(--gold);font-weight:700;">USD ${(b.precioVenta * b.cantidad).toFixed(2)}</span>
+        </div>
+      </div>`;
+  }
+  html += `
+    <div style="border-top:1px solid var(--border);padding-top:10px;margin-top:4px;display:flex;justify-content:space-between;">
+      <div style="font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:1px;">Total venta</div>
+      <div id="cot_total_${quotationId}" style="font-size:18px;font-weight:700;color:var(--gold);">USD ${total.toFixed(2)}</div>
+    </div>
+  </div>`;
+  container.innerHTML = html;
+}
+
+function onCotizarPrecioChange(quotationId, idx, valor) {
+  const breakdown = window._cotizarBreakdown?.[quotationId];
+  if (!breakdown) return;
+  breakdown[idx].precioVenta = parseFloat(valor) || 0;
+  const sub = document.getElementById(`cot_sub_${quotationId}_${idx}`);
+  if (sub) sub.textContent = `USD ${(breakdown[idx].precioVenta * breakdown[idx].cantidad).toFixed(2)}`;
+  const total = breakdown.reduce((s, b) => s + b.precioVenta * b.cantidad, 0);
+  const totalEl = document.getElementById(`cot_total_${quotationId}`);
+  if (totalEl) totalEl.textContent = `USD ${total.toFixed(2)}`;
+}
+
+function confirmarPrecioCotizar(quotationId, searchId) {
+  const breakdown = window._cotizarBreakdown?.[quotationId];
+  const vuelo = todosLosVuelos.find(v => v.id === quotationId);
+
+  // Guardar precios confirmados
+  preciosVentaCotizar[quotationId] = breakdown ? breakdown.map(b => ({
+    tipo: b.tipo, cantidad: b.cantidad, precioUnitario: b.precioVenta,
+    neto: b.neto, tipo_tarifa: b.tipo_tarifa, comision_over: b.comision_over
+  })) : null;
+
+  // Agregar a la lista
+  if (vuelo?.equipaje) equipajeMap[quotationId] = vuelo.equipaje;
+  vuelosCotizar.push({ quotationId, searchId, cabina: vuelo?.cabina || '' });
   actualizarBarraCotizar();
+  cerrarModalPrecioCotizar(true, quotationId);
+}
+
+function cerrarModalPrecioCotizar(confirmed, quotationId) {
+  const overlay = document.getElementById('modalPrecioCotizar');
+  if (overlay) overlay.remove();
+  // Si canceló, desmarcar el checkbox
+  if (!confirmed) {
+    const cbs = document.querySelectorAll('.cotizar-check input[type=checkbox]');
+    cbs.forEach(cb => {
+      // Find the checkbox tied to this quotationId
+      const btn = cb.closest('[data-qid]') || cb.parentElement?.closest('[data-qid]');
+      if (!btn && cb.onchange) cb.checked = false;
+    });
+    // Simpler: just uncheck all that aren't in vuelosCotizar
+    document.querySelectorAll('.cotizar-check input[type=checkbox]').forEach(cb => {
+      const onch = cb.getAttribute('onchange') || '';
+      if (onch.includes(quotationId)) cb.checked = false;
+    });
+  }
 }
 
 function actualizarBarraCotizar() {
@@ -2090,7 +2233,8 @@ async function generarCotizacion() {
     const vendedor = document.getElementById('cotizarVendedor').value;
     const opcionesConEquipaje = vuelosCotizar.map(v => ({
       ...v,
-      equipaje: equipajeMap[v.quotationId] || null
+      equipaje: equipajeMap[v.quotationId] || null,
+      preciosVenta: preciosVentaCotizar[v.quotationId] || null
     }));
     const r = await fetch('/generar-cotizacion', {
       method: 'POST',
