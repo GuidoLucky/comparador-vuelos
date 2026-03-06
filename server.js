@@ -1461,6 +1461,87 @@ function procesarVuelos(data, stopsFilter) {
 
 // ─── RESERVAS ───
 
+// ─── OBTENER DESGLOSE DE TARIFAS POR TIPO DE PASAJERO ───
+app.post('/get-fare-breakdown', async (req, res) => {
+  const { searchId, quotationId } = req.body;
+
+  // GEA: use fareList from cache
+  if (String(quotationId).startsWith('lleego_')) {
+    const cached = lleegoSolutionsCache.get(quotationId);
+    if (!cached) return res.json({ ok: false, error: 'Solución GEA expirada. Buscá de nuevo.' });
+    const fareList = cached.sol.data?.fare_list || [];
+    const breakdown = fareList.map(f => {
+      const t = (f.passenger_type || 'ADT').toUpperCase();
+      return {
+        tipo: t === 'ADT' ? 'adulto' : (t === 'CHD' || t === 'CNN') ? 'menor' : 'bebé',
+        codigo: t,
+        cantidad: f.quantity || 1,
+        neto: f.total || 0,
+        tipo_tarifa: 'PUB',
+        comision_over: 0
+      };
+    });
+    return res.json({ ok: true, breakdown });
+  }
+
+  // Sabre: use fareList from cache
+  if (String(quotationId).startsWith('sabre_')) {
+    const cached = sabreSolutionsCache.get(quotationId);
+    if (!cached) return res.json({ ok: false, error: 'Solución Sabre expirada. Buscá de nuevo.' });
+    const breakdown = (cached.fareList || []).map(f => {
+      const t = (f.passenger_type || 'ADT').toUpperCase();
+      return {
+        tipo: t === 'ADT' ? 'adulto' : (t === 'CHD' || t === 'CNN') ? 'menor' : 'bebé',
+        codigo: t,
+        cantidad: f.quantity || 1,
+        neto: f.total || 0,
+        tipo_tarifa: 'PUB',
+        comision_over: 0
+      };
+    });
+    return res.json({ ok: true, breakdown });
+  }
+
+  // Tucano/GLAS: call ItineraryDetailRemake
+  try {
+    const token = await getToken();
+    const r = await fetch(`${API_BASE}/FlightSearch/ItineraryDetailRemake?searchId=${searchId}&quotationId=${quotationId}`, {
+      headers: getHeaders(token)
+    });
+    if (!r.ok) return res.json({ ok: false, error: `GLAS error: ${r.status}` });
+    const text = await r.text();
+    let d;
+    try { d = JSON.parse(text); } catch(e) { return res.json({ ok: false, error: 'Respuesta inválida de GLAS' }); }
+
+    const rates = d.quote?.flightRates || [];
+    const breakdown = rates.map(rate => {
+      const code = String(rate.passengerTypeCode || '').toUpperCase();
+      const paxType = rate.passengerType;
+      let tipo;
+      if (code === 'ADT' || code === 'AD' || paxType === 0 || code === '0') tipo = 'adulto';
+      else if (['CHD','CNN','CH','CLD','CHILD'].includes(code) || paxType === 1 || code === '1') tipo = 'menor';
+      else if (['INF','INS'].includes(code) || paxType === 2 || code === '2') tipo = 'bebé';
+      else tipo = rate.sellingPriceAmount > 200 ? 'menor' : 'bebé';
+
+      const comOver = (rate.commissionRule?.ceded?.valueApplied || 0) + (rate.overCommissionRule?.ceded?.valueApplied || 0);
+      return {
+        tipo,
+        codigo: code,
+        cantidad: rate.passengerQuantity || 1,
+        neto: rate.sellingPriceAmount || 0,
+        tipo_tarifa: rate.fareType || 'PUB',
+        comision_over: comOver
+      };
+    });
+
+    console.log('[FareBreakdown] Tucano breakdown:', JSON.stringify(breakdown));
+    return res.json({ ok: true, breakdown });
+  } catch(e) {
+    console.error('[FareBreakdown] Error:', e.message);
+    return res.json({ ok: false, error: e.message });
+  }
+});
+
 // Verificar disponibilidad
 app.post('/check-availability', async (req, res) => {
   const { searchId, quotationId } = req.body;
