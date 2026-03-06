@@ -1649,7 +1649,7 @@ app.post('/crear-reserva', async (req, res) => {
              req.user?.userId || null,
              req.user?.nombre || null,
              vueloInfo?.cabina || '', 'Sabre',
-             JSON.stringify(vueloInfo?.itinerario?.flatMap(l=>l.segmentos||[])||[]),
+             JSON.stringify(vueloInfo?.itinerario?.flatMap(l=>l.segmentos?.length ? l.segmentos : [l])||[]),
              'USD']);
           console.log('[DB] Reserva Sabre guardada, PNR:', pnr);
           // Send confirmation email
@@ -2156,7 +2156,7 @@ app.post('/crear-reserva', async (req, res) => {
            req.user?.userId || null,
            req.user?.nombre || null,
            vueloInfo?.cabina || '', vueloInfo?.gds || 'Tucano',
-           JSON.stringify(vueloInfo?.itinerario?.flatMap(l=>l.segmentos||[])||[]),
+           JSON.stringify(vueloInfo?.itinerario?.flatMap(l=>l.segmentos?.length ? l.segmentos : [l])||[]),
            vueloInfo?.moneda || 'USD']);
 
         for (const p of pasajeros) {
