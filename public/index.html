@@ -976,6 +976,15 @@ function renderPaxForm(idx) {
       </div>
       <div class="cliente-dropdown" id="dropdown_${idx}"></div>
     </div>
+    <div style="margin-bottom:14px">
+      <label style="display:block;font-size:11px;color:var(--muted);margin-bottom:6px;text-transform:uppercase;letter-spacing:1px">Autocompletar con IA</label>
+      <input type="file" id="docScan_${idx}" accept="image/*" style="display:none" onchange="leerDocumento(${idx}, this)">
+      <button type="button" onclick="document.getElementById('docScan_${idx}').click()" 
+        style="background:linear-gradient(135deg,#1a3a5c,#0066cc);color:white;border:none;border-radius:8px;padding:8px 16px;font-size:12px;cursor:pointer;font-family:'Sora',sans-serif;display:flex;align-items:center;gap:6px;">
+        📷 Escanear pasaporte / DNI
+      </button>
+      <div id="docScanStatus_${idx}" style="font-size:11px;color:var(--muted);margin-top:6px;display:none"></div>
+    </div>
     <div class="form-row">
       <div class="form-field" style="flex:2"><label>Apellido*</label><input id="p_apellido_${idx}" placeholder="APELLIDO" value="${saved.apellido||''}" oninput="guardarPaxField(${idx},'apellido',this.value)"></div>
       <div class="form-field" style="flex:2"><label>Nombre*</label><input id="p_nombre_${idx}" placeholder="NOMBRE" value="${saved.nombre||''}" oninput="guardarPaxField(${idx},'nombre',this.value)"></div>
@@ -1061,6 +1070,160 @@ function renderPaxForm(idx) {
     const ftEl = document.getElementById(`p_factTipo_${idx}`);
     if (ftEl && ftEl.value && !saved.factTipoId) { guardarPaxField(idx,'factTipoId',ftEl.value); guardarPaxField(idx,'factTipo',ftEl.options[ftEl.selectedIndex]?.dataset?.code||''); }
   }, 50);
+}
+
+async function leerDocumento(idx, input) {
+  const file = input.files[0];
+  if (!file) return;
+  
+  const statusEl = document.getElementById(`docScanStatus_${idx}`);
+  statusEl.style.display = 'block';
+  statusEl.style.color = 'var(--gold)';
+  statusEl.textContent = '🔍 Analizando documento...';
+
+  try {
+    // Convert to base64
+    const base64 = await new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(reader.result.split(',')[1]);
+      reader.onerror = reject;
+      reader.readAsDataURL(file);
+    });
+
+    const mediaType = file.type || 'image/jpeg';
+    const res = await fetch('/leer-documento', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ imageBase64: base64, mediaType })
+    });
+    const data = await res.json();
+
+    if (!data.ok || !data.datos) {
+      statusEl.style.color = '#e74c3c';
+      statusEl.textContent = '❌ ' + (data.error || 'No se pudo leer el documento');
+      return;
+    }
+
+    const d = data.datos;
+
+    // Fill form fields
+    if (d.apellido) { document.getElementById(`p_apellido_${idx}`).value = d.apellido; guardarPaxField(idx,'apellido',d.apellido); }
+    if (d.nombre)   { document.getElementById(`p_nombre_${idx}`).value = d.nombre;   guardarPaxField(idx,'nombre',d.nombre); }
+    if (d.genero !== null && d.genero !== undefined) { 
+      document.getElementById(`p_genero_${idx}`).value = d.genero; 
+      guardarPaxField(idx,'genero',d.genero); 
+    }
+    if (d.fechaNacDia)  { document.getElementById(`p_nacDia_${idx}`).value = d.fechaNacDia;  guardarPaxField(idx,'fechaNacDia',d.fechaNacDia); }
+    if (d.fechaNacMes)  { document.getElementById(`p_nacMes_${idx}`).value = d.fechaNacMes;  guardarPaxField(idx,'fechaNacMes',d.fechaNacMes); }
+    if (d.fechaNacAnio) { document.getElementById(`p_nacAnio_${idx}`).value = d.fechaNacAnio; guardarPaxField(idx,'fechaNacAnio',d.fechaNacAnio); }
+    if (d.docNumero)    { document.getElementById(`p_docNum_${idx}`).value = d.docNumero;    guardarPaxField(idx,'docNumero',d.docNumero); }
+    if (d.docVencDia)   { document.getElementById(`p_vencDia_${idx}`).value = d.docVencDia;  guardarPaxField(idx,'docVencDia',d.docVencDia); }
+    if (d.docVencMes)   { document.getElementById(`p_vencMes_${idx}`).value = d.docVencMes;  guardarPaxField(idx,'docVencMes',d.docVencMes); }
+    if (d.docVencAnio)  { document.getElementById(`p_vencAnio_${idx}`).value = d.docVencAnio; guardarPaxField(idx,'docVencAnio',d.docVencAnio); }
+
+    // Set doc type (PP or NI)
+    if (d.tipoDoc) {
+      const docTipoEl = document.getElementById(`p_docTipo_${idx}`);
+      if (docTipoEl) {
+        for (const opt of docTipoEl.options) {
+          if (opt.dataset.code === d.tipoDoc) {
+            docTipoEl.value = opt.value;
+            guardarPaxField(idx,'docTipoId', opt.value);
+            guardarPaxField(idx,'docTipo', d.tipoDoc);
+            break;
+          }
+        }
+      }
+    }
+
+    // Set nationality
+    if (d.nacionalidad && paisesData) {
+      const pais = paisesData.find(p => p.name.toLowerCase().includes(d.nacionalidad.toLowerCase()) || d.nacionalidad.toLowerCase().includes(p.name.toLowerCase()));
+      if (pais) {
+        document.getElementById(`p_nac_${idx}`).value = pais.id;
+        guardarPaxField(idx,'nacionalidadId', pais.id);
+      }
+    }
+
+    // Verificar si ya existe en la DB
+    if (d.apellido && d.nombre) {
+      statusEl.style.color = 'var(--gold)';
+      statusEl.textContent = '🔍 Verificando si el pasajero ya existe...';
+      
+      const verif = await fetch('/verificar-cliente-doc', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ 
+          apellido: d.apellido, nombre: d.nombre,
+          fechaNacDia: d.fechaNacDia, fechaNacMes: d.fechaNacMes, fechaNacAnio: d.fechaNacAnio
+        })
+      }).then(r => r.json()).catch(() => ({ ok: false }));
+
+      if (verif.ok && verif.existe) {
+        const c = verif.cliente;
+        statusEl.style.color = '#2ecc71';
+        statusEl.textContent = `✅ Pasajero encontrado en la base de datos. Datos cargados desde historial.`;
+        // Fill with DB data (more complete)
+        const campos = ['apellido','nombre','genero','fechaNacDia','fechaNacMes','fechaNacAnio',
+                        'docNumero','docVencDia','docVencMes','docVencAnio','docPaisId','docPais',
+                        'nacionalidadId','factTipo','factTipoId','factNumero','factPaisId','factPais','docTipo','docTipoId'];
+        const fieldMap = {
+          apellido: `p_apellido_${idx}`, nombre: `p_nombre_${idx}`, genero: `p_genero_${idx}`,
+          fechaNacDia: `p_nacDia_${idx}`, fechaNacMes: `p_nacMes_${idx}`, fechaNacAnio: `p_nacAnio_${idx}`,
+          docNumero: `p_docNum_${idx}`, docVencDia: `p_vencDia_${idx}`, docVencMes: `p_vencMes_${idx}`, docVencAnio: `p_vencAnio_${idx}`
+        };
+        for (const [k, elId] of Object.entries(fieldMap)) {
+          if (c[k] != null) { 
+            const el = document.getElementById(elId);
+            if (el) el.value = c[k];
+            guardarPaxField(idx, k, c[k]);
+          }
+        }
+        // Set nationality
+        if (c.nacionalidadId) {
+          const nacEl = document.getElementById(`p_nac_${idx}`);
+          if (nacEl) nacEl.value = c.nacionalidadId;
+          guardarPaxField(idx, 'nacionalidadId', c.nacionalidadId);
+        }
+        // Set doc tipo
+        if (c.docTipo) {
+          const docTipoEl = document.getElementById(`p_docTipo_${idx}`);
+          if (docTipoEl) {
+            for (const opt of docTipoEl.options) {
+              if (opt.dataset.code === c.docTipo) {
+                docTipoEl.value = opt.value;
+                guardarPaxField(idx, 'docTipoId', opt.value);
+                guardarPaxField(idx, 'docTipo', c.docTipo);
+                break;
+              }
+            }
+          }
+        }
+        // Set fact tipo
+        if (c.factTipoId) {
+          const ftEl = document.getElementById(`p_factTipo_${idx}`);
+          if (ftEl) { ftEl.value = c.factTipoId; guardarPaxField(idx,'factTipoId',c.factTipoId); guardarPaxField(idx,'factTipo',c.factTipo); }
+        }
+        if (c.factNumero) { 
+          const fnEl = document.getElementById(`p_factNum_${idx}`);
+          if (fnEl) fnEl.value = c.factNumero;
+          guardarPaxField(idx,'factNumero',c.factNumero);
+        }
+      } else {
+        statusEl.style.color = '#2ecc71';
+        statusEl.textContent = '✅ Datos cargados. Pasajero nuevo — revisá y confirmá.';
+      }
+    } else {
+      statusEl.style.color = '#2ecc71';
+      statusEl.textContent = '✅ Datos cargados. Revisá y confirmá.';
+    }
+
+    input.value = '';
+
+  } catch(e) {
+    statusEl.style.color = '#e74c3c';
+    statusEl.textContent = '❌ Error: ' + e.message;
+  }
 }
 
 function guardarPaxField(idx, campo, valor) {
