@@ -1854,6 +1854,7 @@ async function verDetalleReserva(id) {
       '<div class="det-item"><div class="lbl">Estado</div><div class="val"><span class="badge-res badge-' + r.estado + '">' + r.estado + '</span></div></div>' +
       '<div class="det-item"><div class="lbl">Aerolínea</div><div class="val">' + (r.aerolinea||'-') + '</div></div>' +
       '<div class="det-item"><div class="lbl">Precio neto</div><div class="val">USD ' + (r.precio_usd||0).toLocaleString('es-AR') + '</div></div>' +
+      (r.precio_venta_usd ? '<div class="det-item"><div class="lbl">Precio venta</div><div class="val" style="color:var(--gold);font-weight:700;">USD ' + Number(r.precio_venta_usd).toLocaleString('es-AR') + '</div></div>' : '') +
       '<div class="det-item"><div class="lbl">Creada</div><div class="val">' + creado + '</div></div>' +
       '</div></div>' +
       (itinHtml ? '<div class="det-section"><h3>✈ Itinerario</h3>' + itinHtml + '</div>' : '') +
