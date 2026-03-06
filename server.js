@@ -256,29 +256,40 @@ async function enviarEmailReserva(reserva, pasajeros) {
       return `${dd}/${mm}/${yyyy} ${hh}:${min}hs`;
     }
 
-    // Build itinerary from segmentos_json (flat array) or itinerario_json (nested)
+    // Build itinerary - handle both Tucano (itinerario_json legs) and GEA (segmentos_json with nested objects)
     let segmentosHtml = '';
-    const segmentosRaw = reserva.segmentos_json || reserva.itinerario_json;
     const segsFlat = [];
-    if (Array.isArray(segmentosRaw)) {
-      for (const item of segmentosRaw) {
-        // Flat segment (GEA style): has origen/destino/salida directly
-        if (item.origen || item.departure || item.departureAirportCode) {
-          segsFlat.push(item);
-        } else {
-          // Nested (Tucano style): leg with segmentos array
-          const nested = item.segmentos || item.segments || [];
-          for (const s of nested) segsFlat.push(s);
+
+    // Try segmentos_json first (Tucano flat segments)
+    const segJson = reserva.segmentos_json;
+    if (Array.isArray(segJson) && segJson.length > 0) {
+      for (const s of segJson) segsFlat.push(s);
+    }
+
+    // If empty, try itinerario_json (GEA stores legs here)
+    if (segsFlat.length === 0) {
+      const itin = reserva.itinerario_json;
+      if (Array.isArray(itin)) {
+        for (const leg of itin) {
+          if (leg.origen || leg.destino || leg.origin) {
+            segsFlat.push(leg);
+          } else {
+            const nested = leg.segmentos || leg.segments || [];
+            for (const s of nested) segsFlat.push(s);
+          }
         }
       }
     }
+
     for (const s of segsFlat) {
-      const origen = s.origen || s.departure || s.departureAirportCode || s.salida_iata || '';
-      const destino = s.destino || s.arrival || s.arrivalAirportCode || s.llegada_iata || '';
-      const salida = s.salida || s.departureDate || s.departure_date || s.fecha_salida || '';
-      const llegada = s.llegada || s.arrivalDate || s.arrival_date || s.fecha_llegada || '';
-      const vuelo = s.vuelo || s.flightNumber || s.flight_number || s.numero_vuelo || '';
-      const aerolineaSeg = s.aerolinea || s.airlineCode || s.marketing_company || s.carrier || '';
+      // GEA format: origin/destination are objects with .iata, times are departure_date_time/arrival_date_time
+      const origen = s.origen || s.origin?.iata || s.departureAirportCode || s.salida_iata || (typeof s.origin === 'string' ? s.origin : '') || '';
+      const destino = s.destino || s.destination?.iata || s.arrivalAirportCode || s.llegada_iata || (typeof s.destination === 'string' ? s.destination : '') || '';
+      const salida = s.salida || s.departure_date_time || s.departureDate || s.departure_date || s.fecha_salida || '';
+      const llegada = s.llegada || s.arrival_date_time || s.arrivalDate || s.arrival_date || s.fecha_llegada || '';
+      // GEA: number field for flight number, company.short_name for airline
+      const vuelo = s.vuelo || s.number || s.flightNumber || s.flight_number || s.numero_vuelo || '';
+      const aerolineaSeg = s.aerolinea || s.company?.short_name || s.airlineCode || s.marketing_company || s.carrier || '';
       segmentosHtml += `
         <tr>
           <td style="padding:8px;border-bottom:1px solid #eee;">${aerolineaSeg} ${vuelo}</td>
