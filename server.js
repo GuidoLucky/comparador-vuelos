@@ -3028,6 +3028,112 @@ app.post('/reservas/:id/emitir', async (req, res) => {
   }
 });
 
+// ─── VERIFICAR CLIENTE EXISTENTE POR DATOS ───
+app.post('/verificar-cliente-doc', async (req, res) => {
+  if (!db) return res.json({ ok: false, error: 'Sin DB' });
+  try {
+    const { apellido, nombre, fechaNacDia, fechaNacMes, fechaNacAnio } = req.body;
+    if (!apellido || !nombre) return res.json({ ok: false, existe: false });
+
+    const r = await db.query(`
+      SELECT * FROM clientes 
+      WHERE UPPER(apellido) = UPPER($1) 
+        AND UPPER(nombre) = UPPER($2)
+        AND ($3::text IS NULL OR fecha_nac_dia::text = $3)
+        AND ($4::text IS NULL OR fecha_nac_mes::text = $4)
+        AND ($5::text IS NULL OR fecha_nac_anio::text = $5)
+      LIMIT 1
+    `, [apellido, nombre, fechaNacDia||null, fechaNacMes||null, fechaNacAnio||null]);
+
+    if (r.rows.length) {
+      const c = r.rows[0];
+      return res.json({ ok: true, existe: true, cliente: {
+        apellido: c.apellido, nombre: c.nombre,
+        fechaNacDia: c.fecha_nac_dia, fechaNacMes: c.fecha_nac_mes, fechaNacAnio: c.fecha_nac_anio,
+        docTipo: c.doc_tipo, docNumero: c.doc_numero,
+        docVencDia: c.doc_venc_dia, docVencMes: c.doc_venc_mes, docVencAnio: c.doc_venc_anio,
+        docPaisId: c.doc_pais_id, docPais: c.doc_pais,
+        nacionalidadId: c.nacionalidad_id,
+        factTipo: c.fact_tipo, factTipoId: c.fact_tipo_id,
+        factNumero: c.fact_numero, factPaisId: c.fact_pais_id, factPais: c.fact_pais,
+        genero: c.genero
+      }});
+    }
+    return res.json({ ok: true, existe: false });
+  } catch(e) {
+    res.json({ ok: false, existe: false, error: e.message });
+  }
+});
+
+// ─── LECTOR DE DOCUMENTOS CON IA ───
+app.post('/leer-documento', async (req, res) => {
+  try {
+    const { imageBase64, mediaType } = req.body;
+    if (!imageBase64) return res.json({ ok: false, error: 'Sin imagen' });
+
+    const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY;
+    if (!ANTHROPIC_API_KEY) return res.json({ ok: false, error: 'ANTHROPIC_API_KEY no configurada' });
+
+    const response = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-api-key': ANTHROPIC_API_KEY,
+        'anthropic-version': '2023-06-01'
+      },
+      body: JSON.stringify({
+        model: 'claude-opus-4-5',
+        max_tokens: 1000,
+        messages: [{
+          role: 'user',
+          content: [
+            {
+              type: 'image',
+              source: { type: 'base64', media_type: mediaType || 'image/jpeg', data: imageBase64 }
+            },
+            {
+              type: 'text',
+              text: `Analizá este documento de identidad (pasaporte, DNI, o documento extranjero) y extraé los datos. 
+Respondé ÚNICAMENTE con un JSON válido, sin texto adicional, con este formato exacto:
+{
+  "apellido": "APELLIDO EN MAYUSCULAS",
+  "nombre": "NOMBRE EN MAYUSCULAS",
+  "fechaNacDia": "DD",
+  "fechaNacMes": "MM", 
+  "fechaNacAnio": "AAAA",
+  "docNumero": "NUMERO DE DOCUMENTO",
+  "docVencDia": "DD",
+  "docVencMes": "MM",
+  "docVencAnio": "AAAA",
+  "genero": "0 para masculino, 1 para femenino",
+  "nacionalidad": "nombre del país en español",
+  "tipoDoc": "PP para pasaporte, NI para DNI argentino, otro para extranjero"
+}
+Si algún dato no está visible, usá null. Para fechas usá siempre 2 dígitos para día y mes, 4 para año.`
+            }
+          ]
+        }]
+      })
+    });
+
+    const data = await response.json();
+    const text = data.content?.[0]?.text || '';
+    
+    try {
+      const clean = text.replace(/```json|```/g, '').trim();
+      const parsed = JSON.parse(clean);
+      console.log('[LectorDoc] Datos extraídos:', JSON.stringify(parsed));
+      return res.json({ ok: true, datos: parsed });
+    } catch(e) {
+      console.error('[LectorDoc] Error parseando respuesta:', text);
+      return res.json({ ok: false, error: 'No se pudo leer el documento. Intentá con mejor iluminación.' });
+    }
+  } catch(e) {
+    console.error('[LectorDoc] Error:', e.message);
+    res.json({ ok: false, error: e.message });
+  }
+});
+
 // ─── CANCELAR RESERVA ───
 app.post('/reservas/:id/cancelar', async (req, res) => {
   if (!db) return res.json({ ok: false, error: 'Sin DB' });
