@@ -1523,7 +1523,8 @@ app.post('/get-fare-breakdown', async (req, res) => {
       else if (['INF','INS'].includes(code) || paxType === 2 || code === '2') tipo = 'bebé';
       else tipo = rate.sellingPriceAmount > 200 ? 'menor' : 'bebé';
 
-      const comOver = (rate.commissionRule?.ceded?.valueApplied || 0) + (rate.overCommissionRule?.ceded?.valueApplied || 0);
+      const comOver = (rate.commissionRule?.obtained?.valueApplied || rate.commissionRule?.obtained?.amount || 0)
+                   + (rate.overCommissionRule?.obtained?.valueApplied || rate.overCommissionRule?.obtained?.amount || 0);
       return {
         tipo,
         codigo: code,
@@ -4754,7 +4755,8 @@ app.post('/generar-cotizacion', async (req, res) => {
 
       const pasajeros = rates.map(rate => {
         const neto = rate.sellingPriceAmount;
-        const comOver = (rate.commissionRule?.ceded?.valueApplied || 0) + (rate.overCommissionRule?.ceded?.valueApplied || 0);
+        const comOver = (rate.commissionRule?.obtained?.valueApplied || rate.commissionRule?.obtained?.amount || 0)
+                       + (rate.overCommissionRule?.obtained?.valueApplied || rate.overCommissionRule?.obtained?.amount || 0);
         const code = rate.passengerTypeCode;
         const codeStr = String(code || '').toUpperCase();
         const paxType = rate.passengerType; // some APIs use numeric passengerType
