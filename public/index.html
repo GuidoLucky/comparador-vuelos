@@ -1089,17 +1089,21 @@ function renderPaxForm(idx) {
 let fareBreakdownData = []; // [{tipo, codigo, cantidad, neto, tipo_tarifa, comision_over, precioVenta}]
 
 function calcularPrecioVentaPorTipo(neto, tipo_tarifa, comision_over) {
-  // Replicar logica del server: PNEG/sin comision → neto + fee; PUB → precioPublico - descuento
-  const getFee = (n) => n <= 500 ? 30 : n <= 1000 ? 50 : n <= 2000 ? 80 : 100;
-  const redondearArriba = (n) => Math.ceil(n / 10) * 10;
-  const redondearAbajo = (n) => Math.floor(n / 10) * 10;
-  const getDescuento = (co) => co <= 100 ? co * 0.5 : co * 0.4;
+  // Tablas idénticas al server
+  const FEE_TABLE = [[0,599,25],[600,999,30],[1000,1499,35],[1500,1999,40],[2000,2999,50],[3000,3999,55],[4000,5499,60],[5500,Infinity,80]];
+  const DESCUENTO_TABLE = [[0,50,0],[51,80,10],[81,100,20],[101,140,30],[141,180,40],[181,220,50],[221,260,60],[261,Infinity,70]];
+  const getFee = (n) => { for (const [l,h,f] of FEE_TABLE) if (n>=l && n<=h) return f; return 80; };
+  const getDescuento = (c) => { for (const [l,h,d] of DESCUENTO_TABLE) if (c>=l && c<=h) return d; return 70; };
+  const redondearArriba = (n) => Math.ceil(n / 5) * 5;
+  const redondearAbajo = (n) => Math.floor(n / 5) * 5;
   if (tipo_tarifa === 'PNEG' || comision_over <= 50) return redondearArriba(neto + getFee(neto));
   const precioPublico = neto + comision_over;
   return redondearAbajo(precioPublico - getDescuento(comision_over));
 }
 
 async function cargarFareBreakdown(searchId, quotationId) {
+  // Siempre resetear — el modal de reserva es independiente de cotización
+  fareBreakdownData = [];
   const container = document.getElementById('fareBreakdownContainer');
   if (!container) return;
 
