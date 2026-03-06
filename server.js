@@ -260,18 +260,27 @@ async function enviarEmailReserva(reserva, pasajeros) {
     let segmentosHtml = '';
     const segsFlat = [];
 
-    // Try segmentos_json first (Tucano flat segments)
+    // Try segmentos_json first (flat segments from Tucano/Sabre)
     const segJson = reserva.segmentos_json;
     if (Array.isArray(segJson) && segJson.length > 0) {
-      for (const s of segJson) segsFlat.push(s);
+      for (const s of segJson) {
+        // Each item might be a segment directly or have nested segments
+        if (s.origen || s.origin || s.departureAirportCode) {
+          segsFlat.push(s);
+        } else {
+          const nested = s.segmentos || s.segments || [];
+          for (const n of nested) segsFlat.push(n);
+        }
+      }
     }
 
-    // If empty, try itinerario_json (GEA stores legs here)
+    // If still empty, use itinerario_json (Tucano legs have origen/destino/salida directly)
     if (segsFlat.length === 0) {
       const itin = reserva.itinerario_json;
       if (Array.isArray(itin)) {
         for (const leg of itin) {
           if (leg.origen || leg.destino || leg.origin) {
+            // Tucano/GEA leg used directly
             segsFlat.push(leg);
           } else {
             const nested = leg.segmentos || leg.segments || [];
