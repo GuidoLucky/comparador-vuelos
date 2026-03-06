@@ -4716,7 +4716,7 @@ app.post('/generar-cotizacion', async (req, res) => {
         const cabinShort = firstSegRef.cabin?.short_name || firstSegRef.cabin?.long_name || '';
         const cabinNameMap = { 'Y': 'Economica', 'W': 'Premium Economy', 'C': 'Business', 'F': 'Primera', 'M': 'Economica' };
         const cabinLabel = cabinNameMap[cabinShort] || cabinShort || 'Economica';
-        const famBrand = fareList[0]?.family || '';
+        const famBrand = (sol.data?.fare_list || [])[0]?.family || '';
         // detalle_vuelo = cabin class (shown only if not Economy in PDF)
         const detalleVuelo = cabinLabel;
 
