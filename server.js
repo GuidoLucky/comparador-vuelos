@@ -4342,10 +4342,11 @@ function getDescuento(com) {
 function redondearArriba(p) { return Math.ceil(p / 5) * 5; }
 function redondearAbajo(p)  { return Math.floor(p / 5) * 5; }
 function calcularPrecio(neto, tipoTarifa, comOver) {
+  // CUSTOM: precio ya confirmado por el vendedor, usar tal cual
+  if (tipoTarifa === 'CUSTOM') return neto;
   // PNEG o sin comisión significativa: neto + fee, redondeado arriba
   if (tipoTarifa === 'PNEG' || comOver <= 50) return redondearArriba(neto + getFee(neto));
   // PUB con comisión/over: (Tarifa+Impuestos) - descuento, redondeado abajo
-  // neto + comOver ≈ Tarifa + Impuestos (el neto ya descuenta la comisión)
   const precioPublico = neto + comOver;
   return redondearAbajo(precioPublico - getDescuento(comOver));
 }
@@ -4584,7 +4585,7 @@ app.post('/generar-cotizacion', async (req, res) => {
         if (!cached) throw new Error('Solución Sabre expirada. Buscá de nuevo.');
         
         const pasajeros = op.preciosVenta?.length
-          ? op.preciosVenta.map(pv => ({ tipo: pv.tipo, cantidad: pv.cantidad, neto: pv.precioUnitario, tipo_tarifa: 'PNEG', comision_over: 0 }))
+          ? op.preciosVenta.map(pv => ({ tipo: pv.tipo, cantidad: pv.cantidad, neto: pv.precioUnitario, tipo_tarifa: 'CUSTOM', comision_over: 0 }))
           : (cached.fareList || []).map(fare => {
               const t = (fare.passenger_type || 'ADT').toUpperCase();
               return { tipo: t === 'ADT' ? 'adulto' : t === 'CNN' || t === 'CHD' ? 'menor' : 'bebé', cantidad: fare.quantity || 1, neto: fare.total || 0, tipo_tarifa: 'PUB', comision_over: 0 };
@@ -4634,7 +4635,7 @@ app.post('/generar-cotizacion', async (req, res) => {
         // Build pasajeros from fare_list (per-pax breakdown) or custom prices
         let pasajeros = [];
         if (op.preciosVenta?.length) {
-          pasajeros = op.preciosVenta.map(pv => ({ tipo: pv.tipo, cantidad: pv.cantidad, neto: pv.precioUnitario, tipo_tarifa: 'PNEG', comision_over: 0 }));
+          pasajeros = op.preciosVenta.map(pv => ({ tipo: pv.tipo, cantidad: pv.cantidad, neto: pv.precioUnitario, tipo_tarifa: 'CUSTOM', comision_over: 0 }));
         } else {
           const fareList = sol.data?.fare_list || [];
           if (fareList.length) {
@@ -4775,7 +4776,7 @@ app.post('/generar-cotizacion', async (req, res) => {
 
       // Override con precios de venta confirmados si vienen del frontend
       const pasajerosFinales = op.preciosVenta?.length
-        ? op.preciosVenta.map(pv => ({ tipo: pv.tipo, cantidad: pv.cantidad, neto: pv.precioUnitario, tipo_tarifa: 'PNEG', comision_over: 0 }))
+        ? op.preciosVenta.map(pv => ({ tipo: pv.tipo, cantidad: pv.cantidad, neto: pv.precioUnitario, tipo_tarifa: 'CUSTOM', comision_over: 0 }))
         : pasajeros;
 
       const trip = q.trip || [];
