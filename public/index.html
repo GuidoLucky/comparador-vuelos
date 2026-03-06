@@ -954,10 +954,23 @@ function renderModalReserva(searchId, quotationId, hasDiff) {
       </div>
     </div>
 
+    <div class="modal-section" id="seccionPrecioVenta">
+      <div class="modal-section-title">💰 Precio de venta al pasajero</div>
+      <div id="fareBreakdownContainer" style="background:var(--dark2);border:1px solid var(--border);border-radius:8px;padding:14px;">
+        <div style="color:var(--muted);font-size:12px;">⏳ Cargando tarifas...</div>
+      </div>
+      <div id="motivoCambioContainer" style="display:none;margin-top:10px;">
+        <div style="font-size:10px;color:var(--orange);text-transform:uppercase;letter-spacing:1px;margin-bottom:4px;">⚠️ Precio modificado — motivo obligatorio</div>
+        <input type="text" id="inputMotivoCambio" placeholder="Ej: Descuento cliente frecuente, promoción especial..." 
+          style="width:100%;background:var(--dark3);border:1px solid var(--orange);border-radius:6px;color:var(--text);font-family:'Sora',sans-serif;font-size:13px;padding:8px 12px;outline:none;box-sizing:border-box;">
+      </div>
+    </div>
+
     <button class="btn-modal-submit" id="btnConfirmar" onclick="confirmarReserva('${searchId}','${quotationId}')">Confirmar Reserva</button>
-  `;
+  \`;
 
   renderPaxForm(paxActivo);
+  cargarFareBreakdown('${searchId}', '${quotationId}');
 }
 
 function renderPaxForm(idx) {
@@ -1070,6 +1083,121 @@ function renderPaxForm(idx) {
     const ftEl = document.getElementById(`p_factTipo_${idx}`);
     if (ftEl && ftEl.value && !saved.factTipoId) { guardarPaxField(idx,'factTipoId',ftEl.value); guardarPaxField(idx,'factTipo',ftEl.options[ftEl.selectedIndex]?.dataset?.code||''); }
   }, 50);
+}
+
+// ─── FARE BREAKDOWN ───
+let fareBreakdownData = []; // [{tipo, codigo, cantidad, neto, tipo_tarifa, comision_over, precioVenta}]
+
+function calcularPrecioVentaPorTipo(neto, tipo_tarifa, comision_over) {
+  // Replicar logica del server: PNEG/sin comision → neto + fee; PUB → precioPublico - descuento
+  const getFee = (n) => n <= 500 ? 30 : n <= 1000 ? 50 : n <= 2000 ? 80 : 100;
+  const redondearArriba = (n) => Math.ceil(n / 10) * 10;
+  const redondearAbajo = (n) => Math.floor(n / 10) * 10;
+  const getDescuento = (co) => co <= 100 ? co * 0.5 : co * 0.4;
+  if (tipo_tarifa === 'PNEG' || comision_over <= 50) return redondearArriba(neto + getFee(neto));
+  const precioPublico = neto + comision_over;
+  return redondearAbajo(precioPublico - getDescuento(comision_over));
+}
+
+async function cargarFareBreakdown(searchId, quotationId) {
+  const container = document.getElementById('fareBreakdownContainer');
+  if (!container) return;
+
+  try {
+    const res = await fetch('/get-fare-breakdown', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ searchId, quotationId })
+    }).then(r => r.json());
+
+    if (!res.ok || !res.breakdown?.length) {
+      container.innerHTML = '<div style="color:#e74c3c;font-size:12px;">❌ No se pudo obtener el desglose de tarifas</div>';
+      return;
+    }
+
+    // Store breakdown with suggested prices
+    fareBreakdownData = res.breakdown.map(b => ({
+      ...b,
+      precioVentaSugerido: calcularPrecioVentaPorTipo(b.neto, b.tipo_tarifa, b.comision_over),
+      precioVenta: calcularPrecioVentaPorTipo(b.neto, b.tipo_tarifa, b.comision_over)
+    }));
+
+    renderFareBreakdown();
+  } catch(e) {
+    container.innerHTML = `<div style="color:#e74c3c;font-size:12px;">❌ Error: ${e.message}</div>`;
+  }
+}
+
+function renderFareBreakdown() {
+  const container = document.getElementById('fareBreakdownContainer');
+  if (!container) return;
+
+  const tipoLabel = { adulto: 'Adulto', menor: 'Menor', 'bebé': 'Bebé' };
+  const totalVenta = fareBreakdownData.reduce((s, b) => s + (b.precioVenta * b.cantidad), 0);
+
+  let html = '<div style="display:flex;flex-direction:column;gap:10px;">';
+
+  for (let i = 0; i < fareBreakdownData.length; i++) {
+    const b = fareBreakdownData[i];
+    const sugerido = b.precioVentaSugerido;
+    const modificado = Math.abs(b.precioVenta - sugerido) > 0.01;
+    html += `
+      <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;">
+        <div style="min-width:90px;">
+          <div style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:1px;">${tipoLabel[b.tipo] || b.tipo} × ${b.cantidad}</div>
+          <div style="font-size:11px;color:var(--muted);">Neto: USD ${b.neto.toFixed(2)}</div>
+        </div>
+        <div style="color:var(--muted);">→</div>
+        <div>
+          <div style="font-size:10px;color:var(--muted);margin-bottom:3px;">Precio venta c/u (USD)</div>
+          <input type="number" value="${b.precioVenta.toFixed(2)}" min="0" step="0.01" data-idx="${i}" data-sugerido="${sugerido}"
+            style="background:var(--dark3);border:1px solid ${modificado ? 'var(--orange)' : 'var(--gold)'};border-radius:6px;color:var(--text);font-family:'Sora',sans-serif;font-size:14px;font-weight:700;padding:6px 10px;width:120px;outline:none;"
+            oninput="onPrecioTipoChange(this, ${i})">
+        </div>
+        <div style="font-size:11px;color:var(--muted);">
+          Subtotal: <span id="subtotal_${i}" style="color:var(--gold);font-weight:700;">USD ${(b.precioVenta * b.cantidad).toFixed(2)}</span>
+        </div>
+      </div>`;
+  }
+
+  html += `
+    <div style="border-top:1px solid var(--border);padding-top:10px;margin-top:4px;display:flex;justify-content:space-between;align-items:center;">
+      <div style="font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:1px;">Total venta</div>
+      <div id="totalVentaLabel" style="font-size:20px;font-weight:700;color:var(--gold);">USD ${totalVenta.toFixed(2)}</div>
+    </div>
+  </div>`;
+
+  container.innerHTML = html;
+  verificarMotivoCambio();
+}
+
+function onPrecioTipoChange(input, idx) {
+  const nuevo = parseFloat(input.value) || 0;
+  const sugerido = parseFloat(input.dataset.sugerido);
+  fareBreakdownData[idx].precioVenta = nuevo;
+  const modificado = Math.abs(nuevo - sugerido) > 0.01;
+  input.style.borderColor = modificado ? 'var(--orange)' : 'var(--gold)';
+
+  // Update subtotal
+  const subtotalEl = document.getElementById(`subtotal_${idx}`);
+  if (subtotalEl) subtotalEl.textContent = `USD ${(nuevo * fareBreakdownData[idx].cantidad).toFixed(2)}`;
+
+  // Update total
+  const total = fareBreakdownData.reduce((s, b) => s + (b.precioVenta * b.cantidad), 0);
+  const totalEl = document.getElementById('totalVentaLabel');
+  if (totalEl) totalEl.textContent = `USD ${total.toFixed(2)}`;
+
+  verificarMotivoCambio();
+}
+
+function verificarMotivoCambio() {
+  const hayModificacion = fareBreakdownData.some(b => Math.abs(b.precioVenta - b.precioVentaSugerido) > 0.01);
+  const motivoContainer = document.getElementById('motivoCambioContainer');
+  if (motivoContainer) motivoContainer.style.display = hayModificacion ? 'block' : 'none';
+}
+
+function onPrecioVentaChange(valor, precioNeto) {
+  // legacy — kept for compatibility
 }
 
 async function leerDocumento(idx, input) {
@@ -1389,10 +1517,30 @@ async function confirmarReserva(searchId, quotationId) {
   });
   const contacto = { apellido: cApellido, nombre: cNombre, email: cEmail, telefono1: cTel1, telefono2: document.getElementById('c_tel2').value };
   const v = vueloSeleccionado;
+
+  // Validar precio de venta por tipo
+  const motivoInput = document.getElementById('inputMotivoCambio');
+  const motivo = motivoInput?.value?.trim() || '';
+  const hayModificacion = fareBreakdownData.length > 0 && fareBreakdownData.some(b => Math.abs(b.precioVenta - b.precioVentaSugerido) > 0.01);
+  if (hayModificacion && !motivo) {
+    btn.disabled = false; btn.textContent = 'Confirmar Reserva';
+    alert('Ingresá el motivo del cambio de precio antes de confirmar');
+    return;
+  }
+  if (!fareBreakdownData.length) {
+    btn.disabled = false; btn.textContent = 'Confirmar Reserva';
+    alert('Esperá a que carguen las tarifas antes de confirmar');
+    return;
+  }
+  const totalVentaUSD = fareBreakdownData.reduce((s, b) => s + (b.precioVenta * b.cantidad), 0);
+
   const vueloInfo = {
     tipo: 'vuelo', origen: v.itinerario[0]?.origen, destino: v.itinerario[v.itinerario.length-1]?.destino,
     salida: v.itinerario[0]?.salida, aerolinea: v.aerolineaDesc || v.aerolinea,
-    precioUSD: v.precioUSD, moneda: 'USD', itinerario: v.itinerario
+    precioUSD: v.precioUSD, moneda: 'USD', itinerario: v.itinerario,
+    precioVentaUSD: totalVentaUSD,
+    precioVentaDetalle: fareBreakdownData.map(b => ({ tipo: b.tipo, cantidad: b.cantidad, precioUnitario: b.precioVenta })),
+    motivoCambioPrecio: hayModificacion ? motivo : null
   };
 
   try {
