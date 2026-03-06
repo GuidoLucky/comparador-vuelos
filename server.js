@@ -3027,13 +3027,13 @@ app.post('/reservas/:id/cancelar', async (req, res) => {
         const cancelUrl = `https://api-tr.lleego.com/api/v2/transport/cancel/${reserva.order_id}?locale=es-ar`;
         console.log('[Cancelar GEA] URL:', cancelUrl);
         const cancelResp = await fetch(cancelUrl, {
-          method: 'POST',
+          method: 'PUT',
           headers: { 'Authorization': `Bearer ${llToken}`, 'x-api-key': LLEEGO_API_KEY, 'lang': 'es-ar', 'Content-Type': 'application/json' },
           body: JSON.stringify({})
         });
         const cancelText = await cancelResp.text();
         console.log(`[Cancelar GEA] HTTP ${cancelResp.status}:`, cancelText.substring(0, 300));
-        if (!cancelResp.ok && cancelResp.status !== 404) {
+        if (!cancelResp.ok) {
           return res.json({ ok: false, error: `Lleego respondió ${cancelResp.status}: ${cancelText.substring(0, 200)}` });
         }
         await db.query('UPDATE reservas SET estado=$1, updated_at=NOW() WHERE id=$2', ['CANCELADA', reserva.id]);
