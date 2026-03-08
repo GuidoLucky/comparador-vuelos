@@ -5201,7 +5201,7 @@ async function enviarEmailTLV(encontrados) {
     let html = `
       <div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto">
         <div style="background:#0f1117;padding:14px 20px;text-align:center;border-bottom:2px solid #c9a84c">
-          <span style="font-size:22px;font-weight:800;color:#c9a84c;letter-spacing:1px">✈ Lucky Tour</span>
+          <span style="font-size:22px;font-weight:800;color:#c9a84c;letter-spacing:1px">Lucky Tour</span>
         </div>
         <div style="background:#c9a84c;padding:16px 20px;border-radius:0">
           <h2 style="color:#000;margin:0;font-size:18px">✈ Alerta TLV — Disponibilidad detectada</h2>
