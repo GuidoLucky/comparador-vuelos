@@ -1,0 +1,2815 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Lucky Tour — Comparador de Vuelos</title>
+<link href="https://fonts.googleapis.com/css2?family=Sora:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+<style>
+:root{--gold:#C9A84C;--gold-light:#E8CC7A;--dark:#0D1117;--dark2:#161B22;--dark3:#21262D;--border:#30363D;--text:#E6EDF3;--muted:#8B949E;--green:#3FB950;--blue:#58A6FF;--red:#F85149;--orange:#F0883E;}
+*{box-sizing:border-box;margin:0;padding:0;}
+body{font-family:'Sora',sans-serif;background:var(--dark);color:var(--text);min-height:100vh;}
+header{background:var(--dark2);border-bottom:1px solid var(--border);padding:14px 28px;display:flex;align-items:center;gap:12px;}
+.logo-icon{width:36px;height:36px;background:var(--gold);border-radius:9px;display:flex;align-items:center;justify-content:center;font-size:18px;}
+.logo-text{font-size:17px;font-weight:700;}.logo-text span{color:var(--gold);}
+.logo-sub{font-size:10px;color:var(--muted);letter-spacing:2px;text-transform:uppercase;}
+.container{max-width:1200px;margin:0 auto;padding:24px 20px;}
+.search-card{background:var(--dark2);border:1px solid var(--border);border-radius:14px;padding:22px 24px;margin-bottom:24px;}
+.tipo-tabs{display:flex;gap:6px;margin-bottom:20px;}
+.tipo-tab{background:var(--dark3);border:1px solid var(--border);border-radius:8px;color:var(--muted);font-family:'Sora',sans-serif;font-size:12px;font-weight:600;padding:7px 16px;cursor:pointer;transition:all 0.15s;}
+.tipo-tab:hover{border-color:var(--gold);color:var(--text);}
+.tipo-tab.active{background:rgba(201,168,76,0.12);border-color:var(--gold);color:var(--gold);}
+.search-row{display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap;}
+.field{display:flex;flex-direction:column;gap:5px;}
+.field label{font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:1px;font-weight:600;}
+.field input,.field select{background:var(--dark3);border:1px solid var(--border);border-radius:8px;color:var(--text);font-family:'Sora',sans-serif;font-size:14px;padding:9px 11px;outline:none;transition:border-color 0.2s;}
+.field input:focus,.field select:focus{border-color:var(--gold);}
+.field select option{background:var(--dark3);}
+.f-sm{width:90px;}.f-md{width:145px;}.f-xs{width:72px;}.f-lg{width:140px;}
+.tramo-row-multi{display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap;padding:12px;background:var(--dark3);border-radius:10px;margin-bottom:8px;position:relative;}
+.tramo-num{font-size:10px;font-weight:700;color:var(--gold);text-transform:uppercase;letter-spacing:1px;align-self:center;min-width:60px;}
+.btn-rm-tramo{position:absolute;top:8px;right:8px;background:none;border:none;color:var(--muted);cursor:pointer;font-size:16px;padding:2px 6px;border-radius:4px;}
+.btn-rm-tramo:hover{color:var(--red);}
+.btn-add-tramo{background:none;border:1px dashed var(--border);border-radius:8px;color:var(--muted);font-family:'Sora',sans-serif;font-size:12px;padding:8px 16px;cursor:pointer;width:100%;margin-top:4px;transition:all 0.15s;}
+.btn-add-tramo:hover{border-color:var(--gold);color:var(--gold);}
+.pax-stops-row{display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap;margin-top:14px;padding-top:14px;border-top:1px solid var(--border);}
+.btn-buscar{background:var(--gold);color:#000;border:none;border-radius:9px;font-family:'Sora',sans-serif;font-size:14px;font-weight:700;padding:10px 26px;cursor:pointer;transition:all 0.2s;white-space:nowrap;align-self:flex-end;}
+.btn-buscar:hover{background:var(--gold-light);}
+.btn-buscar:disabled{opacity:0.5;cursor:not-allowed;}
+
+/* Moneda toggle */
+.moneda-toggle{display:flex;gap:4px;align-self:flex-end;}
+.moneda-btn{background:var(--dark3);border:1px solid var(--border);border-radius:7px;color:var(--muted);font-family:'Sora',sans-serif;font-size:12px;font-weight:700;padding:9px 14px;cursor:pointer;transition:all 0.15s;}
+.moneda-btn.active{background:rgba(201,168,76,0.12);border-color:var(--gold);color:var(--gold);}
+
+.results-layout{display:grid;grid-template-columns:175px 1fr;gap:20px;}
+@media(max-width:768px){.results-layout{grid-template-columns:1fr;}}
+.filtros-panel{background:var(--dark2);border:1px solid var(--border);border-radius:10px;padding:8px;height:fit-content;position:sticky;top:12px;min-width:140px;}
+.filtros-title{font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:1.5px;margin-bottom:10px;}
+.filtro-grupo{margin-bottom:8px;}
+.filtro-grupo-title{font-size:9px;font-weight:600;color:var(--text);margin-bottom:4px;text-transform:uppercase;letter-spacing:0.04em;}
+.filtro-btn{display:flex;align-items:center;gap:4px;background:var(--dark3);border:1px solid var(--border);border-radius:4px;padding:3px 6px;cursor:pointer;margin-bottom:2px;width:100%;font-family:'Sora',sans-serif;font-size:10px;color:var(--muted);transition:all 0.15s;text-align:left;}
+.filtro-btn:hover{border-color:var(--gold);color:var(--text);}
+.filtro-btn.active{border-color:var(--gold);background:rgba(201,168,76,0.1);color:var(--gold);}
+.dual-range-wrap{position:relative;height:18px;margin:6px 0 2px;}
+.dual-range-wrap input[type=range]{position:absolute;width:100%;pointer-events:none;appearance:none;-webkit-appearance:none;height:3px;background:transparent;outline:none;top:50%;transform:translateY(-50%);}
+.dual-range-wrap input[type=range]::-webkit-slider-thumb{pointer-events:all;appearance:none;-webkit-appearance:none;width:13px;height:13px;border-radius:50%;background:var(--gold);cursor:pointer;border:2px solid var(--dark);}
+.dual-range-wrap input[type=range]::-moz-range-thumb{pointer-events:all;width:13px;height:13px;border-radius:50%;background:var(--gold);cursor:pointer;border:2px solid var(--dark);}
+.dual-range-track{position:absolute;top:50%;transform:translateY(-50%);height:3px;width:100%;background:var(--dark3);border-radius:2px;}
+.dual-range-fill{position:absolute;top:50%;transform:translateY(-50%);height:3px;background:var(--gold);border-radius:2px;}
+.filtro-dot{width:6px;height:6px;border-radius:50%;flex-shrink:0;}
+.filtro-count{margin-left:auto;font-size:9px;background:var(--dark);border-radius:8px;padding:0px 5px;}
+.range-slider{width:100%;accent-color:var(--gold);cursor:pointer;}
+.range-labels{display:flex;justify-content:space-between;font-size:10px;color:var(--muted);margin-top:4px;}
+.btn-limpiar{background:none;border:1px solid var(--border);border-radius:7px;color:var(--muted);font-family:'Sora',sans-serif;font-size:11px;padding:6px 12px;cursor:pointer;width:100%;margin-top:4px;}
+.btn-limpiar:hover{border-color:var(--red);color:var(--red);}
+.results-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;}
+.results-count{font-size:13px;color:var(--muted);}
+.results-count strong{color:var(--gold);font-size:20px;margin-right:4px;}
+.sort-select{background:var(--dark3);border:1px solid var(--border);border-radius:7px;color:var(--text);font-family:'Sora',sans-serif;font-size:12px;padding:6px 10px;outline:none;}
+.tc-badge{font-size:10px;color:var(--muted);margin-left:8px;}
+
+/* VUELO CARD */
+.vuelo-card{background:var(--dark2);border:1px solid var(--border);border-radius:12px;margin-bottom:8px;transition:border-color 0.2s;}
+.vuelo-card:hover{border-color:rgba(201,168,76,0.4);}
+.vuelo-main{display:grid;grid-template-columns:88px 1fr 140px;gap:16px;padding:16px 18px;align-items:center;}
+.aero-col{text-align:center;}
+.aero-code{font-size:20px;font-weight:700;color:var(--gold);}
+.aero-name{font-size:10px;color:var(--muted);margin-top:2px;line-height:1.3;}
+.aero-source{font-size:9px;color:var(--muted);margin-top:3px;display:flex;gap:4px;flex-wrap:wrap;}
+.badge-fuente{font-size:8px;font-weight:700;padding:1px 6px;border-radius:3px;letter-spacing:0.3px;}
+.badge-tucano{background:rgba(46,204,113,0.15);color:#2ecc71;}
+.badge-gea{background:rgba(66,165,245,0.15);color:#42a5f5;}
+.badge-sabre{background:rgba(230,126,34,0.15);color:#e67e22;}
+.badge-gds{background:var(--dark3);color:var(--muted);padding:1px 5px;border-radius:3px;font-size:8px;}
+.tramo{padding:2px 0;}
+.tramo-label{font-size:9px;color:var(--muted);text-transform:uppercase;letter-spacing:1px;margin-bottom:5px;font-weight:600;}
+.tramo-row{display:flex;align-items:center;gap:10px;}
+.tramo-con-eq{display:flex;align-items:center;gap:12px;}
+.tramo-con-eq .tramo-info{flex:1;min-width:0;}
+.tramo-eq-sep{width:1px;height:64px;background:var(--border);flex-shrink:0;}
+.tramo-eq-inline{display:flex;gap:5px;flex-shrink:0;}
+.airport-block{min-width:44px;}
+.airport-code{font-size:17px;font-weight:700;}
+.airport-time{font-size:12px;color:var(--muted);margin-top:1px;}
+.airport-date{font-size:9px;color:var(--muted);}
+.tramo-line{flex:1;display:flex;flex-direction:column;align-items:center;gap:3px;}
+.line-bar{width:100%;display:flex;align-items:center;gap:4px;}
+.line-dot{width:5px;height:5px;border-radius:50%;background:var(--border);flex-shrink:0;}
+.line-seg{flex:1;height:1px;background:var(--border);}
+.line-plane{font-size:13px;flex-shrink:0;}
+.tramo-dur{font-size:10px;color:var(--muted);}
+.esc-badge{font-size:9px;font-weight:600;padding:2px 7px;border-radius:10px;text-transform:uppercase;letter-spacing:0.5px;}
+.esc-badge.directo{background:rgba(63,185,80,0.15);color:var(--green);}
+.esc-badge.una{background:rgba(240,136,62,0.15);color:var(--orange);}
+.esc-badge.dos{background:rgba(248,81,73,0.15);color:var(--red);}
+.tramo-divider{height:1px;background:var(--border);margin:8px 0;}
+
+/* PRECIO Y EQUIPAJE */
+.precio-col{text-align:right;}
+.precio-moneda-label{font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:1px;}
+.precio-amt{font-size:22px;font-weight:700;line-height:1.1;}
+.precio-alt{font-size:11px;color:var(--muted);margin-top:1px;}
+.precio-pax{font-size:10px;color:var(--muted);}
+.precio-expira{font-size:9px;color:var(--muted);margin-top:4px;}
+.precio-expira.urgente{color:var(--orange);}
+
+/* Equipaje */
+.equipaje-grid{display:grid;grid-template-columns:1fr 1fr 1fr;gap:4px;margin-top:10px;}
+.eq-item{background:var(--dark3);border-radius:6px;padding:5px 6px;text-align:center;border:1px solid var(--border);}
+.eq-item.incluido{border-color:rgba(63,185,80,0.3);background:rgba(63,185,80,0.06);}
+.eq-item.no-incluido{opacity:0.6;}
+.eq-icon{font-size:14px;display:block;margin-bottom:2px;}
+.eq-label{font-size:8px;color:var(--muted);text-transform:uppercase;letter-spacing:0.5px;display:block;}
+.eq-valor{font-size:9px;font-weight:600;display:block;margin-top:1px;}
+.eq-item.incluido .eq-valor{color:var(--green);}
+.eq-item.no-incluido .eq-valor{color:var(--muted);}
+
+.estado{text-align:center;padding:60px 20px;color:var(--muted);}
+.estado h3{font-size:17px;color:var(--text);margin:12px 0 6px;}
+.spinner{width:36px;height:36px;border:3px solid var(--border);border-top-color:var(--gold);border-radius:50%;animation:spin 0.8s linear infinite;margin:0 auto;}
+@keyframes spin{to{transform:rotate(360deg);}}
+.no-results{text-align:center;padding:40px;background:var(--dark2);border:1px solid var(--border);border-radius:12px;color:var(--muted);}
+
+.btn-reservar{background:var(--gold);color:#000;border:none;border-radius:7px;font-family:'Sora',sans-serif;font-size:12px;font-weight:700;padding:8px 16px;cursor:pointer;transition:all 0.2s;}
+.btn-reservar:hover{background:var(--gold-light);}
+
+/* Acciones debajo del vuelo - misma grilla que vuelo-main */
+.vuelo-actions{display:grid;grid-template-columns:88px 1fr 180px;gap:16px;padding:8px 18px 12px 18px;border-top:1px solid var(--border);align-items:center;}
+.vuelo-actions .cotizar-check{font-size:12px;color:var(--muted);cursor:pointer;display:flex;align-items:center;gap:4px;justify-content:center;}
+.vuelo-actions .btn-detalle{width:100%;}
+.vuelo-actions .btn-reservar{margin-top:0;width:100%;padding:8px 16px;}
+
+/* MODAL */
+.modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,0.8);z-index:1000;display:flex;align-items:flex-start;justify-content:center;padding:20px;overflow-y:auto;}
+.modal{background:var(--dark2);border:1px solid var(--border);border-radius:16px;width:100%;max-width:720px;padding:28px;position:relative;margin:auto;}
+.modal-close{position:absolute;top:16px;right:16px;background:none;border:none;color:var(--muted);font-size:20px;cursor:pointer;}
+.modal-close:hover{color:var(--text);}
+.modal-title{font-size:18px;font-weight:700;margin-bottom:4px;}
+.modal-sub{font-size:12px;color:var(--muted);margin-bottom:20px;}
+.modal-section{margin-bottom:20px;padding-bottom:20px;border-bottom:1px solid var(--border);}
+.modal-section:last-child{border-bottom:none;margin-bottom:0;}
+.modal-section-title{font-size:11px;font-weight:700;color:var(--gold);text-transform:uppercase;letter-spacing:1.5px;margin-bottom:14px;}
+.form-row{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:10px;}
+.form-field{display:flex;flex-direction:column;gap:4px;flex:1;min-width:120px;}
+.form-field label{font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:1px;font-weight:600;}
+.form-field input,.form-field select{background:var(--dark3);border:1px solid var(--border);border-radius:7px;color:var(--text);font-family:'Sora',sans-serif;font-size:13px;padding:8px 10px;outline:none;width:100%;}
+.form-field input:focus,.form-field select:focus{border-color:var(--gold);}
+.form-field select option{background:var(--dark3);}
+.pax-tab-header{display:flex;gap:6px;margin-bottom:16px;flex-wrap:wrap;}
+.pax-tab{background:var(--dark3);border:1px solid var(--border);border-radius:7px;color:var(--muted);font-family:'Sora',sans-serif;font-size:12px;font-weight:600;padding:6px 14px;cursor:pointer;}
+.pax-tab.active{border-color:var(--gold);color:var(--gold);background:rgba(201,168,76,0.1);}
+.cliente-search{position:relative;}
+.cliente-dropdown{position:absolute;top:100%;left:0;right:0;background:var(--dark2);border:1px solid var(--gold);border-radius:8px;z-index:10;max-height:200px;overflow-y:auto;display:none;}
+.cliente-dropdown.show{display:block;}
+.cliente-item{padding:10px 12px;cursor:pointer;font-size:12px;border-bottom:1px solid var(--border);}
+.cliente-item:last-child{border-bottom:none;}
+.cliente-item:hover{background:rgba(201,168,76,0.1);}
+.cliente-item strong{color:var(--gold);}
+.cliente-item span{color:var(--muted);font-size:10px;margin-left:6px;}
+.btn-modal-submit{background:var(--gold);color:#000;border:none;border-radius:9px;font-family:'Sora',sans-serif;font-size:15px;font-weight:700;padding:12px 28px;cursor:pointer;width:100%;margin-top:8px;}
+.btn-modal-submit:hover{background:var(--gold-light);}
+.btn-modal-submit:disabled{opacity:0.5;cursor:not-allowed;}
+.reserva-ok{text-align:center;padding:30px 0;}
+.reserva-pnr{font-size:42px;font-weight:700;color:var(--gold);letter-spacing:4px;margin:10px 0;}
+.reserva-detail{font-size:13px;color:var(--muted);margin-top:6px;}
+.alert-diff{background:rgba(248,81,73,0.1);border:1px solid var(--red);border-radius:8px;padding:12px;margin-bottom:16px;font-size:13px;color:var(--red);}
+
+.btn-detalle{background:transparent;color:var(--gold);border:1px solid var(--gold);border-radius:7px;font-family:'Sora',sans-serif;font-size:12px;font-weight:600;padding:7px 14px;cursor:pointer;margin-top:6px;width:100%;transition:all 0.2s;}
+.btn-detalle:hover{background:rgba(201,168,76,0.1);}
+.detalle-panel{background:var(--dark3);border-top:1px solid var(--border);padding:16px 18px;display:none;}
+.detalle-panel.show{display:block;}
+.detalle-grid{display:grid;grid-template-columns:1fr 1fr;gap:20px;}
+@media(max-width:768px){.detalle-grid{grid-template-columns:1fr;}}
+.detalle-section-title{font-size:10px;font-weight:700;color:var(--gold);text-transform:uppercase;letter-spacing:1px;margin-bottom:10px;}
+.detalle-row{display:flex;justify-content:space-between;align-items:center;padding:5px 0;font-size:12px;border-bottom:1px solid var(--border);}
+.detalle-row:last-child{border-bottom:none;}
+.detalle-row.total{font-weight:700;font-size:14px;color:var(--gold);padding-top:8px;}
+.detalle-label{color:var(--muted);}
+.detalle-valor{color:var(--text);}
+.detalle-venta{background:rgba(201,168,76,0.1);border:1px solid var(--gold);border-radius:8px;padding:10px;margin-top:10px;text-align:center;}
+.detalle-venta-precio{font-size:20px;font-weight:700;color:var(--gold);}
+.detalle-venta-label{font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:1px;}
+/* Condiciones table */
+.cond-table{width:100%;border-collapse:collapse;font-size:12px;}
+.cond-table tr{border-bottom:1px solid var(--border);}
+.cond-table tr:last-child{border-bottom:none;}
+.cond-table td{padding:7px 0;}
+.cond-table .cond-label{color:var(--muted);padding-right:10px;}
+.cond-table .cond-monto{text-align:right;font-weight:600;color:var(--text);padding-right:8px;white-space:nowrap;}
+.cond-badge{font-size:10px;font-weight:600;padding:2px 8px;border-radius:4px;display:inline-block;white-space:nowrap;}
+.cond-badge.permite{background:rgba(63,185,80,0.15);color:var(--green);border:1px solid rgba(63,185,80,0.3);}
+.cond-badge.no-permite{background:rgba(248,81,73,0.1);color:var(--red);border:1px solid rgba(248,81,73,0.2);}
+.markup-bar{background:var(--dark2);border:1px solid var(--border);border-radius:10px;padding:14px;margin-bottom:16px;display:flex;align-items:center;gap:12px;flex-wrap:wrap;}
+.markup-bar label{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:1px;font-weight:600;}
+.markup-bar input, .markup-bar select{background:var(--dark3);border:1px solid var(--border);border-radius:6px;color:var(--text);font-family:'Sora',sans-serif;font-size:13px;padding:6px 10px;outline:none;width:90px;}
+.markup-bar input:focus, .markup-bar select:focus{border-color:var(--gold);}
+.btn-markup-save{background:var(--gold);color:#000;border:none;border-radius:6px;font-family:'Sora',sans-serif;font-size:12px;font-weight:700;padding:7px 14px;cursor:pointer;}
+
+/* VISTA RESERVAS */
+.reservas-view{display:none;padding:20px;}
+.reservas-view.show{display:block;}
+/* Reservas stats */
+.res-stats{display:flex;gap:12px;flex-wrap:wrap;}
+.res-stat{background:var(--dark2);border:1px solid var(--border);border-radius:10px;padding:12px 18px;flex:1;min-width:120px;}
+.res-stat .num{font-size:24px;font-weight:700;}
+.res-stat .lbl{font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:0.5px;}
+.res-stat.creada .num{color:#e67e22;}
+.res-stat.emitida .num{color:#2ecc71;}
+.res-stat.cancelada .num{color:#e74c3c;}
+/* Reservas table dark */
+.res-table{width:100%;border-collapse:collapse;font-size:13px;}
+.res-table th{text-align:left;padding:10px 12px;font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:1px;border-bottom:2px solid var(--border);font-weight:600;}
+.res-table td{padding:10px 12px;border-bottom:1px solid var(--border);vertical-align:middle;}
+.res-table tr{cursor:pointer;transition:background 0.15s;}
+.res-table tr:hover td{background:rgba(255,255,255,0.03);}
+.res-pnr{font-family:'SF Mono',Consolas,monospace;font-weight:700;color:var(--gold);font-size:14px;}
+.res-fecha{font-size:11px;color:var(--muted);}
+.res-ruta{font-weight:600;}
+.res-precio{font-weight:700;}
+.badge-res{display:inline-block;padding:3px 10px;border-radius:20px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.3px;}
+.badge-CREADA{background:rgba(230,126,34,0.15);color:#e67e22;}
+.badge-EMITIDA{background:rgba(46,204,113,0.15);color:#2ecc71;}
+.badge-CANCELADA{background:rgba(231,76,60,0.15);color:#e74c3c;}
+/* Modal detail dark */
+.det-section{margin-bottom:18px;}
+.det-section h3{font-size:11px;text-transform:uppercase;letter-spacing:0.5px;color:var(--muted);margin-bottom:8px;}
+.det-grid{display:grid;grid-template-columns:repeat(auto-fit, minmax(160px, 1fr));gap:10px;}
+.det-item .lbl{font-size:10px;color:var(--muted);text-transform:uppercase;}
+.det-item .val{font-size:14px;font-weight:600;margin-top:2px;}
+.itin-seg{padding:10px 14px;background:var(--dark2);border-radius:8px;margin-bottom:6px;display:flex;align-items:center;gap:12px;border:1px solid var(--border);}
+.itin-seg .idate{font-weight:700;min-width:55px;font-size:12px;color:var(--gold);}
+.itin-seg .iroute{flex:1;}
+.itin-seg .iroute .cities{font-weight:600;font-size:13px;}
+.itin-seg .iroute .fnum{font-size:11px;color:var(--muted);}
+.itin-seg .itimes{font-size:12px;color:var(--muted);white-space:nowrap;}
+.pax-row-det{padding:8px 14px;background:var(--dark2);border-radius:8px;margin-bottom:5px;display:flex;justify-content:space-between;align-items:center;border:1px solid var(--border);}
+.pax-row-det .pname{font-weight:600;font-size:13px;}
+.pax-row-det .ptype{font-size:11px;color:var(--muted);}
+.pax-row-det .pdoc{font-size:12px;color:var(--muted);}
+/* Action buttons dark */
+.btn-act{padding:7px 14px;border:none;border-radius:7px;font-size:12px;font-weight:600;cursor:pointer;font-family:'Sora',sans-serif;transition:opacity 0.2s;}
+.btn-act:hover{opacity:0.85;}
+.btn-act-primary{background:var(--gold);color:#000;}
+.btn-act-outline{background:none;border:1px solid var(--border);color:var(--muted);}
+.btn-act-success{background:#27ae60;color:#fff;}
+.btn-act-danger{background:#e74c3c;color:#fff;}
+.btn-act-blue{background:#1565c0;color:#fff;}
+/* Recotizar/PDF panel dark */
+.recot-panel{background:var(--dark2);border:1px solid var(--border);border-radius:10px;padding:14px;margin-top:14px;}
+.recot-panel h4{font-size:13px;margin-bottom:10px;color:var(--gold);}
+.recot-opts{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:10px;}
+.recot-opts label{font-size:10px;color:var(--muted);text-transform:uppercase;}
+.recot-opts select,.recot-opts input{padding:6px 10px;background:var(--dark3);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:12px;font-family:'Sora',sans-serif;outline:none;}
+.tarifa-card-d{background:var(--dark3);border:1px solid var(--border);border-radius:8px;padding:10px;margin-bottom:8px;}
+.tarifa-card-d .th{font-weight:700;margin-bottom:6px;font-size:13px;}
+.tarifa-card-d .tr{display:flex;justify-content:space-between;font-size:12px;padding:2px 0;}
+.tarifa-card-d .tr.total{font-weight:700;font-size:14px;border-top:1px solid var(--border);padding-top:6px;margin-top:4px;}
+.notas-dark{width:100%;padding:8px;background:var(--dark2);border:1px solid var(--border);border-radius:8px;color:var(--text);font-size:13px;font-family:'Sora',sans-serif;resize:vertical;min-height:50px;outline:none;}
+.nav-tabs{display:flex;gap:6px;margin-bottom:20px;}
+.nav-tab{background:var(--dark2);border:1px solid var(--border);border-radius:8px;color:var(--muted);font-family:'Sora',sans-serif;font-size:13px;font-weight:600;padding:8px 18px;cursor:pointer;transition:all 0.2s;}
+.nav-tab.active{border-color:var(--gold);color:var(--gold);background:rgba(201,168,76,0.1);}
+.reservas-table{width:100%;border-collapse:collapse;font-size:13px;}
+.reservas-table th{text-align:left;padding:10px 12px;font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:1px;border-bottom:2px solid var(--border);font-weight:600;}
+.reservas-table td{padding:10px 12px;border-bottom:1px solid var(--border);vertical-align:middle;}
+.reservas-table tr:hover td{background:rgba(255,255,255,0.02);}
+.badge{display:inline-block;padding:3px 8px;border-radius:4px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;}
+.badge-creada{background:rgba(201,168,76,0.2);color:var(--gold);}
+.badge-emitida{background:rgba(40,167,69,0.2);color:#28a745;}
+.badge-cancelada{background:rgba(220,53,69,0.2);color:#dc3545;}
+.pnr-code{font-family:monospace;font-size:15px;font-weight:700;color:var(--gold);letter-spacing:2px;}
+
+.cotizar-check{display:flex;align-items:center;gap:6px;font-size:11px;color:var(--muted);margin-top:6px;cursor:pointer;}
+.cotizar-check input[type=checkbox]{accent-color:var(--gold);width:14px;height:14px;cursor:pointer;}
+.cotizar-check:hover{color:var(--text);}
+.cotizar-bar{position:fixed;bottom:0;left:0;right:0;background:var(--dark2);border-top:1px solid var(--gold);padding:12px 24px;display:flex;align-items:center;gap:12px;z-index:100;transform:translateY(100%);transition:transform 0.3s;}
+.cotizar-bar.show{transform:translateY(0);}
+.cotizar-bar-txt{color:var(--gold);font-weight:700;font-size:13px;}
+.cotizar-bar select{background:var(--dark3);border:1px solid var(--border);border-radius:6px;color:var(--text);font-family:'Sora',sans-serif;font-size:12px;padding:6px 10px;outline:none;}
+.cotizar-bar select:focus{border-color:var(--gold);}
+.btn-cotizar-gen{background:var(--gold);color:#000;border:none;border-radius:7px;font-family:'Sora',sans-serif;font-size:13px;font-weight:700;padding:9px 20px;cursor:pointer;}
+.btn-cotizar-gen:disabled{opacity:0.5;cursor:not-allowed;}
+.btn-cotizar-cancel{background:none;border:1px solid var(--border);color:var(--muted);border-radius:7px;font-family:'Sora',sans-serif;font-size:12px;padding:8px 14px;cursor:pointer;}
+</style>
+</head>
+<body>
+<header>
+  <div class="logo-icon">✈</div>
+  <div>
+    <div class="logo-text"><span>Lucky</span> Tour</div>
+    <div class="logo-sub">Comparador de Vuelos</div>
+  </div>
+  <div style="margin-left:auto;display:flex;align-items:center;gap:10px;">
+    <div id="notifWrapper" style="position:relative;">
+      <button id="notifBell" onclick="toggleNotifs()" style="background:none;border:none;color:#8b949e;font-size:20px;cursor:pointer;position:relative;padding:4px 8px;" title="Notificaciones">
+        🔔<span id="notifBadge" style="display:none;position:absolute;top:-2px;right:0;background:#e53e3e;color:#fff;font-size:10px;min-width:16px;height:16px;border-radius:50%;text-align:center;line-height:16px;font-weight:700;"></span>
+      </button>
+      <div id="notifPanel" style="display:none;position:absolute;right:0;top:36px;width:380px;max-height:450px;background:#1e2230;border-radius:10px;box-shadow:0 8px 30px rgba(0,0,0,0.4);z-index:1000;overflow:hidden;border:1px solid #30363d;">
+        <div style="padding:12px 16px;border-bottom:1px solid #30363d;display:flex;justify-content:space-between;align-items:center;">
+          <span style="font-weight:700;font-size:14px;color:#e6e6e6;">Notificaciones</span>
+          <button onclick="marcarTodasLeidas()" style="background:none;border:none;color:#c9a84c;font-size:11px;cursor:pointer;">Marcar todas leídas</button>
+        </div>
+        <div id="notifList" style="max-height:380px;overflow-y:auto;"></div>
+      </div>
+    </div>
+    <span id="userInfo" style="font-size:12px;color:#8b949e;"></span>
+    <span id="userRolBadge" style="display:none;font-size:10px;padding:2px 8px;border-radius:4px;background:rgba(212,175,55,0.2);color:#d4af37;font-weight:600;text-transform:uppercase;letter-spacing:0.06em;">Admin</span>
+    <button onclick="logout()" style="background:none;border:1px solid #30363d;color:#8b949e;padding:4px 12px;border-radius:6px;font-size:11px;cursor:pointer;font-family:'Sora',sans-serif;">Salir</button>
+  </div>
+</header>
+<script>
+let currentUser = null;
+// Cargar info del usuario al inicio
+(async function loadUser() {
+  try {
+    const r = await fetch('/api/me');
+    const d = await r.json();
+    if (d.ok) {
+      currentUser = d;
+      document.getElementById('userInfo').textContent = d.nombre;
+      if (d.rol === 'admin') {
+        document.getElementById('userRolBadge').style.display = 'inline';
+        // Mostrar tab de admin
+        const adminTab = document.getElementById('adminTab');
+        if (adminTab) adminTab.style.display = 'inline-flex';
+      }
+    } else {
+      window.location.href = '/login.html';
+    }
+  } catch(e) {
+    window.location.href = '/login.html';
+  }
+})();
+
+function logout() {
+  fetch('/api/logout', { method: 'POST' }).catch(()=>{});
+  window.location.href = '/login.html';
+}
+</script>
+<div class="container">
+  <div class="nav-tabs">
+    <button class="nav-tab active" onclick="mostrarVista('buscar',this)">🔍 Buscar vuelos</button>
+    <button class="nav-tab" onclick="mostrarVista('reservas',this)">📋 Mis reservas</button>
+    <button class="nav-tab" onclick="mostrarVista('emitidas',this)">✈️ Emitidas</button>
+    <button class="nav-tab" id="adminTab" style="display:none" onclick="mostrarVista('admin',this)">⚙️ Usuarios</button>
+  </div>
+  <div class="search-card">
+    <div class="tipo-tabs">
+      <button class="tipo-tab active" onclick="setTipo('roundtrip')">⇄ Ida y vuelta</button>
+      <button class="tipo-tab" onclick="setTipo('oneway')">→ Solo ida</button>
+      <button class="tipo-tab" onclick="setTipo('multidestino')">⊕ Multidestino</button>
+    </div>
+    <div id="form-simple">
+      <div class="search-row">
+        <div class="field f-sm"><label>Origen</label><input type="text" id="origen" placeholder="BUE" value="BUE" maxlength="3" oninput="this.value=this.value.toUpperCase()"></div>
+        <div class="field f-sm"><label>Destino</label><input type="text" id="destino" placeholder="MIA" maxlength="3" oninput="this.value=this.value.toUpperCase()"></div>
+        <div class="field f-md"><label>Ida</label><input type="date" id="salida"></div>
+        <div class="field f-md" id="field-regreso"><label>Vuelta</label><input type="date" id="regreso"></div>
+      </div>
+    </div>
+    <div id="form-multi" style="display:none">
+      <div id="tramos-container"></div>
+      <button class="btn-add-tramo" onclick="addTramo()">+ Agregar tramo</button>
+    </div>
+    <div class="pax-stops-row">
+      <div class="field f-xs"><label>Adultos</label><select id="adultos"><option>1</option><option selected>2</option><option>3</option><option>4</option><option>5</option><option>6</option></select></div>
+      <div class="field f-xs"><label>Niños</label><select id="ninos"><option selected>0</option><option>1</option><option>2</option><option>3</option></select></div>
+      <div class="field f-xs"><label>Infantes</label><select id="infantes"><option selected>0</option><option>1</option><option>2</option></select></div>
+      <div class="field f-lg"><label>Escalas</label>
+        <select id="stops">
+          <option value="">Todas</option>
+          <option value="0">Solo directo</option>
+          <option value="1">Hasta 1 escala</option>
+          <option value="2">Hasta 2 escalas</option>
+        </select>
+      </div>
+      <div class="field" style="min-width:110px;"><label>Cabina</label>
+        <select id="advCabin">
+          <option value="">Todas</option>
+          <option value="0">Economy</option>
+          <option value="3">Premium Eco</option>
+          <option value="2">Business</option>
+          <option value="1">First</option>
+        </select>
+      </div>
+      <div class="field" style="min-width:100px;"><label>Aerolíneas</label>
+        <input type="text" id="advAirlines" placeholder="AR,LA..." maxlength="50" style="text-transform:uppercase;width:100px;" oninput="this.value=this.value.toUpperCase()">
+      </div>
+      <div class="field"><label>Moneda</label>
+        <div class="moneda-toggle">
+          <button class="moneda-btn active" id="btn-usd" onclick="setMoneda('USD')">USD</button>
+          <button class="moneda-btn" id="btn-ars" onclick="setMoneda('ARS')">ARS</button>
+        </div>
+      </div>
+      <button class="btn-buscar" id="btnBuscar" onclick="buscar()">⚡ Buscar</button>
+    </div>
+  </div>
+  <div id="mainContent">
+    <div class="estado"><div style="font-size:48px">✈️</div><h3>Buscá tu vuelo</h3><p>Elegí el tipo de viaje, completá los datos y buscá</p></div>
+  </div>
+</div>
+
+<script>
+const hoy=new Date();
+const d1=new Date(hoy);d1.setMonth(d1.getMonth()+1);
+const d2=new Date(d1);d2.setDate(d2.getDate()+7);
+document.getElementById('salida').value=d1.toISOString().split('T')[0];
+document.getElementById('regreso').value=d2.toISOString().split('T')[0];
+
+let tipoActual='roundtrip';
+let monedaActual='USD';
+let tcUsdArs=1200;
+let todosLosVuelos=[];
+let filtros={escalas:-1,maxPrecioUSD:null,minPrecioUSD:null,aerolineas:[],ordenar:'precio',fuente:'',maxDurIda:null,maxDurVuelta:null,equipajeTramos:[]};
+
+// Cargar tipo de cambio al iniciar
+fetch('/tipo-cambio').then(r=>r.json()).then(d=>{
+  tcUsdArs=d.bsp||1425;
+  console.log('TC USD/ARS:',tcUsdArs);
+}).catch(()=>{});
+
+function setMoneda(m){
+  monedaActual=m;
+  document.getElementById('btn-usd').classList.toggle('active',m==='USD');
+  document.getElementById('btn-ars').classList.toggle('active',m==='ARS');
+  if(todosLosVuelos.length>0) aplicarFiltrosYRender();
+}
+
+function precioMostrar(precioUSD){
+  if(monedaActual==='ARS') return Math.round(precioUSD * tcUsdArs);
+  return precioUSD;
+}
+function fmtPrecio(n){
+  if(monedaActual==='ARS') return Math.round(n).toLocaleString('es-AR');
+  return n.toLocaleString('es-AR',{minimumFractionDigits:2,maximumFractionDigits:2});
+}
+function simboloMoneda(){ return monedaActual; }
+
+function setTipo(tipo){
+  tipoActual=tipo;
+  document.querySelectorAll('.tipo-tab').forEach((t,i)=>{t.classList.toggle('active',['roundtrip','oneway','multidestino'][i]===tipo);});
+  document.getElementById('form-simple').style.display=tipo==='multidestino'?'none':'block';
+  document.getElementById('form-multi').style.display=tipo==='multidestino'?'block':'none';
+  document.getElementById('field-regreso').style.display=tipo==='oneway'?'none':'flex';
+  if(tipo==='multidestino'&&document.getElementById('tramos-container').children.length===0){addTramo();addTramo();}
+}
+
+let tramoCount=0;
+function addTramo(){
+  tramoCount++;
+  const n=tramoCount;
+  const prev=document.getElementById('tramos-container').lastElementChild;
+  const prevDest=prev?prev.querySelector('.t-dest')?.value:'';
+  const prevDate=prev?prev.querySelector('.t-fecha')?.value:'';
+  let nextDate='';
+  if(prevDate){const d=new Date(prevDate);d.setDate(d.getDate()+3);nextDate=d.toISOString().split('T')[0];}
+  const div=document.createElement('div');
+  div.className='tramo-row-multi';div.id=`tramo-${n}`;
+  div.innerHTML=`<span class="tramo-num">Tramo ${n}</span>
+    <div class="field f-sm"><label>Origen</label><input type="text" class="t-orig" placeholder="BUE" value="${prevDest}" maxlength="3" oninput="this.value=this.value.toUpperCase()"></div>
+    <div class="field f-sm"><label>Destino</label><input type="text" class="t-dest" placeholder="MIA" maxlength="3" oninput="this.value=this.value.toUpperCase()"></div>
+    <div class="field f-md"><label>Fecha</label><input type="date" class="t-fecha" value="${nextDate}"></div>
+    ${n>2?`<button class="btn-rm-tramo" onclick="removeTramo(${n})">✕</button>`:''}`;
+  document.getElementById('tramos-container').appendChild(div);
+}
+function removeTramo(n){const el=document.getElementById(`tramo-${n}`);if(el)el.remove();}
+
+function fmt(iso){if(!iso)return'–';return new Date(iso).toLocaleTimeString('es-AR',{hour:'2-digit',minute:'2-digit',hour12:false});}
+function fmtFecha(iso){if(!iso)return'';return new Date(iso).toLocaleDateString('es-AR',{day:'2-digit',month:'short'});}
+function fmtExpira(iso){
+  if(!iso)return'';
+  const diff=Math.floor((new Date(iso)-Date.now())/60000);
+  if(diff<0)return'Expirado';
+  if(diff<60)return`⏱ ${diff}m`;
+  return`⏱ ${Math.floor(diff/60)}h ${diff%60}m`;
+}
+function escClass(n){return n===0?'directo':n===1?'una':'dos';}
+function escLabel(n){return n===0?'Directo':n===1?'1 escala':`${n} escalas`;}
+
+function renderEquipajeTramo(eq){
+  if(!eq)return'';
+  const items=[
+    {icon:'🎒', label:'Mochila',    valor:eq.handOn?.label ||'Incluida',     ok:eq.handOn?.incluido!==false},
+    {icon:'🧳', label:'Carry on',   valor:eq.carryOn?.label||'No informado', ok:!!eq.carryOn?.incluido},
+    {icon:'📦', label:'Despachado', valor:eq.checked?.label||'No informado', ok:!!eq.checked?.incluido},
+  ];
+  return items.map(i=>`
+    <div class="eq-item ${i.ok?'incluido':'no-incluido'}">
+      <span class="eq-icon">${i.icon}</span>
+      <span class="eq-label">${i.label}</span>
+      <span class="eq-valor">${i.valor}</span>
+    </div>`).join('');
+}
+
+function renderTramo(leg,label,eqTramo){
+  if(!leg)return'';
+  const stops=(leg.ciudadesEscala||[]).join(' · ');
+  const overnight=leg.tripDays>0?`<span style="color:var(--orange);font-size:9px"> +${leg.tripDays}d</span>`:'';
+  const eqHTML=eqTramo?`
+    <div class="tramo-eq-sep"></div>
+    <div class="tramo-eq-inline">${renderEquipajeTramo(eqTramo)}</div>`:'';
+  return`<div class="tramo">
+    <div class="tramo-label">${label}</div>
+    <div class="tramo-con-eq">
+      <div class="tramo-info">
+        <div class="tramo-row">
+          <div class="airport-block">
+            <div class="airport-code">${leg.origen}</div>
+            <div class="airport-time">${fmt(leg.salida)}</div>
+            <div class="airport-date">${fmtFecha(leg.salida)}</div>
+          </div>
+          <div class="tramo-line">
+            <div class="line-bar"><div class="line-dot"></div><div class="line-seg"></div><div class="line-plane">✈</div><div class="line-seg"></div><div class="line-dot"></div></div>
+            ${stops?`<div style="font-size:9px;color:var(--orange);margin-top:1px">${stops}</div>`:''}
+            <div class="tramo-dur">${leg.duracion||''}</div>
+          </div>
+          <div class="airport-block" style="text-align:right">
+            <div class="airport-code">${leg.destino}${overnight}</div>
+            <div class="airport-time">${fmt(leg.llegada)}</div>
+            <div class="airport-date">${fmtFecha(leg.llegada)}</div>
+          </div>
+        </div>
+        <div style="margin-top:5px"><span class="esc-badge ${escClass(leg.escalas)}">${escLabel(leg.escalas)}</span></div>
+      </div>
+      ${eqHTML}
+    </div>
+  </div>`;
+}
+
+function renderVuelo(v){
+  const expiraStr=fmtExpira(v.expira);
+  const urgente=expiraStr.includes('m')&&!expiraStr.includes('h');
+  const pax=parseInt(document.getElementById('adultos').value)+parseInt(document.getElementById('ninos').value);
+  const labels=['🛫 Ida','🛬 Vuelta','✈ Tramo 3','✈ Tramo 4','✈ Tramo 5'];
+  const tramosHTML=v.itinerario.map((leg,i)=>{
+    // Buscar equipaje de este tramo: primero en equipajePorTramo, fallback al global
+    const eqT = v.equipajePorTramo?.[i] || (i===0 ? {
+      handOn: v.equipaje?.handOn,
+      carryOn: v.equipaje?.carryOn,
+      checked: v.equipaje?.checked
+    } : null);
+    const h=renderTramo(leg,labels[i]||`✈ Tramo ${i+1}`,eqT);
+    return i>0?`<div class="tramo-divider"></div>${h}`:h;
+  }).join('');
+  const precio=precioMostrar(v.precioUSD);
+  const precioAlt=monedaActual==='USD'
+    ? `≈ ARS ${Math.round(v.precioUSD*tcUsdArs).toLocaleString('es-AR')}`
+    : `= USD ${v.precioUSD.toLocaleString('es-AR',{minimumFractionDigits:2})}`;
+
+  return`<div class="vuelo-card">
+    <div class="vuelo-main">
+      <div class="aero-col">
+        <div class="aero-code">${v.aerolinea}</div>
+        <div class="aero-name">${v.aerolineaDesc}</div>
+        <div class="aero-source">${v.fuente?`<span class="badge-fuente badge-${v.fuente==='GEA'?'gea':v.fuente==='Sabre'?'sabre':'tucano'}">${v.fuente}</span>`:''}${v.gds?`<span class="badge-gds">${v.gds}</span>`:''}</div>
+      </div>
+      <div>${tramosHTML}</div>
+      <div class="precio-col">
+        <div class="precio-moneda-label">${v.monedaBase || simboloMoneda()} Total</div>
+        <div class="precio-amt">${fmtPrecio(precio)}</div>
+        <div class="precio-alt">${precioAlt}</div>
+        ${pax>1?`<div class="precio-pax">≈ ${fmtPrecio(precio/pax)} por pax</div>`:''}
+        <div class="precio-expira ${urgente?'urgente':''}">${expiraStr}</div>
+      </div>
+    </div>
+    <div class="vuelo-actions">
+      <label class="cotizar-check">
+        <input type="checkbox" onchange="toggleCotizar('${v.id}','${searchIdActual}',this.checked)"> Cotizar
+      </label>
+      <button class="btn-detalle" onclick="verDetalle('${v.id}','${searchIdActual}',event)">📊 Ver precio</button>
+      <button class="btn-reservar" onclick="abrirReserva('${v.id}','${searchIdActual}',event)">✈ Reservar</button>
+    </div>
+    <div class="detalle-panel" data-detalle="${v.id}"></div>
+  </div>`;
+}
+
+function aplicarFiltrosYRender(){
+  let vuelos=[...todosLosVuelos];
+  if(filtros.escalas>=0)vuelos=vuelos.filter(v=>v.escalas===filtros.escalas);
+  if(filtros.aerolineas.length>0)vuelos=vuelos.filter(v=>filtros.aerolineas.includes(v.aerolinea));
+  if(filtros.maxPrecioUSD)vuelos=vuelos.filter(v=>v.precioUSD<=filtros.maxPrecioUSD);
+  if(filtros.minPrecioUSD)vuelos=vuelos.filter(v=>v.precioUSD>=filtros.minPrecioUSD);
+  if(filtros.fuente)vuelos=vuelos.filter(v=>v.fuente===filtros.fuente);
+  if(filtros.maxDurIda)vuelos=vuelos.filter(v=>!v.itinerario[0]||v.itinerario[0].duracionMin<=filtros.maxDurIda);
+  if(filtros.maxDurVuelta)vuelos=vuelos.filter(v=>!v.itinerario[1]||v.itinerario[1].duracionMin<=filtros.maxDurVuelta);
+  // Filtro equipaje por tramo
+  if(filtros.equipajeTramos.length){
+    vuelos=vuelos.filter(v=>{
+      return filtros.equipajeTramos.every((ft,i)=>{
+        if(!ft.carryOn&&!ft.checked)return true; // sin filtro en este tramo
+        const eqT=v.equipajePorTramo?.[i]||(i===0?{carryOn:v.equipaje?.carryOn,checked:v.equipaje?.checked}:null);
+        if(!eqT)return false;
+        if(ft.carryOn&&!eqT.carryOn?.incluido)return false;
+        if(ft.checked&&!eqT.checked?.incluido)return false;
+        return true;
+      });
+    });
+  }
+  if(filtros.ordenar==='precio')vuelos.sort((a,b)=>a.precioUSD-b.precioUSD);
+  else if(filtros.ordenar==='duracion')vuelos.sort((a,b)=>(a.itinerario[0]?.duracionMin||999)-(b.itinerario[0]?.duracionMin||999));
+  else if(filtros.ordenar==='salida')vuelos.sort((a,b)=>new Date(a.itinerario[0]?.salida)-new Date(b.itinerario[0]?.salida));
+
+  // Stats
+  const cuentas={0:0,1:0,2:0};
+  todosLosVuelos.forEach(v=>{cuentas[Math.min(v.escalas,2)]++;});
+  const aerosMap={};
+  todosLosVuelos.forEach(v=>{aerosMap[v.aerolinea]=v.aerolineaDesc;});
+  const fuenteCounts={Tucano:0,GEA:0,Sabre:0};
+  todosLosVuelos.forEach(v=>{if(v.fuente&&fuenteCounts[v.fuente]!==undefined)fuenteCounts[v.fuente]++;});
+  const numFuentes=(fuenteCounts.Tucano>0?1:0)+(fuenteCounts.GEA>0?1:0)+(fuenteCounts.Sabre>0?1:0);
+  const hayMultiFuente=numFuentes>1;
+  const precioMinUSD=Math.min(...todosLosVuelos.map(v=>v.precioUSD));
+  const precioMaxUSD=Math.max(...todosLosVuelos.map(v=>v.precioUSD));
+  const currentMaxUSD=filtros.maxPrecioUSD||precioMaxUSD;
+  const currentMinUSD=filtros.minPrecioUSD||precioMinUSD;
+  const sym=simboloMoneda();
+  const conv=monedaActual==='ARS'?tcUsdArs:1;
+
+  // Duration stats
+  const durIda=todosLosVuelos.map(v=>v.itinerario[0]?.duracionMin||0).filter(d=>d>0);
+  const durVuelta=todosLosVuelos.map(v=>v.itinerario[1]?.duracionMin||0).filter(d=>d>0);
+  const maxDurIdaAll=durIda.length?Math.max(...durIda):0;
+  const minDurIdaAll=durIda.length?Math.min(...durIda):0;
+  const maxDurVueltaAll=durVuelta.length?Math.max(...durVuelta):0;
+  const minDurVueltaAll=durVuelta.length?Math.min(...durVuelta):0;
+  const curDurIda=filtros.maxDurIda||maxDurIdaAll;
+  const curDurVuelta=filtros.maxDurVuelta||maxDurVueltaAll;
+
+  function fmtDur(m){return m?`${Math.floor(m/60)}h${m%60?` ${m%60}m`:''}`:'–';}
+
+  document.getElementById('mainContent').innerHTML=`
+    <div class="results-layout">
+      <div class="filtros-panel">
+        <div class="filtros-title">Filtros</div>
+        <div class="filtro-grupo">
+          <div class="filtro-grupo-title">Escalas</div>
+          <button class="filtro-btn ${filtros.escalas===-1?'active':''}" onclick="setFE(-1)"><div class="filtro-dot" style="background:var(--blue)"></div>Todos<span class="filtro-count">${todosLosVuelos.length}</span></button>
+          <button class="filtro-btn ${filtros.escalas===0?'active':''}" onclick="setFE(0)"><div class="filtro-dot" style="background:var(--green)"></div>Directo<span class="filtro-count">${cuentas[0]}</span></button>
+          <button class="filtro-btn ${filtros.escalas===1?'active':''}" onclick="setFE(1)"><div class="filtro-dot" style="background:var(--orange)"></div>1 escala<span class="filtro-count">${cuentas[1]}</span></button>
+          <button class="filtro-btn ${filtros.escalas===2?'active':''}" onclick="setFE(2)"><div class="filtro-dot" style="background:var(--red)"></div>2+<span class="filtro-count">${cuentas[2]}</span></button>
+        </div>
+        <div class="filtro-grupo">
+          <div class="filtro-grupo-title">Precio</div>
+          <div class="dual-range-wrap" id="dualRangeWrap">
+            <div class="dual-range-track"></div>
+            <div class="dual-range-fill" id="dualRangeFill"></div>
+            <input type="range" id="rangeMin" min="${precioMinUSD}" max="${precioMaxUSD}" value="${currentMinUSD}" oninput="onDualRange()">
+            <input type="range" id="rangeMax" min="${precioMinUSD}" max="${precioMaxUSD}" value="${currentMaxUSD}" oninput="onDualRange()">
+          </div>
+          <div class="range-labels"><span style="color:var(--gold);font-size:9px">${sym} ${Math.round(currentMinUSD*conv).toLocaleString()}</span><span style="color:var(--gold);font-size:9px">${sym} ${Math.round(currentMaxUSD*conv).toLocaleString()}</span></div>
+        </div>
+        ${maxDurIdaAll>0?`<div class="filtro-grupo">
+          <div class="filtro-grupo-title">Duración ida</div>
+          <input type="range" class="range-slider" min="${minDurIdaAll}" max="${maxDurIdaAll}" value="${curDurIda}" oninput="setDurIda(this.value)">
+          <div class="range-labels"><span>${fmtDur(minDurIdaAll)}</span><span style="color:var(--gold)">${fmtDur(curDurIda)}</span></div>
+        </div>`:''}
+        ${maxDurVueltaAll>0?`<div class="filtro-grupo">
+          <div class="filtro-grupo-title">Duración vuelta</div>
+          <input type="range" class="range-slider" min="${minDurVueltaAll}" max="${maxDurVueltaAll}" value="${curDurVuelta}" oninput="setDurVuelta(this.value)">
+          <div class="range-labels"><span>${fmtDur(minDurVueltaAll)}</span><span style="color:var(--gold)">${fmtDur(curDurVuelta)}</span></div>
+        </div>`:''}
+        <div class="filtro-grupo">
+          <div class="filtro-grupo-title">Aerolínea</div>
+          ${Object.entries(aerosMap).map(([code,name])=>`<button class="filtro-btn ${filtros.aerolineas.includes(code)?'active':''}" onclick="toggleAero('${code}')"><span style="font-weight:700;color:var(--gold)">${code}</span> ${name}</button>`).join('')}
+        </div>
+        ${hayMultiFuente?`<div class="filtro-grupo">
+          <div class="filtro-grupo-title">Fuente</div>
+          <button class="filtro-btn ${filtros.fuente===''?'active':''}" onclick="setFuente('')"><div class="filtro-dot" style="background:var(--blue)"></div>Todas<span class="filtro-count">${todosLosVuelos.length}</span></button>
+          ${fuenteCounts.Tucano?`<button class="filtro-btn ${filtros.fuente==='Tucano'?'active':''}" onclick="setFuente('Tucano')"><div class="filtro-dot" style="background:#2ecc71"></div>Tucano<span class="filtro-count">${fuenteCounts.Tucano}</span></button>`:''}
+          ${fuenteCounts.GEA?`<button class="filtro-btn ${filtros.fuente==='GEA'?'active':''}" onclick="setFuente('GEA')"><div class="filtro-dot" style="background:#42a5f5"></div>GEA<span class="filtro-count">${fuenteCounts.GEA}</span></button>`:''}
+          ${fuenteCounts.Sabre?`<button class="filtro-btn ${filtros.fuente==='Sabre'?'active':''}" onclick="setFuente('Sabre')"><div class="filtro-dot" style="background:#e67e22"></div>Sabre<span class="filtro-count">${fuenteCounts.Sabre}</span></button>`:''}
+        </div>`:''}
+        ${(()=>{
+          // Detectar cuántos tramos tiene la búsqueda actual
+          const maxTramos=todosLosVuelos.reduce((m,v)=>Math.max(m,v.itinerario?.length||1),0);
+          if(maxTramos===0)return'';
+          const labelsTramo=['🛫 Ida','🛬 Vuelta','✈ Tramo 3','✈ Tramo 4'];
+          // Asegurar que filtros.equipajeTramos tenga la longitud correcta
+          while(filtros.equipajeTramos.length<maxTramos)filtros.equipajeTramos.push({carryOn:false,checked:false});
+          return `<div class="filtro-grupo">
+            <div class="filtro-grupo-title">Equipaje incluido</div>
+            ${Array.from({length:maxTramos},(_,i)=>{
+              const ft=filtros.equipajeTramos[i]||{carryOn:false,checked:false};
+              const legLabel=labelsTramo[i]||`Tramo ${i+1}`;
+              // Origen/destino del primer vuelo que tenga ese tramo
+              const legRef=todosLosVuelos.find(v=>v.itinerario?.[i])?.itinerario[i];
+              const ruta=legRef?` <span style="color:var(--muted);font-weight:400">${legRef.origen}→${legRef.destino}</span>`:'';
+              return `<div style="margin-bottom:6px">
+                <div style="font-size:9px;font-weight:600;color:var(--text);margin-bottom:3px">${legLabel}${ruta}</div>
+                <button class="filtro-btn ${ft.carryOn?'active':''}" onclick="toggleEqTramo(${i},'carryOn')"><span style="font-size:10px">🧳</span> Carry on</button>
+                <button class="filtro-btn ${ft.checked?'active':''}" onclick="toggleEqTramo(${i},'checked')"><span style="font-size:10px">📦</span> Despachado</button>
+              </div>`;
+            }).join('')}
+          </div>`;
+        })()}
+        <button class="btn-limpiar" onclick="limpiarFiltros()">✕ Limpiar filtros</button>
+      </div>
+      <div>
+        <div class="results-header">
+          <div class="results-count"><strong>${vuelos.length}</strong> opciones${todosLosVuelos.length>vuelos.length?` (de ${todosLosVuelos.length})`:''}</div>
+          <select class="sort-select" onchange="setOrden(this.value)">
+            <option value="precio" ${filtros.ordenar==='precio'?'selected':''}>Precio ↑</option>
+            <option value="duracion" ${filtros.ordenar==='duracion'?'selected':''}>Duración ↑</option>
+            <option value="salida" ${filtros.ordenar==='salida'?'selected':''}>Hora de salida</option>
+          </select>
+        </div>
+        ${vuelos.length===0?'<div class="no-results">😕 Sin resultados con estos filtros</div>':vuelos.map(renderVuelo).join('')}
+      </div>
+    </div>`;
+  setTimeout(initDualRange, 0);
+}
+
+function setFE(n){filtros.escalas=n;aplicarFiltrosYRender();}
+function setFP(v){filtros.maxPrecioUSD=parseFloat(v);aplicarFiltrosYRender();}
+function setFPMin(v){filtros.minPrecioUSD=parseFloat(v);aplicarFiltrosYRender();}
+function toggleEqTramo(i,tipo){
+  if(!filtros.equipajeTramos[i])filtros.equipajeTramos[i]={carryOn:false,checked:false};
+  filtros.equipajeTramos[i][tipo]=!filtros.equipajeTramos[i][tipo];
+  aplicarFiltrosYRender();
+}
+function onDualRange(){
+  const rMin=document.getElementById('rangeMin');
+  const rMax=document.getElementById('rangeMax');
+  if(!rMin||!rMax)return;
+  let vMin=parseFloat(rMin.value), vMax=parseFloat(rMax.value);
+  if(vMin>vMax){const t=vMin;vMin=vMax;vMax=t;rMin.value=vMin;rMax.value=vMax;}
+  filtros.minPrecioUSD=vMin;
+  filtros.maxPrecioUSD=vMax;
+  // Update fill
+  const wrap=document.getElementById('dualRangeWrap');
+  const fill=document.getElementById('dualRangeFill');
+  if(wrap&&fill){
+    const mn=parseFloat(rMin.min), mx=parseFloat(rMin.max);
+    const pMin=(vMin-mn)/(mx-mn)*100, pMax=(vMax-mn)/(mx-mn)*100;
+    fill.style.left=pMin+'%'; fill.style.width=(pMax-pMin)+'%';
+  }
+  // Update labels
+  const sym=simboloMoneda(), conv=monedaActual==='ARS'?tcUsdArs:1;
+  const labels=wrap?.parentElement?.querySelector('.range-labels');
+  if(labels){
+    const spans=labels.querySelectorAll('span');
+    if(spans[0])spans[0].textContent=`${sym} ${Math.round(vMin*conv).toLocaleString()}`;
+    if(spans[1])spans[1].textContent=`${sym} ${Math.round(vMax*conv).toLocaleString()}`;
+  }
+  aplicarFiltrosYRender();
+}
+// Init dual range fill after render
+function initDualRange(){
+  const rMin=document.getElementById('rangeMin');
+  const rMax=document.getElementById('rangeMax');
+  const fill=document.getElementById('dualRangeFill');
+  if(!rMin||!rMax||!fill)return;
+  const mn=parseFloat(rMin.min),mx=parseFloat(rMin.max);
+  const pMin=(parseFloat(rMin.value)-mn)/(mx-mn)*100;
+  const pMax=(parseFloat(rMax.value)-mn)/(mx-mn)*100;
+  fill.style.left=pMin+'%'; fill.style.width=(pMax-pMin)+'%';
+}
+function setDurIda(v){filtros.maxDurIda=parseInt(v);aplicarFiltrosYRender();}
+function setDurVuelta(v){filtros.maxDurVuelta=parseInt(v);aplicarFiltrosYRender();}
+function toggleAero(code){filtros.aerolineas.includes(code)?filtros.aerolineas=filtros.aerolineas.filter(a=>a!==code):filtros.aerolineas.push(code);aplicarFiltrosYRender();}
+function setOrden(v){filtros.ordenar=v;aplicarFiltrosYRender();}
+function setFuente(v){filtros.fuente=v;aplicarFiltrosYRender();}
+function limpiarFiltros(){filtros={escalas:-1,maxPrecioUSD:null,minPrecioUSD:null,aerolineas:[],ordenar:'precio',fuente:'',maxDurIda:null,maxDurVuelta:null,equipajeTramos:[]};aplicarFiltrosYRender();}
+
+async function buscar(){
+  const adultos=document.getElementById('adultos').value;
+  const ninos=document.getElementById('ninos').value;
+  const infantes=document.getElementById('infantes').value;
+  const stops=document.getElementById('stops').value;
+  let body={tipo:tipoActual,adultos,ninos,infantes,stops:stops||undefined};
+  // Búsqueda avanzada
+  const advAirlines = (document.getElementById('advAirlines').value || '').trim();
+  const advCabin = document.getElementById('advCabin').value;
+  if (advAirlines) body.airlines = advAirlines.split(',').map(a => a.trim()).filter(Boolean);
+  if (advCabin) body.cabinType = parseInt(advCabin);
+  if(tipoActual==='multidestino'){
+    const tramosEls=document.getElementById('tramos-container').querySelectorAll('.tramo-row-multi');
+    const tramos=[];
+    for(const el of tramosEls){
+      const o=el.querySelector('.t-orig').value.trim().toUpperCase();
+      const d=el.querySelector('.t-dest').value.trim().toUpperCase();
+      const f=el.querySelector('.t-fecha').value;
+      if(!o||!d||!f){alert('Completá todos los tramos');return;}
+      tramos.push({origen:o,destino:d,salida:f});
+    }
+    if(tramos.length<2){alert('Agregá al menos 2 tramos');return;}
+    body.tramos=tramos;
+  } else {
+    const origen=document.getElementById('origen').value.trim().toUpperCase();
+    const destino=document.getElementById('destino').value.trim().toUpperCase();
+    const salida=document.getElementById('salida').value;
+    const regreso=document.getElementById('regreso').value;
+    if(!origen||!destino||!salida||(tipoActual==='roundtrip'&&!regreso)){alert('Completá todos los campos');return;}
+    body={...body,origen,destino,salida,regreso};
+  }
+  document.getElementById('mainContent').innerHTML=`<div class="estado"><div class="spinner"></div><h3>Buscando vuelos...</h3><p>Puede tardar hasta 30 segundos</p></div>`;
+  const btn=document.getElementById('btnBuscar');btn.disabled=true;btn.textContent='⏳ Buscando...';
+  try{
+    const res=await fetch('/buscar-vuelos',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+    const data=await res.json();
+    if(data.searchId) searchIdActual=data.searchId;
+    if(!data.ok){document.getElementById('mainContent').innerHTML=`<div class="estado"><div style="font-size:40px">⚠️</div><h3>Error</h3><p>${data.error}</p></div>`;return;}
+    todosLosVuelos=data.vuelos||[];
+    if(todosLosVuelos.length) document.getElementById('markupBar').style.display='flex';
+    filtros={escalas:-1,maxPrecioUSD:null,minPrecioUSD:null,aerolineas:[],ordenar:'precio',fuente:'',maxDurIda:null,maxDurVuelta:null,equipajeTramos:[]};
+    if(!todosLosVuelos.length){document.getElementById('mainContent').innerHTML=`<div class="estado"><div style="font-size:40px">🔍</div><h3>Sin resultados</h3><p>Probá otras fechas o destinos</p></div>`;return;}
+    aplicarFiltrosYRender();
+  }catch(err){
+    document.getElementById('mainContent').innerHTML=`<div class="estado"><div style="font-size:40px">⚠️</div><h3>Error de conexión</h3><p>${err.message}</p></div>`;
+  }finally{btn.disabled=false;btn.textContent='⚡ Buscar';}
+}
+document.addEventListener('keydown',e=>{if(e.key==='Enter')buscar();});
+</script>
+
+<!-- MARKUP BAR (se muestra en búsqueda) -->
+<div id="markupBar" class="markup-bar" style="max-width:1100px;margin:0 auto 0;display:none;">
+  <label>💰 Tu markup:</label>
+  <select id="markupTipo" onchange="guardarMarkup()">
+    <option value="porcentaje">%</option>
+    <option value="fijo">USD fijo</option>
+  </select>
+  <input type="number" id="markupValor" value="0" min="0" step="0.5" oninput="guardarMarkup()" style="width:80px;">
+  <span id="markupInfo" style="font-size:12px;color:var(--muted);"></span>
+</div>
+
+<!-- VISTA RESERVAS (completa) -->
+<div id="vistaReservas" style="display:none;max-width:1100px;margin:0 auto;padding:20px 0;">
+  <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;flex-wrap:wrap;gap:10px;">
+    <h2 style="font-size:20px;font-weight:700;">📋 Mis Reservas</h2>
+    <button onclick="cargarReservas()" style="background:none;border:1px solid var(--border);color:var(--muted);border-radius:6px;padding:6px 14px;font-size:12px;cursor:pointer;font-family:'Sora',sans-serif;">🔄 Actualizar</button>
+    <button id="btnVerificarTodo" onclick="ejecutarCronManual()" style="background:none;border:1px solid var(--border);color:var(--muted);border-radius:6px;padding:6px 14px;font-size:12px;cursor:pointer;font-family:'Sora',sans-serif;" title="Verificar estado de reservas emitidas con las aerolíneas">🔍 Verificar todo</button>
+  </div>
+  <!-- Stats -->
+  <div id="reservasStats" style="display:flex;gap:12px;margin-bottom:16px;flex-wrap:wrap;"></div>
+  <!-- Filtros -->
+  <div style="display:flex;gap:10px;margin-bottom:16px;flex-wrap:wrap;">
+    <input type="text" id="searchInput" placeholder="🔍 Buscar PNR, pasajero, ruta..." style="flex:1;min-width:200px;padding:8px 12px;background:var(--dark2);border:1px solid var(--border);border-radius:8px;color:var(--text);font-family:'Sora',sans-serif;font-size:13px;outline:none;">
+    <select id="filterEstado" style="padding:8px 12px;background:var(--dark2);border:1px solid var(--border);border-radius:8px;color:var(--text);font-family:'Sora',sans-serif;font-size:13px;outline:none;">
+      <option value="TODAS">Todas</option>
+      <option value="CREADA">Creadas</option>
+      <option value="EMITIDA">Emitidas</option>
+      <option value="CANCELADA">Canceladas</option>
+    </select>
+  </div>
+  <!-- Tabla -->
+  <div id="reservasTabla" style="overflow-x:auto;"></div>
+</div>
+
+<!-- VISTA ADMIN (gestión de usuarios) -->
+
+<!-- VISTA EMITIDAS -->
+<div id="vistaEmitidas" style="display:none;max-width:1200px;margin:0 auto;padding:20px 0;">
+  <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;flex-wrap:wrap;gap:10px;">
+    <h2 style="font-size:20px;font-weight:700;">✈️ Reservas Emitidas</h2>
+    <div style="display:flex;gap:8px;align-items:center;">
+      <input type="text" id="emitSearch" placeholder="🔍 PNR, ruta, pasajero..." style="padding:8px 12px;background:var(--dark2);border:1px solid var(--border);border-radius:8px;color:var(--text);font-family:'Sora',sans-serif;font-size:12px;outline:none;width:200px;">
+      <button onclick="cargarEmitidas()" style="background:none;border:1px solid var(--border);color:var(--muted);border-radius:6px;padding:6px 14px;font-size:12px;cursor:pointer;font-family:'Sora',sans-serif;">🔄</button>
+    </div>
+  </div>
+  <div id="emitidasStats" style="display:flex;gap:12px;margin-bottom:16px;flex-wrap:wrap;"></div>
+  <div id="emitidasTabla" style="overflow-x:auto;"></div>
+</div>
+
+<div id="vistaAdmin" style="display:none;max-width:900px;margin:0 auto;padding:20px 0;">
+  <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px;">
+    <h2 style="font-size:20px;font-weight:700;">⚙️ Gestión de Usuarios</h2>
+    <button onclick="mostrarFormNuevoUsuario()" style="background:linear-gradient(135deg,#d4af37,#c5a028);color:#0d1117;border:none;border-radius:8px;padding:8px 18px;font-size:13px;font-weight:700;cursor:pointer;font-family:'Sora',sans-serif;">+ Nuevo vendedor</button>
+  </div>
+  
+  <!-- Form nuevo usuario (oculto) -->
+  <div id="formNuevoUsuario" style="display:none;background:var(--dark2);border:1px solid var(--border);border-radius:12px;padding:20px;margin-bottom:20px;">
+    <h3 style="font-size:15px;font-weight:700;margin-bottom:14px;">Nuevo Usuario</h3>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+      <div><label style="font-size:11px;color:var(--muted);display:block;margin-bottom:4px;">Nombre completo</label>
+        <input type="text" id="nuNombre" placeholder="Juan Pérez" style="width:100%;padding:8px 12px;background:var(--dark1);border:1px solid var(--border);border-radius:8px;color:var(--text);font-family:'Sora',sans-serif;font-size:13px;outline:none;">
+      </div>
+      <div><label style="font-size:11px;color:var(--muted);display:block;margin-bottom:4px;">Usuario</label>
+        <input type="text" id="nuUsuario" placeholder="jperez" style="width:100%;padding:8px 12px;background:var(--dark1);border:1px solid var(--border);border-radius:8px;color:var(--text);font-family:'Sora',sans-serif;font-size:13px;outline:none;">
+      </div>
+      <div><label style="font-size:11px;color:var(--muted);display:block;margin-bottom:4px;">Contraseña</label>
+        <input type="password" id="nuPassword" placeholder="••••••" style="width:100%;padding:8px 12px;background:var(--dark1);border:1px solid var(--border);border-radius:8px;color:var(--text);font-family:'Sora',sans-serif;font-size:13px;outline:none;">
+      </div>
+      <div><label style="font-size:11px;color:var(--muted);display:block;margin-bottom:4px;">Rol</label>
+        <select id="nuRol" style="width:100%;padding:8px 12px;background:var(--dark1);border:1px solid var(--border);border-radius:8px;color:var(--text);font-family:'Sora',sans-serif;font-size:13px;outline:none;">
+          <option value="vendedor">Vendedor</option>
+          <option value="admin">Admin</option>
+        </select>
+      </div>
+    </div>
+    <h4 style="font-size:13px;font-weight:600;margin:16px 0 10px;color:var(--muted);">Credenciales de proveedores (opcional)</h4>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+      <div style="background:var(--dark1);border:1px solid var(--border);border-radius:8px;padding:12px;">
+        <div style="font-size:12px;font-weight:600;color:#4fc3f7;margin-bottom:8px;">🔹 Tucano (SCIWeb)</div>
+        <input type="text" id="nuTucanoUser" placeholder="Usuario Tucano" style="width:100%;padding:6px 10px;background:rgba(255,255,255,0.04);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:12px;margin-bottom:6px;outline:none;font-family:inherit;">
+        <input type="password" id="nuTucanoPass" placeholder="Contraseña Tucano" style="width:100%;padding:6px 10px;background:rgba(255,255,255,0.04);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:12px;outline:none;font-family:inherit;">
+      </div>
+      <div style="background:var(--dark1);border:1px solid var(--border);border-radius:8px;padding:12px;">
+        <div style="font-size:12px;font-weight:600;color:#66bb6a;margin-bottom:8px;">🔹 GEA (Lleego)</div>
+        <input type="text" id="nuGeaUser" placeholder="Email GEA" style="width:100%;padding:6px 10px;background:rgba(255,255,255,0.04);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:12px;margin-bottom:6px;outline:none;font-family:inherit;">
+        <input type="password" id="nuGeaPass" placeholder="Contraseña GEA" style="width:100%;padding:6px 10px;background:rgba(255,255,255,0.04);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:12px;margin-bottom:6px;outline:none;font-family:inherit;">
+        <input type="text" id="nuGeaAgent" placeholder="Agente (ej: GFinkelstein)" style="width:100%;padding:6px 10px;background:rgba(255,255,255,0.04);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:12px;outline:none;font-family:inherit;">
+      </div>
+    </div>
+    <div style="display:flex;gap:10px;margin-top:14px;justify-content:flex-end;">
+      <button onclick="document.getElementById('formNuevoUsuario').style.display='none'" style="background:none;border:1px solid var(--border);color:var(--muted);border-radius:8px;padding:8px 16px;font-size:12px;cursor:pointer;font-family:'Sora',sans-serif;">Cancelar</button>
+      <button onclick="crearUsuario()" style="background:#238636;color:#fff;border:none;border-radius:8px;padding:8px 18px;font-size:12px;font-weight:600;cursor:pointer;font-family:'Sora',sans-serif;">Crear usuario</button>
+    </div>
+  </div>
+  
+  <!-- Tabla de usuarios -->
+  <div id="usuariosTabla" style="overflow-x:auto;"></div>
+</div>
+
+<!-- MODAL DETALLE RESERVA -->
+<div id="modalOverlay" class="modal-overlay" style="display:none" onclick="if(event.target===this)cerrarModalRes()">
+  <div class="modal" style="max-width:700px;">
+    <div style="padding:16px 20px;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center;">
+      <h2 id="modalTitle" style="font-size:16px;font-weight:700;">Detalle de Reserva</h2>
+      <button class="modal-close" onclick="cerrarModalRes()">✕</button>
+    </div>
+    <div id="modalBody" style="padding:20px;max-height:70vh;overflow-y:auto;"></div>
+    <div id="modalActions" style="display:flex;gap:8px;padding:12px 20px;border-top:1px solid var(--border);flex-wrap:wrap;"></div>
+  </div>
+</div>
+
+<!-- MODAL DE RESERVA (crear reserva desde búsqueda) -->
+<div id="modalReserva" class="modal-overlay" style="display:none">
+  <div class="modal">
+    <button class="modal-close" onclick="cerrarModal()">✕</button>
+    <div id="modalContenido"></div>
+  </div>
+</div>
+
+<script>
+
+// ─── ESTADO RESERVA ───
+let searchIdActual = '';
+let vueloSeleccionado = null;
+let paisesData = [];
+let paxActivo = 0;
+let pasajerosForms = [];
+
+// searchId se captura en la respuesta de /buscar-vuelos
+const _buscarBtn = document.getElementById('btnBuscar');
+
+let paisesFactData = [];
+async function cargarPaises() {
+  if (paisesData.length) return paisesData;
+  const [r1, r2] = await Promise.all([
+    fetch('/document-countries?documentFor=Passengers').then(r=>r.json()),
+    fetch('/document-countries?documentFor=AccountingHolders').then(r=>r.json())
+  ]);
+  paisesData = r1.data || [];
+  paisesFactData = r2.data || [];
+  return paisesData;
+}
+
+function getPaisOpts(selectedId) {
+  return paisesData.map(p => `<option value="${p.Id}" ${p.id===selectedId?'selected':''}>${p.name}</option>`).join('');
+}
+function getDocTipoOpts(paisId, selectedId) {
+  const pais = paisesData.find(p=>p.id===paisId);
+  const tipos = pais?.documentTypes || [];
+  return tipos.map(t => `<option value="${t.id}" data-code="${t.code}" ${t.id===selectedId?'selected':''}>${t.name}</option>`).join('');
+}
+function getFactTipoOpts(paisId, selectedId) {
+  const pais = paisesFactData.find(p=>p.id===paisId) || paisesData.find(p=>p.id===paisId);
+  const tipos = pais?.documentTypes || [];
+  return tipos.map(t => `<option value="${t.id}" data-code="${t.code}" ${t.id===selectedId?'selected':''}>${t.name}</option>`).join('');
+}
+
+// País por defecto Argentina
+function getPaisDefaultId() {
+  const arg = paisesData.find(p=>p.Name==='Argentina');
+  return arg?.Id || '';
+}
+
+async function abrirReserva(quotationId, searchId, e) {
+  e.stopPropagation();
+  if (!searchId) { alert('Hacé una nueva búsqueda para reservar'); return; }
+  
+  // Encontrar el vuelo
+  vueloSeleccionado = todosLosVuelos.find(v=>v.id==quotationId);
+  if (!vueloSeleccionado) return;
+
+  document.getElementById('modalReserva').style.display = 'flex';
+  document.getElementById('modalContenido').innerHTML = '<div class="estado"><div class="spinner"></div><h3>Verificando disponibilidad...</h3></div>';
+
+  try {
+    // Check availability
+    const chk = await fetch('/check-availability', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({ searchId, quotationId: String(quotationId) })
+    }).then(r=>r.json());
+
+    if (!chk.ok) throw new Error(chk.error);
+
+    // Cargar países
+    await cargarPaises();
+
+    // Inicializar forms de pasajeros
+    const adultos = parseInt(document.getElementById('adultos').value);
+    const ninos = parseInt(document.getElementById('ninos').value);
+    const infantes = parseInt(document.getElementById('infantes').value);
+    pasajerosForms = [];
+    for(let i=0;i<adultos;i++) pasajerosForms.push({tipo:'ADT', idx:i});
+    for(let i=0;i<ninos;i++) pasajerosForms.push({tipo:'CHD', idx:i});
+    for(let i=0;i<infantes;i++) pasajerosForms.push({tipo:'INF', idx:i});
+    paxActivo = 0;
+
+    renderModalReserva(searchId, quotationId, chk.hasDifferences);
+  } catch(err) {
+    document.getElementById('modalContenido').innerHTML = `<div class="estado"><div style="font-size:40px">⚠️</div><h3>Error</h3><p>${err.message}</p></div>`;
+  }
+}
+
+function renderModalReserva(searchId, quotationId, hasDiff) {
+  const v = vueloSeleccionado;
+  const pax = pasajerosForms[paxActivo];
+  const tipoLabel = pax.tipo==='ADT'?'Adulto':pax.tipo==='CHD'?'Niño':'Infante';
+  const paxNum = pax.idx+1;
+  const paisDefId = getPaisDefaultId();
+
+  const tabs = pasajerosForms.map((p,i) => {
+    const lbl = p.tipo==='ADT'?`Adulto ${p.idx+1}`:p.tipo==='CHD'?`Niño ${p.idx+1}`:`Infante ${p.idx+1}`;
+    return `<button class="pax-tab ${i===paxActivo?'active':''}" onclick="cambiarPax(${i})">${lbl}</button>`;
+  }).join('');
+
+  document.getElementById('modalContenido').innerHTML = `
+    <div class="modal-title">✈ Confirmar Reserva</div>
+    <div class="modal-sub">${v.aerolinea} · ${v.itinerario.map(l=>l.origen+' → '+l.destino).join(' | ')} · USD ${v.precioUSD?.toFixed(2)}</div>
+    ${hasDiff?'<div class="alert-diff">⚠️ El precio del vuelo cambió. Verificá antes de confirmar.</div>':''}
+
+    <div class="modal-section">
+      <div class="modal-section-title">Pasajeros</div>
+      <div class="pax-tab-header">${tabs}</div>
+      <div id="paxForm"></div>
+    </div>
+
+    <div class="modal-section">
+      <div class="modal-section-title">Datos de contacto</div>
+      <div class="form-row">
+        <div class="form-field"><label>Apellido*</label><input id="c_apellido" placeholder="Apellido"></div>
+        <div class="form-field"><label>Nombre*</label><input id="c_nombre" placeholder="Nombre"></div>
+      </div>
+      <div class="form-row">
+        <div class="form-field"><label>Email*</label><input id="c_email" type="email" placeholder="email@ejemplo.com"></div>
+        <div class="form-field"><label>Teléfono 1*</label><input id="c_tel1" placeholder="+54 11 1234-5678"></div>
+        <div class="form-field"><label>Teléfono 2</label><input id="c_tel2" placeholder="Opcional"></div>
+      </div>
+    </div>
+
+    <div class="modal-section" id="seccionPrecioVenta">
+      <div class="modal-section-title">💰 Precio de venta al pasajero</div>
+      <div id="fareBreakdownContainer" style="background:var(--dark2);border:1px solid var(--border);border-radius:8px;padding:14px;">
+        <div style="color:var(--muted);font-size:12px;">⏳ Cargando tarifas...</div>
+      </div>
+      <div id="motivoCambioContainer" style="display:none;margin-top:10px;">
+        <div style="font-size:10px;color:var(--orange);text-transform:uppercase;letter-spacing:1px;margin-bottom:4px;">⚠️ Precio modificado — motivo obligatorio</div>
+        <input type="text" id="inputMotivoCambio" placeholder="Ej: Descuento cliente frecuente, promoción especial..." 
+          style="width:100%;background:var(--dark3);border:1px solid var(--orange);border-radius:6px;color:var(--text);font-family:'Sora',sans-serif;font-size:13px;padding:8px 12px;outline:none;box-sizing:border-box;">
+      </div>
+    </div>
+
+    <button class="btn-modal-submit" id="btnConfirmar" onclick="confirmarReserva('${searchId}','${quotationId}')">Confirmar Reserva</button>
+  `;
+
+  renderPaxForm(paxActivo);
+  cargarFareBreakdown(searchId, quotationId);
+}
+
+function renderPaxForm(idx) {
+  const pax = pasajerosForms[idx];
+  const saved = pax.data || {};
+  const argId = paisesData.find(p=>p.name==='Argentina')?.id || paisesData[0]?.id || '';
+  const docPaisId = saved.docPaisId || argId;
+  const factPaisId = saved.factPaisId || argId;
+  const paisDefId = argId;
+
+  document.getElementById('paxForm').innerHTML = `
+    <div class="cliente-search" style="margin-bottom:14px">
+      <div class="form-field">
+        <label>Buscar cliente existente</label>
+        <input id="buscarCliente_${idx}" placeholder="Apellido, nombre o documento..." oninput="buscarCliente(${idx}, this.value)" autocomplete="off">
+      </div>
+      <div class="cliente-dropdown" id="dropdown_${idx}"></div>
+    </div>
+    <div style="margin-bottom:14px">
+      <label style="display:block;font-size:11px;color:var(--muted);margin-bottom:6px;text-transform:uppercase;letter-spacing:1px">Autocompletar con IA</label>
+      <input type="file" id="docScan_${idx}" accept="image/*" style="display:none" onchange="leerDocumento(${idx}, this)">
+      <button type="button" onclick="document.getElementById('docScan_${idx}').click()" 
+        style="background:linear-gradient(135deg,#1a3a5c,#0066cc);color:white;border:none;border-radius:8px;padding:8px 16px;font-size:12px;cursor:pointer;font-family:'Sora',sans-serif;display:flex;align-items:center;gap:6px;">
+        📷 Escanear pasaporte / DNI
+      </button>
+      <div id="docScanStatus_${idx}" style="font-size:11px;color:var(--muted);margin-top:6px;display:none"></div>
+    </div>
+    <div class="form-row">
+      <div class="form-field" style="flex:2"><label>Apellido*</label><input id="p_apellido_${idx}" placeholder="APELLIDO" value="${saved.apellido||''}" oninput="guardarPaxField(${idx},'apellido',this.value)"></div>
+      <div class="form-field" style="flex:2"><label>Nombre*</label><input id="p_nombre_${idx}" placeholder="NOMBRE" value="${saved.nombre||''}" oninput="guardarPaxField(${idx},'nombre',this.value)"></div>
+      <div class="form-field" style="flex:1"><label>Género*</label>
+        <select id="p_genero_${idx}" onchange="guardarPaxField(${idx},'genero',this.value)">
+          <option value="">-</option>
+          <option value="0" ${saved.genero=='0'?'selected':''}>Masculino</option>
+          <option value="1" ${saved.genero=='1'?'selected':''}>Femenino</option>
+        </select>
+      </div>
+    </div>
+    <div class="form-row">
+      <div class="form-field"><label>Email</label><input id="p_email_${idx}" type="email" value="${saved.email||''}" placeholder="email@ejemplo.com" oninput="guardarPaxField(${idx},'email',this.value)"></div>
+      <div class="form-field"><label>Fecha nac. (D/M/A)*</label>
+        <div style="display:flex;gap:4px">
+          <input id="p_nacDia_${idx}" type="number" placeholder="DD" min="1" max="31" style="width:52px" value="${saved.fechaNacDia||''}" oninput="guardarPaxField(${idx},'fechaNacDia',this.value)">
+          <input id="p_nacMes_${idx}" type="number" placeholder="MM" min="1" max="12" style="width:52px" value="${saved.fechaNacMes||''}" oninput="guardarPaxField(${idx},'fechaNacMes',this.value)">
+          <input id="p_nacAnio_${idx}" type="number" placeholder="AAAA" min="1900" max="2026" style="width:72px" value="${saved.fechaNacAnio||''}" oninput="guardarPaxField(${idx},'fechaNacAnio',this.value)">
+        </div>
+      </div>
+    </div>
+    <div style="font-size:10px;color:var(--gold);text-transform:uppercase;letter-spacing:1px;font-weight:700;margin:10px 0 8px">Documento de viaje</div>
+    <div class="form-row">
+      <div class="form-field"><label>País doc.*</label>
+        <select id="p_docPais_${idx}" onchange="onDocPaisChange(${idx})">
+          <option value="">Seleccionar</option>
+          ${getPaisOpts(docPaisId)}
+        </select>
+      </div>
+      <div class="form-field"><label>Tipo doc.*</label>
+        <select id="p_docTipo_${idx}" onchange="guardarPaxField(${idx},'docTipoId',this.value);guardarPaxField(${idx},'docTipo',this.options[this.selectedIndex]?.dataset.code)">
+          <option value="">-</option>
+          ${getDocTipoOpts(docPaisId, saved.docTipoId||'')}
+        </select>
+      </div>
+      <div class="form-field"><label>Nro. documento*</label><input id="p_docNum_${idx}" value="${saved.docNumero||''}" placeholder="12345678" oninput="guardarPaxField(${idx},'docNumero',this.value)"></div>
+    </div>
+    <div class="form-row">
+      <div class="form-field"><label>Nacionalidad*</label>
+        <select id="p_nac_${idx}" onchange="guardarPaxField(${idx},'nacionalidadId',this.value)">
+          <option value="">Seleccionar</option>
+          ${getPaisOpts(saved.nacionalidadId||docPaisId)}
+        </select>
+      </div>
+      <div class="form-field"><label>Venc. doc. (D/M/A)*</label>
+        <div style="display:flex;gap:4px">
+          <input id="p_vencDia_${idx}" type="number" placeholder="DD" min="1" max="31" style="width:52px" value="${saved.docVencDia||''}" oninput="guardarPaxField(${idx},'docVencDia',this.value)">
+          <input id="p_vencMes_${idx}" type="number" placeholder="MM" min="1" max="12" style="width:52px" value="${saved.docVencMes||''}" oninput="guardarPaxField(${idx},'docVencMes',this.value)">
+          <input id="p_vencAnio_${idx}" type="number" placeholder="AAAA" min="2026" max="2055" style="width:72px" value="${saved.docVencAnio||''}" oninput="guardarPaxField(${idx},'docVencAnio',this.value)">
+        </div>
+      </div>
+    </div>
+    <div style="font-size:10px;color:var(--gold);text-transform:uppercase;letter-spacing:1px;font-weight:700;margin:10px 0 8px">Documento de facturación</div>
+    <div class="form-row">
+      <div class="form-field"><label>País fact.*</label>
+        <select id="p_factPais_${idx}" onchange="onFactPaisChange(${idx})">
+          <option value="">Seleccionar</option>
+          ${getPaisOpts(factPaisId)}
+        </select>
+      </div>
+      <div class="form-field"><label>Tipo fact.*</label>
+        <select id="p_factTipo_${idx}" onchange="guardarPaxField(${idx},'factTipoId',this.value);guardarPaxField(${idx},'factTipo',this.options[this.selectedIndex]?.dataset.code)">
+          <option value="">-</option>
+          ${getFactTipoOpts(factPaisId, saved.factTipoId||'')}
+        </select>
+      </div>
+      <div class="form-field"><label>Nro. fact.*</label><input id="p_factNum_${idx}" value="${saved.factNumero||''}" placeholder="20123456789" oninput="guardarPaxField(${idx},'factNumero',this.value)"></div>
+    </div>
+  `;
+
+  // Guardar valores iniciales - siempre asegurar que existan
+  guardarPaxField(idx,'docPaisId', docPaisId || argId);
+  guardarPaxField(idx,'docPais', paisesData.find(p=>p.id===(docPaisId||argId))?.name || 'Argentina');
+  guardarPaxField(idx,'factPaisId', factPaisId || argId);
+  guardarPaxField(idx,'factPais', paisesData.find(p=>p.id===(factPaisId||argId))?.name || 'Argentina');
+  // Guardar nacionalidad default si no tiene
+  const nacId = saved.nacionalidadId || docPaisId || argId;
+  if (nacId) guardarPaxField(idx,'nacionalidadId', nacId);
+  // Guardar docTipo y factTipo defaults si ya están seteados
+  setTimeout(() => {
+    const dtEl = document.getElementById(`p_docTipo_${idx}`);
+    if (dtEl && dtEl.value && !saved.docTipoId) { guardarPaxField(idx,'docTipoId',dtEl.value); guardarPaxField(idx,'docTipo',dtEl.options[dtEl.selectedIndex]?.dataset?.code||''); }
+    const ftEl = document.getElementById(`p_factTipo_${idx}`);
+    if (ftEl && ftEl.value && !saved.factTipoId) { guardarPaxField(idx,'factTipoId',ftEl.value); guardarPaxField(idx,'factTipo',ftEl.options[ftEl.selectedIndex]?.dataset?.code||''); }
+  }, 50);
+}
+
+// ─── FARE BREAKDOWN ───
+let fareBreakdownData = []; // [{tipo, codigo, cantidad, neto, tipo_tarifa, comision_over, precioVenta}]
+
+function calcularPrecioVentaPorTipo(neto, tipo_tarifa, comision_over) {
+  // Tablas idénticas al server
+  const FEE_TABLE = [[0,599,25],[600,999,30],[1000,1499,35],[1500,1999,40],[2000,2999,50],[3000,3999,55],[4000,5499,60],[5500,Infinity,80]];
+  const DESCUENTO_TABLE = [[0,50,0],[51,80,10],[81,100,20],[101,140,30],[141,180,40],[181,220,50],[221,260,60],[261,Infinity,70]];
+  const getFee = (n) => { for (const [l,h,f] of FEE_TABLE) if (n>=l && n<=h) return f; return 80; };
+  const getDescuento = (c) => { for (const [l,h,d] of DESCUENTO_TABLE) if (c>=l && c<=h) return d; return 70; };
+  const redondearArriba = (n) => Math.ceil(n / 5) * 5;
+  const redondearAbajo = (n) => Math.floor(n / 5) * 5;
+  if (tipo_tarifa === 'PNEG' || comision_over <= 50) return redondearArriba(neto + getFee(neto));
+  const precioPublico = neto + comision_over;
+  return redondearAbajo(precioPublico - getDescuento(comision_over));
+}
+
+async function cargarFareBreakdown(searchId, quotationId) {
+  // Siempre resetear — el modal de reserva es independiente de cotización
+  fareBreakdownData = [];
+  const container = document.getElementById('fareBreakdownContainer');
+  if (!container) return;
+
+  try {
+    const res = await fetch('/get-fare-breakdown', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ searchId, quotationId })
+    }).then(r => r.json());
+
+    if (!res.ok || !res.breakdown?.length) {
+      container.innerHTML = '<div style="color:#e74c3c;font-size:12px;">❌ No se pudo obtener el desglose de tarifas</div>';
+      return;
+    }
+
+    // Store breakdown with suggested prices
+    fareBreakdownData = res.breakdown.map(b => ({
+      ...b,
+      precioVentaSugerido: calcularPrecioVentaPorTipo(b.neto, b.tipo_tarifa, b.comision_over),
+      precioVenta: calcularPrecioVentaPorTipo(b.neto, b.tipo_tarifa, b.comision_over)
+    }));
+
+    renderFareBreakdown();
+  } catch(e) {
+    container.innerHTML = `<div style="color:#e74c3c;font-size:12px;">❌ Error: ${e.message}</div>`;
+  }
+}
+
+function renderFareBreakdown() {
+  const container = document.getElementById('fareBreakdownContainer');
+  if (!container) return;
+
+  const tipoLabel = { adulto: 'Adulto', menor: 'Menor', 'bebé': 'Bebé' };
+  const totalVenta = fareBreakdownData.reduce((s, b) => s + (b.precioVenta * b.cantidad), 0);
+
+  let html = '<div style="display:flex;flex-direction:column;gap:10px;">';
+
+  for (let i = 0; i < fareBreakdownData.length; i++) {
+    const b = fareBreakdownData[i];
+    const sugerido = b.precioVentaSugerido;
+    const modificado = Math.abs(b.precioVenta - sugerido) > 0.01;
+    html += `
+      <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;">
+        <div style="min-width:90px;">
+          <div style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:1px;">${tipoLabel[b.tipo] || b.tipo} × ${b.cantidad}</div>
+          <div style="font-size:11px;color:var(--muted);">Neto: USD ${b.neto.toFixed(2)}</div>
+        </div>
+        <div style="color:var(--muted);">→</div>
+        <div>
+          <div style="font-size:10px;color:var(--muted);margin-bottom:3px;">Precio venta c/u (USD)</div>
+          <input type="number" value="${b.precioVenta.toFixed(2)}" min="0" step="0.01" data-idx="${i}" data-sugerido="${sugerido}"
+            style="background:var(--dark3);border:1px solid ${modificado ? 'var(--orange)' : 'var(--gold)'};border-radius:6px;color:var(--text);font-family:'Sora',sans-serif;font-size:14px;font-weight:700;padding:6px 10px;width:120px;outline:none;"
+            oninput="onPrecioTipoChange(this, ${i})">
+        </div>
+        <div style="font-size:11px;color:var(--muted);">
+          Subtotal: <span id="subtotal_${i}" style="color:var(--gold);font-weight:700;">USD ${(b.precioVenta * b.cantidad).toFixed(2)}</span>
+        </div>
+      </div>`;
+  }
+
+  html += `
+    <div style="border-top:1px solid var(--border);padding-top:10px;margin-top:4px;display:flex;justify-content:space-between;align-items:center;">
+      <div style="font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:1px;">Total venta</div>
+      <div id="totalVentaLabel" style="font-size:20px;font-weight:700;color:var(--gold);">USD ${totalVenta.toFixed(2)}</div>
+    </div>
+  </div>`;
+
+  container.innerHTML = html;
+  verificarMotivoCambio();
+}
+
+function onPrecioTipoChange(input, idx) {
+  const nuevo = parseFloat(input.value) || 0;
+  const sugerido = parseFloat(input.dataset.sugerido);
+  fareBreakdownData[idx].precioVenta = nuevo;
+  const modificado = Math.abs(nuevo - sugerido) > 0.01;
+  input.style.borderColor = modificado ? 'var(--orange)' : 'var(--gold)';
+
+  // Update subtotal
+  const subtotalEl = document.getElementById(`subtotal_${idx}`);
+  if (subtotalEl) subtotalEl.textContent = `USD ${(nuevo * fareBreakdownData[idx].cantidad).toFixed(2)}`;
+
+  // Update total
+  const total = fareBreakdownData.reduce((s, b) => s + (b.precioVenta * b.cantidad), 0);
+  const totalEl = document.getElementById('totalVentaLabel');
+  if (totalEl) totalEl.textContent = `USD ${total.toFixed(2)}`;
+
+  verificarMotivoCambio();
+}
+
+function verificarMotivoCambio() {
+  const hayModificacion = fareBreakdownData.some(b => Math.abs(b.precioVenta - b.precioVentaSugerido) > 0.01);
+  const motivoContainer = document.getElementById('motivoCambioContainer');
+  if (motivoContainer) motivoContainer.style.display = hayModificacion ? 'block' : 'none';
+}
+
+function onPrecioVentaChange(valor, precioNeto) {
+  // legacy — kept for compatibility
+}
+
+async function leerDocumento(idx, input) {
+  const file = input.files[0];
+  if (!file) return;
+  
+  const statusEl = document.getElementById(`docScanStatus_${idx}`);
+  statusEl.style.display = 'block';
+  statusEl.style.color = 'var(--gold)';
+  statusEl.textContent = '🔍 Analizando documento...';
+
+  try {
+    // Convert to base64
+    const base64 = await new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(reader.result.split(',')[1]);
+      reader.onerror = reject;
+      reader.readAsDataURL(file);
+    });
+
+    const mediaType = file.type || 'image/jpeg';
+    const res = await fetch('/leer-documento', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ imageBase64: base64, mediaType })
+    });
+    const data = await res.json();
+
+    if (!data.ok || !data.datos) {
+      statusEl.style.color = '#e74c3c';
+      statusEl.textContent = '❌ ' + (data.error || 'No se pudo leer el documento');
+      return;
+    }
+
+    const d = data.datos;
+
+    // Fill form fields
+    if (d.apellido) { document.getElementById(`p_apellido_${idx}`).value = d.apellido; guardarPaxField(idx,'apellido',d.apellido); }
+    if (d.nombre)   { document.getElementById(`p_nombre_${idx}`).value = d.nombre;   guardarPaxField(idx,'nombre',d.nombre); }
+    if (d.genero !== null && d.genero !== undefined) { 
+      document.getElementById(`p_genero_${idx}`).value = d.genero; 
+      guardarPaxField(idx,'genero',d.genero); 
+    }
+    if (d.fechaNacDia)  { document.getElementById(`p_nacDia_${idx}`).value = d.fechaNacDia;  guardarPaxField(idx,'fechaNacDia',d.fechaNacDia); }
+    if (d.fechaNacMes)  { document.getElementById(`p_nacMes_${idx}`).value = d.fechaNacMes;  guardarPaxField(idx,'fechaNacMes',d.fechaNacMes); }
+    if (d.fechaNacAnio) { document.getElementById(`p_nacAnio_${idx}`).value = d.fechaNacAnio; guardarPaxField(idx,'fechaNacAnio',d.fechaNacAnio); }
+    if (d.docNumero)    { document.getElementById(`p_docNum_${idx}`).value = d.docNumero;    guardarPaxField(idx,'docNumero',d.docNumero); }
+    if (d.docVencDia)   { document.getElementById(`p_vencDia_${idx}`).value = d.docVencDia;  guardarPaxField(idx,'docVencDia',d.docVencDia); }
+    if (d.docVencMes)   { document.getElementById(`p_vencMes_${idx}`).value = d.docVencMes;  guardarPaxField(idx,'docVencMes',d.docVencMes); }
+    if (d.docVencAnio)  { document.getElementById(`p_vencAnio_${idx}`).value = d.docVencAnio; guardarPaxField(idx,'docVencAnio',d.docVencAnio); }
+
+    // Set doc type (PP or NI)
+    if (d.tipoDoc) {
+      const docTipoEl = document.getElementById(`p_docTipo_${idx}`);
+      if (docTipoEl) {
+        for (const opt of docTipoEl.options) {
+          if (opt.dataset.code === d.tipoDoc) {
+            docTipoEl.value = opt.value;
+            guardarPaxField(idx,'docTipoId', opt.value);
+            guardarPaxField(idx,'docTipo', d.tipoDoc);
+            break;
+          }
+        }
+      }
+    }
+
+    // Set nationality
+    if (d.nacionalidad && paisesData) {
+      const pais = paisesData.find(p => p.name.toLowerCase().includes(d.nacionalidad.toLowerCase()) || d.nacionalidad.toLowerCase().includes(p.name.toLowerCase()));
+      if (pais) {
+        document.getElementById(`p_nac_${idx}`).value = pais.id;
+        guardarPaxField(idx,'nacionalidadId', pais.id);
+      }
+    }
+
+    // Verificar si ya existe en la DB
+    if (d.apellido && d.nombre) {
+      statusEl.style.color = 'var(--gold)';
+      statusEl.textContent = '🔍 Verificando si el pasajero ya existe...';
+      
+      const verif = await fetch('/verificar-cliente-doc', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ 
+          apellido: d.apellido, nombre: d.nombre,
+          fechaNacDia: d.fechaNacDia, fechaNacMes: d.fechaNacMes, fechaNacAnio: d.fechaNacAnio
+        })
+      }).then(r => r.json()).catch(() => ({ ok: false }));
+
+      if (verif.ok && verif.existe) {
+        const c = verif.cliente;
+        statusEl.style.color = '#2ecc71';
+        statusEl.textContent = `✅ Pasajero encontrado en la base de datos. Datos cargados desde historial.`;
+        // Fill with DB data (more complete)
+        const campos = ['apellido','nombre','genero','fechaNacDia','fechaNacMes','fechaNacAnio',
+                        'docNumero','docVencDia','docVencMes','docVencAnio','docPaisId','docPais',
+                        'nacionalidadId','factTipo','factTipoId','factNumero','factPaisId','factPais','docTipo','docTipoId'];
+        const fieldMap = {
+          apellido: `p_apellido_${idx}`, nombre: `p_nombre_${idx}`, genero: `p_genero_${idx}`,
+          fechaNacDia: `p_nacDia_${idx}`, fechaNacMes: `p_nacMes_${idx}`, fechaNacAnio: `p_nacAnio_${idx}`,
+          docNumero: `p_docNum_${idx}`, docVencDia: `p_vencDia_${idx}`, docVencMes: `p_vencMes_${idx}`, docVencAnio: `p_vencAnio_${idx}`
+        };
+        for (const [k, elId] of Object.entries(fieldMap)) {
+          if (c[k] != null) { 
+            const el = document.getElementById(elId);
+            if (el) el.value = c[k];
+            guardarPaxField(idx, k, c[k]);
+          }
+        }
+        // Set nationality
+        if (c.nacionalidadId) {
+          const nacEl = document.getElementById(`p_nac_${idx}`);
+          if (nacEl) nacEl.value = c.nacionalidadId;
+          guardarPaxField(idx, 'nacionalidadId', c.nacionalidadId);
+        }
+        // Set doc tipo
+        if (c.docTipo) {
+          const docTipoEl = document.getElementById(`p_docTipo_${idx}`);
+          if (docTipoEl) {
+            for (const opt of docTipoEl.options) {
+              if (opt.dataset.code === c.docTipo) {
+                docTipoEl.value = opt.value;
+                guardarPaxField(idx, 'docTipoId', opt.value);
+                guardarPaxField(idx, 'docTipo', c.docTipo);
+                break;
+              }
+            }
+          }
+        }
+        // Set fact tipo
+        if (c.factTipoId) {
+          const ftEl = document.getElementById(`p_factTipo_${idx}`);
+          if (ftEl) { ftEl.value = c.factTipoId; guardarPaxField(idx,'factTipoId',c.factTipoId); guardarPaxField(idx,'factTipo',c.factTipo); }
+        }
+        if (c.factNumero) { 
+          const fnEl = document.getElementById(`p_factNum_${idx}`);
+          if (fnEl) fnEl.value = c.factNumero;
+          guardarPaxField(idx,'factNumero',c.factNumero);
+        }
+      } else {
+        statusEl.style.color = '#2ecc71';
+        statusEl.textContent = '✅ Datos cargados. Pasajero nuevo — revisá y confirmá.';
+      }
+    } else {
+      statusEl.style.color = '#2ecc71';
+      statusEl.textContent = '✅ Datos cargados. Revisá y confirmá.';
+    }
+
+    input.value = '';
+
+  } catch(e) {
+    statusEl.style.color = '#e74c3c';
+    statusEl.textContent = '❌ Error: ' + e.message;
+  }
+}
+
+function guardarPaxField(idx, campo, valor) {
+  if (!pasajerosForms[idx].data) pasajerosForms[idx].data = {};
+  // Never store "undefined" string
+  if (valor === 'undefined' || valor === undefined) valor = null;
+  pasajerosForms[idx].data[campo] = valor;
+}
+
+function onDocPaisChange(idx) {
+  const sel = document.getElementById(`p_docPais_${idx}`);
+  const paisId = sel.value;
+  const paisNombre = sel.options[sel.selectedIndex]?.text || '';
+  console.log('[DocPais] idx:', idx, 'paisId:', paisId, 'paisesData len:', paisesData.length);
+  const tiposHtml = getDocTipoOpts(paisId,'');
+  console.log('[DocTipos] html len:', tiposHtml.length, tiposHtml.substring(0,100));
+  guardarPaxField(idx,'docPaisId',paisId);
+  guardarPaxField(idx,'docPais',paisNombre);
+  document.getElementById(`p_docTipo_${idx}`).innerHTML = '<option value="">-</option>' + tiposHtml;
+  document.getElementById(`p_nac_${idx}`).innerHTML = '<option value="">Seleccionar</option>' + getPaisOpts(paisId);
+  guardarPaxField(idx,'nacionalidadId',paisId);
+}
+
+function onFactPaisChange(idx) {
+  const sel = document.getElementById(`p_factPais_${idx}`);
+  const paisId = sel.value;
+  const paisNombre = sel.options[sel.selectedIndex]?.text || '';
+  guardarPaxField(idx,'factPaisId',paisId);
+  guardarPaxField(idx,'factPais',paisNombre);
+  document.getElementById(`p_factTipo_${idx}`).innerHTML = '<option value="">-</option>' + getFactTipoOpts(paisId,'');
+  guardarPaxField(idx,'factTipoId','');
+}
+
+function cambiarPax(idx) {
+  // Guardar datos actuales del form antes de cambiar
+  const i = paxActivo;
+  const campos = ['apellido','nombre','genero','email','nacDia','nacMes','nacAnio','docNum','vencDia','vencMes','vencAnio','factNum'];
+  const mapeo = {apellido:'apellido',nombre:'nombre',genero:'genero',email:'email',nacDia:'fechaNacDia',nacMes:'fechaNacMes',nacAnio:'fechaNacAnio',docNum:'docNumero',vencDia:'docVencDia',vencMes:'docVencMes',vencAnio:'docVencAnio',factNum:'factNumero'};
+  for(const c of campos) {
+    const el = document.getElementById(`p_${c}_${i}`);
+    if(el) guardarPaxField(i, mapeo[c], el.value);
+  }
+  // Guardar selects del tab actual
+  const argId = paisesData.find(p=>p.name==='Argentina')?.id || '';
+  ['docPais','docTipo','nac','factPais','factTipo'].forEach(campo => {
+    const el = document.getElementById(`p_${campo}_${i}`);
+    if(!el) return;
+    const val = el.value;
+    if(campo==='docPais') { guardarPaxField(i,'docPaisId', val||argId); }
+    else if(campo==='docTipo') { guardarPaxField(i,'docTipoId',val); guardarPaxField(i,'docTipo',el.options[el.selectedIndex]?.dataset?.code||''); }
+    else if(campo==='nac') { guardarPaxField(i,'nacionalidadId', val||argId); }
+    else if(campo==='factPais') { guardarPaxField(i,'factPaisId', val||argId); }
+    else if(campo==='factTipo') { guardarPaxField(i,'factTipoId',val); guardarPaxField(i,'factTipo',el.options[el.selectedIndex]?.dataset?.code||''); }
+  });
+  paxActivo = idx;
+  document.querySelectorAll('.pax-tab').forEach((t,ti)=>t.classList.toggle('active',ti===idx));
+  renderPaxForm(idx);
+}
+
+async function buscarCliente(idx, q) {
+  const dd = document.getElementById(`dropdown_${idx}`);
+  if (q.length < 2) { dd.classList.remove('show'); return; }
+  const clientes = await fetch(`/clientes/buscar?q=${encodeURIComponent(q)}`).then(r=>r.json());
+  if (!clientes.length) { dd.classList.remove('show'); return; }
+  dd.innerHTML = clientes.map(c => `
+    <div class="cliente-item" onclick="precargarCliente(${idx}, ${c.id})">
+      <strong>${c.apellido}, ${c.nombre}</strong>
+      <span>${c.doc_tipo} ${c.doc_numero}</span>
+      <span>${c.email||''}</span>
+    </div>
+  `).join('');
+  dd.classList.add('show');
+}
+
+async function precargarCliente(idx, clienteId) {
+  document.getElementById(`dropdown_${idx}`).classList.remove('show');
+  const clientes = await fetch('/clientes').then(r=>r.json());
+  const c = clientes.find(x=>x.id===clienteId);
+  if (!c) return;
+  
+  // Guardar todos los datos
+  if (!pasajerosForms[idx].data) pasajerosForms[idx].data = {};
+  Object.assign(pasajerosForms[idx].data, {
+    apellido: c.apellido, nombre: c.nombre, email: c.email||'',
+    genero: String(c.genero||'0'),
+    fechaNacDia: c.fecha_nac_dia, fechaNacMes: c.fecha_nac_mes, fechaNacAnio: c.fecha_nac_anio,
+    docPais: c.doc_pais, docPaisId: c.doc_pais_id,
+    docTipo: c.doc_tipo, docTipoId: c.doc_tipo_id, docNumero: c.doc_numero,
+    docVencDia: c.doc_venc_dia, docVencMes: c.doc_venc_mes, docVencAnio: c.doc_venc_anio,
+    nacionalidad: c.nacionalidad, nacionalidadId: c.nacionalidad_id,
+    factPais: c.fact_pais, factPaisId: c.fact_pais_id,
+    factTipo: c.fact_tipo, factTipoId: c.fact_tipo_id, factNumero: c.fact_numero
+  });
+  renderPaxForm(idx);
+  document.getElementById(`buscarCliente_${idx}`).value = `${c.apellido}, ${c.nombre}`;
+}
+
+async function confirmarReserva(searchId, quotationId) {
+  // Guardar todos los campos del formulario activo antes de enviar
+  const i = paxActivo;
+  const mapeo = {apellido:'apellido',nombre:'nombre',genero:'genero',email:'email',
+    nacDia:'fechaNacDia',nacMes:'fechaNacMes',nacAnio:'fechaNacAnio',
+    docNum:'docNumero',vencDia:'docVencDia',vencMes:'docVencMes',vencAnio:'docVencAnio',
+    factNum:'factNumero'};
+  for(const [campo, key] of Object.entries(mapeo)) {
+    const el = document.getElementById(`p_${campo}_${i}`);
+    if(el) guardarPaxField(i, key, el.value);
+  }
+  // Guardar selects
+  const argId = paisesData.find(p=>p.name==='Argentina')?.id || '';
+  function safeVal(v) { return (v && v!=='undefined') ? v : null; }
+  ['docPais','docTipo','nac','factPais','factTipo'].forEach(campo => {
+    const el = document.getElementById(`p_${campo}_${i}`);
+    if(!el) return;
+    const val = safeVal(el.value);
+    const txt = el.options[el.selectedIndex]?.text||'';
+    if(campo==='docPais') { guardarPaxField(i,'docPaisId', val||argId); guardarPaxField(i,'docPais',txt); }
+    else if(campo==='docTipo') { guardarPaxField(i,'docTipoId',val); guardarPaxField(i,'docTipo',el.options[el.selectedIndex]?.dataset?.code||''); }
+    else if(campo==='nac') { guardarPaxField(i,'nacionalidadId', val||argId); }
+    else if(campo==='factPais') { guardarPaxField(i,'factPaisId', val||argId); guardarPaxField(i,'factPais',txt); }
+    else if(campo==='factTipo') { guardarPaxField(i,'factTipoId',val); guardarPaxField(i,'factTipo',el.options[el.selectedIndex]?.dataset?.code||''); }
+  });
+
+  // Validar
+  for(const pax of pasajerosForms) {
+    const d = pax.data || {};
+    const tipoLabel = pax.tipo==='ADT'?'Adulto':pax.tipo==='CHD'?'Niño':'Infante';
+    const num = pax.idx+1;
+    if(!d.apellido||!d.nombre) {
+      alert(`Completá apellido y nombre del ${tipoLabel} ${num}`);
+      return;
+    }
+    if(!d.docNumero) {
+      alert(`Completá el documento del ${tipoLabel} ${num}`);
+      return;
+    }
+    if(!d.fechaNacDia||!d.fechaNacMes||!d.fechaNacAnio) {
+      alert(`Completá la fecha de nacimiento del ${tipoLabel} ${num}`);
+      return;
+    }
+    if(!d.genero && d.genero!=='0') {
+      alert(`Seleccioná el género del ${tipoLabel} ${num}`);
+      return;
+    }
+  }
+  const cApellido = document.getElementById('c_apellido').value;
+  const cNombre = document.getElementById('c_nombre').value;
+  const cEmail = document.getElementById('c_email').value;
+  const cTel1 = document.getElementById('c_tel1').value;
+  if(!cApellido||!cNombre||!cEmail||!cTel1) { alert('Completá los datos de contacto'); return; }
+
+  const btn = document.getElementById('btnConfirmar');
+  btn.disabled = true; btn.textContent = '⏳ Procesando...';
+
+  const pasajeros = pasajerosForms.map(p => {
+    const d = { tipo: p.tipo, ...p.data };
+    // Sanitizar IDs que puedan ser undefined
+    const fallbackArgId = argId || '3144952d-b7f4-4ddf-9ed8-8021bfc67c4b';
+    if (!d.docPaisId || d.docPaisId === 'undefined') d.docPaisId = fallbackArgId;
+    if (!d.factPaisId || d.factPaisId === 'undefined') d.factPaisId = fallbackArgId;
+    if (!d.nacionalidadId || d.nacionalidadId === 'undefined') d.nacionalidadId = fallbackArgId;
+    return d;
+  });
+  const contacto = { apellido: cApellido, nombre: cNombre, email: cEmail, telefono1: cTel1, telefono2: document.getElementById('c_tel2').value };
+  const v = vueloSeleccionado;
+
+  // Validar precio de venta por tipo
+  const motivoInput = document.getElementById('inputMotivoCambio');
+  const motivo = motivoInput?.value?.trim() || '';
+  const hayModificacion = fareBreakdownData.length > 0 && fareBreakdownData.some(b => Math.abs(b.precioVenta - b.precioVentaSugerido) > 0.01);
+  if (hayModificacion && !motivo) {
+    btn.disabled = false; btn.textContent = 'Confirmar Reserva';
+    alert('Ingresá el motivo del cambio de precio antes de confirmar');
+    return;
+  }
+  if (!fareBreakdownData.length) {
+    btn.disabled = false; btn.textContent = 'Confirmar Reserva';
+    alert('Esperá a que carguen las tarifas antes de confirmar');
+    return;
+  }
+  const totalVentaUSD = fareBreakdownData.reduce((s, b) => s + (b.precioVenta * b.cantidad), 0);
+
+  const vueloInfo = {
+    tipo: 'vuelo', origen: v.itinerario[0]?.origen, destino: v.itinerario[v.itinerario.length-1]?.destino,
+    salida: v.itinerario[0]?.salida, aerolinea: v.aerolineaDesc || v.aerolinea,
+    precioUSD: v.precioUSD, moneda: 'USD', itinerario: v.itinerario,
+    precioVentaUSD: totalVentaUSD,
+    precioVentaDetalle: fareBreakdownData.map(b => ({ tipo: b.tipo, cantidad: b.cantidad, precioUnitario: b.precioVenta })),
+    motivoCambioPrecio: hayModificacion ? motivo : null
+  };
+
+  try {
+    const res = await fetch('/crear-reserva', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({ searchId, quotationId: String(quotationId), pasajeros, contacto, vueloInfo })
+    }).then(r=>r.json());
+
+    if (!res.ok) throw new Error(res.error);
+
+    document.getElementById('modalContenido').innerHTML = `
+      <div class="reserva-ok">
+        <div style="font-size:48px">✅</div>
+        <div style="font-size:13px;color:var(--muted);margin-top:12px">Reserva confirmada</div>
+        <div class="reserva-pnr">${res.pnr}</div>
+        <div class="reserva-detail">Nro. de orden: ${res.orderNumber}</div>
+        <div class="reserva-detail" style="margin-top:16px">${v.aerolinea} · ${v.itinerario.map(l=>l.origen+' → '+l.destino).join(' | ')}</div>
+        <div class="reserva-detail">USD ${v.precioUSD?.toFixed(2)}</div>
+        <button class="btn-modal-submit" style="margin-top:20px;max-width:200px;margin-left:auto;margin-right:auto" onclick="cerrarModal()">Cerrar</button>
+      </div>
+    `;
+  } catch(err) {
+    btn.disabled = false; btn.textContent = 'Confirmar Reserva';
+    alert('Error: ' + err.message);
+  }
+}
+
+function cerrarModal() {
+  document.getElementById('modalReserva').style.display = 'none';
+  vueloSeleccionado = null;
+  pasajerosForms = [];
+}
+
+// Cerrar al hacer click fuera
+document.getElementById('modalReserva').addEventListener('click', function(e) {
+  if(e.target === this) cerrarModal();
+});
+
+
+// ─── MARKUP ───
+let markupConfig = { tipo: 'porcentaje', valor: 0 };
+
+async function cargarMarkup() {
+  try {
+    const r = await fetch('/config-markup').then(r=>r.json());
+    markupConfig = r.markup;
+    document.getElementById('markupTipo').value = markupConfig.tipo;
+    document.getElementById('markupValor').value = markupConfig.valor;
+    actualizarInfoMarkup();
+  } catch(e) {}
+}
+
+function calcularPrecioVenta(precioBase) {
+  if (markupConfig.tipo === 'porcentaje') return precioBase * (1 + markupConfig.valor / 100);
+  return precioBase + markupConfig.valor;
+}
+
+function actualizarInfoMarkup() {
+  const el = document.getElementById('markupInfo');
+  if (!el) return;
+  el.textContent = markupConfig.valor > 0
+    ? (markupConfig.tipo === 'porcentaje' ? `+${markupConfig.valor}% sobre Tucano` : `+USD ${markupConfig.valor} fijo`)
+    : 'Sin markup aplicado';
+}
+
+async function guardarMarkup() {
+  markupConfig = { tipo: document.getElementById('markupTipo').value, valor: parseFloat(document.getElementById('markupValor').value) || 0 };
+  actualizarInfoMarkup();
+  await fetch('/config-markup', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ markup: markupConfig }) });
+  if (todosLosVuelos.length) aplicarFiltrosYRender();
+}
+
+// ─── DETALLE DE PRECIO ───
+let detalleCache = {};
+let detalleAbiertoId = null;
+
+function mostrarVista(vista, btn) {
+  document.querySelectorAll('.nav-tab').forEach(function(t) { t.classList.remove('active'); });
+  btn.classList.add('active');
+  var searchCard = document.querySelector('.search-card');
+  var resultados = document.getElementById('resultados');
+  var vistaReservas = document.getElementById('vistaReservas');
+  var vistaAdmin = document.getElementById('vistaAdmin');
+  var vistaEmitidas = document.getElementById('vistaEmitidas');
+  var markupBar = document.getElementById('markupBar');
+  var cotizarBar = document.getElementById('cotizarBar');
+  // Hide all first
+  if (searchCard) searchCard.style.display = 'none';
+  if (resultados) resultados.style.display = 'none';
+  if (vistaReservas) vistaReservas.style.display = 'none';
+  if (vistaAdmin) vistaAdmin.style.display = 'none';
+  if (vistaEmitidas) vistaEmitidas.style.display = 'none';
+  if (markupBar) markupBar.style.display = 'none';
+  if (cotizarBar) cotizarBar.style.display = 'none';
+  
+  if (vista === 'buscar') {
+    if (searchCard) searchCard.style.display = '';
+    if (resultados) resultados.style.display = '';
+    if (markupBar) markupBar.style.display = '';
+    if (cotizarBar) cotizarBar.style.display = '';
+  } else if (vista === 'admin') {
+    if (vistaAdmin) vistaAdmin.style.display = 'block';
+    cargarUsuarios();
+  } else if (vista === 'emitidas') {
+    if (vistaEmitidas) vistaEmitidas.style.display = 'block';
+    cargarEmitidas();
+  } else {
+    if (vistaReservas) vistaReservas.style.display = 'block';
+    cargarReservas();
+  }
+}
+
+async function verDetalle(quotationId, searchId, e) {
+  e.stopPropagation();
+  if (detalleAbiertoId === quotationId) {
+    const p = document.querySelector('.detalle-panel[data-detalle="' + quotationId + '"]');
+    if (p) { p.classList.remove('show'); p.innerHTML = ''; }
+    detalleAbiertoId = null;
+    return;
+  }
+  document.querySelectorAll('.detalle-panel.show').forEach(function(p) { p.classList.remove('show'); p.innerHTML = ''; });
+  const panel = document.querySelector('.detalle-panel[data-detalle="' + quotationId + '"]');
+  if (!panel) { console.error('No panel para', quotationId); return; }
+  panel.innerHTML = '<div style="text-align:center;padding:10px;color:var(--muted);font-size:12px">⏳ Cargando desglose...</div>';
+  panel.classList.add('show');
+  detalleAbiertoId = quotationId;
+  if (!searchId || searchId === 'undefined') {
+    panel.innerHTML = '<div style="color:var(--red);font-size:12px;padding:8px">Hacé una nueva búsqueda para ver el desglose.</div>';
+    return;
+  }
+  try {
+    var d = detalleCache[quotationId];
+    if (!d) {
+      var r = await fetch('/detalle-vuelo?searchId=' + searchId + '&quotationId=' + quotationId);
+      d = await r.json();
+      if (d.ok) detalleCache[quotationId] = d;
+    }
+    if (!d.ok) throw new Error(d.error);
+    var bsp = tcUsdArs || 1425;
+    var precioVenta = d.total;
+    var desgloseHTML = d.desglose.map(function(p) {
+      return '<div style="margin-bottom:8px;padding:8px;background:rgba(255,255,255,0.02);border-radius:6px;">' +
+        '<div style="font-size:10px;color:var(--gold);font-weight:700;margin-bottom:5px">' + p.tipo + ' x ' + p.cantidad + '</div>' +
+        '<div class="detalle-row"><span class="detalle-label">Tarifa base</span><span class="detalle-valor">' + d.moneda + ' ' + p.tarifa.toFixed(2) + '</span></div>' +
+        '<div class="detalle-row"><span class="detalle-label">Impuestos</span><span class="detalle-valor">' + d.moneda + ' ' + p.impuestos.toFixed(2) + '</span></div>' +
+        '<div class="detalle-row"><span class="detalle-label">Fee Tucano</span><span class="detalle-valor">' + d.moneda + ' ' + p.fee.toFixed(2) + '</span></div>' +
+        (p.descuento > 0 ? '<div class="detalle-row" style="color:#28a745"><span class="detalle-label">Descuento (com/over)</span><span>-' + d.moneda + ' ' + p.descuento.toFixed(2) + '</span></div>' : '') +
+        '<div class="detalle-row total"><span>Total Tucano</span><span>' + d.moneda + ' ' + p.total.toFixed(2) + '</span></div>' +
+        '</div>';
+    }).join('');
+    // ─── CONDICIONES (tabla estilo SCIWeb) ───
+    var pen = d.penalidades || {};
+    function renderCondRow(label, data, isDevolucion) {
+      if (!data) return '<tr><td class="cond-label">' + label + '</td><td class="cond-monto">—</td><td><span class="cond-badge no-permite">No disponible</span></td></tr>';
+      var permite = data.permite !== false;
+      var badge = permite ? '<span class="cond-badge permite">Permite</span>' : '<span class="cond-badge no-permite">No permite</span>';
+      var montoVal = isDevolucion && permite ? ((data.monto || 0) + 100) : (data.monto || 0);
+      var monto = permite ? (data.moneda + ' ' + montoVal.toLocaleString('es-AR', {minimumFractionDigits:2})) : '';
+      return '<tr><td class="cond-label">' + label + '</td><td class="cond-monto">' + monto + '</td><td>' + badge + '</td></tr>';
+    }
+    var condHTML = '<table class="cond-table">' +
+      renderCondRow('Cambio (Antes del viaje)', pen.cambio_antes || pen.cambio, false) +
+      renderCondRow('Cambio (Durante el viaje)', pen.cambio_durante, false) +
+      renderCondRow('Devolución (Antes del viaje)', pen.devolucion_antes || pen.cancelacion, true) +
+      renderCondRow('Devolución (Durante el viaje)', pen.devolucion_durante, true) +
+      '</table>' +
+      '<div style="font-size:10px;color:var(--muted);margin-top:6px;font-style:italic">Los cambios siempre están sujetos a diferencia de tarifa</div>';
+    panel.innerHTML =
+      '<div class="detalle-grid">' +
+        '<div>' +
+          '<div class="detalle-section-title">📊 Desglose de precio</div>' +
+          desgloseHTML +
+          '<div class="detalle-venta">' +
+            '<div class="detalle-venta-label">Precio Tucano (neto)</div>' +
+            '<div class="detalle-venta-precio">USD ' + precioVenta.toFixed(2) + '</div>' +
+            '<div style="font-size:11px;color:var(--muted);margin-top:2px">≈ ARS ' + Math.round(precioVenta * bsp).toLocaleString('es-AR') + '</div>' +
+          '</div>' +
+        '</div>' +
+        '<div>' +
+          '<div class="detalle-section-title">📋 Condiciones</div>' +
+          condHTML +
+        '</div>' +
+      '</div>';
+  } catch(err) {
+    panel.innerHTML = '<div style="color:var(--red);font-size:12px;padding:8px">Error: ' + err.message + '</div>';
+  }
+}
+
+let reservasData = [];
+let reservaActual = null;
+
+async function cargarReservas() {
+  const cont = document.getElementById('reservasTabla');
+  cont.innerHTML = '<div class="estado"><div class="spinner"></div><p>Cargando reservas...</p></div>';
+  const estado = document.getElementById('filterEstado')?.value || 'TODAS';
+  const q = document.getElementById('searchInput')?.value?.trim() || '';
+  const params = new URLSearchParams();
+  if (estado !== 'TODAS') params.set('estado', estado);
+  if (q) params.set('q', q);
+  try {
+    reservasData = await fetch('/reservas?' + params).then(r=>r.json());
+    renderReservasStats();
+    renderReservasTabla();
+  } catch(e) { cont.innerHTML = '<div class="no-results">Error: ' + e.message + '</div>'; }
+}
+
+function renderReservasStats() {
+  const counts = { CREADA:0, EMITIDA:0, CANCELADA:0 };
+  reservasData.forEach(r => { if (counts[r.estado] !== undefined) counts[r.estado]++; });
+  document.getElementById('reservasStats').innerHTML =
+    '<div class="res-stat creada"><div class="num">' + counts.CREADA + '</div><div class="lbl">Creadas</div></div>' +
+    '<div class="res-stat emitida"><div class="num">' + counts.EMITIDA + '</div><div class="lbl">Emitidas</div></div>' +
+    '<div class="res-stat cancelada"><div class="num">' + counts.CANCELADA + '</div><div class="lbl">Canceladas</div></div>';
+}
+
+function renderReservasTabla() {
+  const cont = document.getElementById('reservasTabla');
+  if (!reservasData.length) { cont.innerHTML = '<div class="no-results">📭 No hay reservas</div>'; return; }
+  const rows = reservasData.map(r => {
+    const paxDetail = [];
+    if (r.adultos) paxDetail.push(r.adultos + ' ADT');
+    if (r.ninos) paxDetail.push(r.ninos + ' CHD');
+    if (r.infantes) paxDetail.push(r.infantes + ' INF');
+    // Extract passenger last names
+    let apellidos = '';
+    try {
+      const pj = typeof r.pasajeros_json === 'string' ? JSON.parse(r.pasajeros_json) : (r.pasajeros_json || []);
+      apellidos = pj.map(p => p.apellido || p.lastName || '').filter(Boolean).join(', ');
+    } catch(e) {}
+    const fecha = r.fecha_salida ? new Date(r.fecha_salida).toLocaleDateString('es-AR', { day:'2-digit', month:'short' }) : '-';
+    const creado = r.created_at ? new Date(r.created_at).toLocaleDateString('es-AR', { day:'2-digit', month:'short', hour:'2-digit', minute:'2-digit' }) : '';
+    return '<tr onclick="verDetalleReserva(' + r.id + ')">' +
+      '<td><span class="res-pnr">' + (r.pnr||'-') + '</span><br><span class="res-fecha">' + creado + '</span></td>' +
+      '<td><span class="res-ruta">' + (r.origen||'?') + ' → ' + (r.destino||'?') + '</span></td>' +
+      '<td style="color:var(--muted)">' + (r.aerolinea||'-') + '</td>' +
+      '<td class="res-fecha">' + fecha + '</td>' +
+      '<td>' + (paxDetail.join(', ')||'-') + (apellidos ? '<br><span style="font-size:10px;color:var(--gold)">' + apellidos + '</span>' : '') + '</td>' +
+      '<td class="res-precio">USD ' + (r.precio_usd||0).toLocaleString('es-AR',{minimumFractionDigits:0}) + '</td>' +
+      '<td><span class="badge-res badge-' + r.estado + '">' + r.estado + '</span></td>' +
+    '</tr>';
+  }).join('');
+  cont.innerHTML = '<table class="res-table"><thead><tr><th>PNR</th><th>Ruta</th><th>Aerolínea</th><th>Fecha</th><th>Pax</th><th>Precio</th><th>Estado</th></tr></thead><tbody>' + rows + '</tbody></table>';
+}
+
+async function verDetalleReserva(id) {
+  document.getElementById('modalOverlay').style.display = 'flex';
+  document.getElementById('modalBody').innerHTML = '<div style="text-align:center;padding:20px;color:var(--muted)"><div class="spinner"></div><p>Cargando...</p></div>';
+  document.getElementById('modalActions').innerHTML = '';
+  try {
+    const res = await fetch('/reservas/' + id);
+    const data = await res.json();
+    if (!data.ok) throw new Error(data.error);
+    reservaActual = data.reserva;
+    const r = data.reserva;
+    document.getElementById('modalTitle').textContent = 'Reserva ' + (r.pnr || '#' + r.id);
+
+    // Itinerario
+    let itinHtml = '';
+    try {
+      const itin = typeof r.itinerario_json === 'string' ? JSON.parse(r.itinerario_json) : r.itinerario_json;
+      if (Array.isArray(itin)) {
+        itinHtml = itin.map(s => {
+          const salida = s.salida || s.departureDateTime || '';
+          const llegada = s.llegada || s.arrivalDateTime || '';
+          const fecha = s.fecha || (salida.includes('T') ? new Date(salida).toLocaleDateString('es-AR',{day:'2-digit',month:'short'}) : '');
+          const hSal = salida.includes('T') ? new Date(salida).toLocaleTimeString('es-AR',{hour:'2-digit',minute:'2-digit'}) : salida;
+          const hLleg = llegada.includes('T') ? new Date(llegada).toLocaleTimeString('es-AR',{hour:'2-digit',minute:'2-digit'}) : llegada;
+          return '<div class="itin-seg"><div class="idate">' + fecha + '</div><div class="iroute"><div class="cities">' + (s.origen||s.departureAirport||'') + ' → ' + (s.destino||s.arrivalAirport||'') + '</div><div class="fnum">' + (s.numero_vuelo||s.flightNumber||'') + '</div></div><div class="itimes">' + hSal + ' → ' + hLleg + '</div></div>';
+        }).join('');
+      }
+    } catch(e) {}
+
+    // Pasajeros
+    let paxHtml = '';
+    const paxList = r.pasajeros_detalle || [];
+    if (paxList.length) {
+      paxHtml = paxList.map(p => '<div class="pax-row-det"><div><span class="pname">' + (p.apellido||'') + ', ' + (p.nombre||'') + '</span> <span class="ptype">(' + (p.tipo==='ADT'?'Adulto':p.tipo==='CHD'?'Menor':'Bebé') + ')</span></div><span class="pdoc">' + (p.doc_tipo||'') + ' ' + (p.doc_numero||'') + '</span></div>').join('');
+    } else {
+      try {
+        const pj = typeof r.pasajeros_json === 'string' ? JSON.parse(r.pasajeros_json) : r.pasajeros_json;
+        if (Array.isArray(pj)) paxHtml = pj.map(p => '<div class="pax-row-det"><div><span class="pname">' + (p.apellido||'') + ', ' + (p.nombre||'') + '</span> <span class="ptype">(' + (p.tipo==='ADT'?'Adulto':p.tipo==='CHD'?'Menor':'Bebé') + ')</span></div><span class="pdoc">' + (p.docTipo||'') + ' ' + (p.docNumero||'') + '</span></div>').join('');
+      } catch(e) {}
+    }
+
+    // Contacto
+    let contactoHtml = '';
+    try { const c = typeof r.contacto_json === 'string' ? JSON.parse(r.contacto_json) : r.contacto_json; if (c) contactoHtml = (c.nombre||'') + ' ' + (c.apellido||'') + ' · ' + (c.email||'') + ' · ' + (c.telefono1||''); } catch(e) {}
+
+    const creado = r.created_at ? new Date(r.created_at).toLocaleString('es-AR') : '-';
+
+    // Tickets
+    let ticketsHtml = '';
+    if (r.estado === 'EMITIDA' || r.emision_data) {
+      let ed = null;
+      try { ed = typeof r.emision_data === 'string' ? JSON.parse(r.emision_data) : r.emision_data; } catch(e) {}
+      if (ed && ed.tickets && ed.tickets.length) {
+        ticketsHtml = '<div class="det-section"><h3>🎫 Tickets</h3>' + ed.tickets.map(t => '<span style="display:inline-block;background:rgba(46,204,113,0.15);padding:5px 12px;border-radius:6px;margin:3px;font-family:monospace;font-size:12px;border:1px solid rgba(46,204,113,0.3);color:#2ecc71;">🎫 ' + (t.carrier||'') + '-' + (t.numero||t.number||'') + '</span>').join('') + (ed.emitidoEn ? '<p style="font-size:10px;color:var(--muted);margin-top:6px;">Emitido: ' + new Date(ed.emitidoEn).toLocaleString('es-AR') + '</p>' : '') + '</div>';
+      } else if (r.estado === 'EMITIDA') {
+        ticketsHtml = '<div class="det-section"><h3>🎫 Tickets</h3><p style="color:var(--muted);font-size:11px;">Sin datos. Hacé click en "Verificar estado" para sincronizar.</p></div>';
+      }
+    }
+
+    document.getElementById('modalBody').innerHTML =
+      '<div class="det-section"><h3>Información general</h3><div class="det-grid">' +
+      '<div class="det-item"><div class="lbl">PNR</div><div class="val" style="color:var(--gold)">' + (r.pnr||'-') + '</div></div>' +
+      '<div class="det-item"><div class="lbl">Order</div><div class="val">' + (r.order_id ? (((r.quotation_id||'').startsWith('lleego_') || (r.notas||'').includes('GEA')) ? '<a href="https://app.lleego.com/transport/voucher/' + r.order_id + '" target="_blank" style="color:#42a5f5;text-decoration:none;">' + r.order_id.substring(0,12) + ' 🔗 GEA</a>' : '<a href="https://sciweb.tucanotours.com.ar/FlightOrders/Details/' + r.order_id + '" target="_blank" style="color:#42a5f5;text-decoration:none;">' + (r.order_number||r.order_id.substring(0,8)) + ' 🔗</a>') : (r.order_number||'-')) + '</div></div>' +
+      '<div class="det-item"><div class="lbl">Estado</div><div class="val"><span class="badge-res badge-' + r.estado + '">' + r.estado + '</span></div></div>' +
+      '<div class="det-item"><div class="lbl">Aerolínea</div><div class="val">' + (r.aerolinea||'-') + '</div></div>' +
+      '<div class="det-item"><div class="lbl">Precio neto</div><div class="val">USD ' + (r.precio_usd||0).toLocaleString('es-AR') + '</div></div>' +
+      (r.precio_venta_usd ? '<div class="det-item"><div class="lbl">Precio venta</div><div class="val" style="color:var(--gold);font-weight:700;">USD ' + Number(r.precio_venta_usd).toLocaleString('es-AR') + '</div></div>' : '') +
+      '<div class="det-item"><div class="lbl">Creada</div><div class="val">' + creado + '</div></div>' +
+      '</div></div>' +
+      (itinHtml ? '<div class="det-section"><h3>✈ Itinerario</h3>' + itinHtml + '</div>' : '') +
+      (paxHtml ? '<div class="det-section"><h3>👥 Pasajeros</h3>' + paxHtml + '</div>' : '') +
+      (contactoHtml ? '<div class="det-section"><h3>📞 Contacto</h3><p style="color:var(--muted);font-size:13px;">' + contactoHtml + '</p></div>' : '') +
+      ticketsHtml +
+      '<div class="det-section"><h3>📝 Notas</h3><textarea class="notas-dark" id="notasArea" placeholder="Agregar notas...">' + (r.notas||'') + '</textarea></div>';
+
+    // Actions
+    let act = '<button class="btn-act btn-act-primary" onclick="verificarEstadoRes()">🔍 Verificar estado</button>';
+    act += '<button class="btn-act btn-act-outline" onclick="guardarNotasRes()">💾 Notas</button>';
+    act += '<button class="btn-act btn-act-outline" onclick="mostrarPdfOptsRes()">📄 PDF</button>';
+    if (r.estado === 'CREADA') {
+      act += '<button class="btn-act btn-act-success" onclick="mostrarRecotizarRes()">💲 Recotizar</button>';
+      act += '<button class="btn-act btn-act-blue" onclick="confirmarEmisionRes()">✈️ Emitir</button>';
+      act += '<button class="btn-act btn-act-success" onclick="cambiarEstadoRes(\'EMITIDA\')">✅ Emitida</button>';
+      act += '<button class="btn-act btn-act-danger" onclick="cambiarEstadoRes(\'CANCELADA\')">❌ Cancelar</button>';
+    } else if (r.estado === 'EMITIDA') {
+      act += '<button class="btn-act btn-act-danger" onclick="cambiarEstadoRes(\'CANCELADA\')">❌ Cancelar</button>';
+    }
+    document.getElementById('modalActions').innerHTML = act;
+  } catch(e) {
+    document.getElementById('modalBody').innerHTML = '<div class="no-results">Error: ' + e.message + '</div>';
+  }
+}
+
+function cerrarModalRes() { document.getElementById('modalOverlay').style.display = 'none'; reservaActual = null; }
+
+function mostrarPdfOptsRes() {
+  if (document.getElementById('pdfPanel')) { document.getElementById('pdfPanel').remove(); return; }
+  const panel = document.createElement('div'); panel.id = 'pdfPanel'; panel.className = 'recot-panel';
+  panel.innerHTML = '<h4>📄 Generar PDF</h4><div class="recot-opts"><div><label>&nbsp;</label><button class="btn-act btn-act-primary" onclick="generarPdfRes()" id="btnPdfRes" style="width:100%">📄 Descargar</button></div></div>';
+  document.getElementById('modalBody').appendChild(panel);
+}
+
+async function generarPdfRes() {
+  if (!reservaActual) return;
+  const btn = document.getElementById('btnPdfRes'); btn.textContent = '⏳...'; btn.disabled = true;
+  try {
+    const res = await fetch('/reservas/' + reservaActual.id + '/pdf', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({}) });
+    if (!res.ok) throw new Error((await res.json()).error);
+    const blob = await res.blob(); const url = URL.createObjectURL(blob);
+    const a = document.createElement('a'); a.href = url; a.download = 'Reserva_' + reservaActual.pnr + '.pdf'; a.click(); URL.revokeObjectURL(url);
+  } catch(e) { alert('Error: ' + e.message); } finally { btn.textContent = '📄 Descargar'; btn.disabled = false; }
+}
+
+function mostrarRecotizarRes() {
+  if (document.getElementById('recotPanel')) { document.getElementById('recotPanel').remove(); return; }
+  const panel = document.createElement('div'); panel.id = 'recotPanel'; panel.className = 'recot-panel';
+  panel.innerHTML = '<h4>💲 Recotizar reserva</h4><div class="recot-opts"><div><label>Moneda</label><select id="recotMoneda"><option value="">Auto</option><option value="USD">USD</option><option value="ARS">ARS</option></select></div><div><label>Tipo tarifa</label><select id="recotFareType"><option value="0">No forzar</option><option value="1">Públicas</option><option value="2">Privadas</option></select></div><div><label>Validadora</label><input type="text" id="recotCarrier" placeholder="Ej: UX, AR..." maxlength="3"></div><div><label>Nacionalidad</label><input type="text" id="recotNationality" placeholder="Ej: ARG" maxlength="3"></div><div><label>Brand ID</label><input type="text" id="recotBrandId" placeholder="Ej: BASIC" maxlength="20"></div></div><button class="btn-act btn-act-primary" onclick="ejecutarRecotizarRes()" id="btnRecot">📊 Obtener tarifa actual</button><div id="recotResult"></div>';
+  document.getElementById('modalBody').appendChild(panel);
+}
+
+async function ejecutarRecotizarRes() {
+  if (!reservaActual) return;
+  const btn = document.getElementById('btnRecot'); const rd = document.getElementById('recotResult');
+  btn.textContent = '⏳ Consultando...'; btn.disabled = true; rd.innerHTML = '';
+  try {
+    const opts = { moneda:document.getElementById('recotMoneda').value||null, fareType:parseInt(document.getElementById('recotFareType').value)||0, overrideCarrier:document.getElementById('recotCarrier').value||null, nationality:document.getElementById('recotNationality').value||null, brandId:document.getElementById('recotBrandId')?.value||null };
+    const res = await fetch('/reservas/' + reservaActual.id + '/recotizar', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(opts) });
+    const data = await res.json(); if (!data.ok) throw new Error(data.error);
+    if (data.tarifas && data.tarifas.length) {
+      let html = '';
+      if (data.brand) { html += '<div style="margin-bottom:8px;font-size:11px;color:var(--gold)">✈ Brand: <b>' + data.brand + '</b></div>'; }
+      let grandTotal = 0; let grandNeto = 0;
+      // Get passenger counts from reservation
+      const paxCounts = { ADT: reservaActual?.adultos || 1, CHD: reservaActual?.ninos || 0, CNN: reservaActual?.ninos || 0, INF: reservaActual?.infantes || 0, INS: reservaActual?.infantes || 0 };
+      data.tarifas.forEach(t => {
+        const tipoUpper = (t.tipo || 'ADT').toUpperCase();
+        const qty = paxCounts[tipoUpper] || paxCounts['ADT'] || 1;
+        grandTotal += t.total * qty;
+        const comMonto = (t.comisionObtenida?.valueApplied||0) + (t.comisionCedida?.valueApplied||0);
+        const overMonto = t.overComision?.ceded?.valueApplied || t.overComision?.obtained?.valueApplied || t.overComision?.valueApplied || t.overComision?.amount || 0;
+        const netoUnit = t.total + (t.fee||0) - comMonto - overMonto;
+        const netoTotal = netoUnit * qty;
+        grandNeto += netoTotal;
+        html += '<div class="tarifa-card-d"><div class="th">' + t.tipo + ' × ' + qty + '</div>' +
+          '<div class="tr"><span>Tarifa base</span><span>' + t.monedaBase + ' ' + t.tarifaBase.toFixed(2) + '</span></div>' +
+          '<div class="tr"><span>Impuestos</span><span>' + t.monedaImpuestos + ' ' + t.impuestos.toFixed(2) + '</span></div>' +
+          (t.fee ? '<div class="tr"><span>Fee</span><span>' + t.monedaFee + ' ' + t.fee.toFixed(2) + '</span></div>' : '') +
+          (comMonto ? '<div class="tr" style="color:#2ecc71"><span>Comisión</span><span>-' + t.monedaTotal + ' ' + comMonto.toFixed(2) + '</span></div>' : '') +
+          (overMonto ? '<div class="tr" style="color:#2ecc71"><span>Over</span><span>-' + t.monedaTotal + ' ' + overMonto.toFixed(2) + '</span></div>' : '') +
+          '<div class="tr total"><span>NETO por pax</span><span>' + t.monedaTotal + ' ' + netoUnit.toFixed(2) + '</span></div>' +
+          (qty > 1 ? '<div class="tr total" style="border-top:1px dashed #444;margin-top:4px;padding-top:4px"><span>NETO ×' + qty + '</span><span>' + t.monedaTotal + ' ' + netoTotal.toFixed(2) + '</span></div>' : '') +
+          '</div>';
+      });
+      const mon = data.tarifas[0]?.monedaTotal || 'USD';
+      html += '<div class="tarifa-card-d" style="border-color:var(--gold)"><div class="tr total"><span>TOTAL NETO</span><span style="color:var(--gold)">' + mon + ' ' + grandNeto.toFixed(2) + '</span></div></div>';
+      if (data.pricingId) {
+        window._lastPricing = { pricingId:data.pricingId, segmentIds:data.segmentIds, fareNumbersInPNR:data.fareNumbersInPNR, netoTotal:grandNeto, moneda:mon };
+        html += '<button class="btn-act btn-act-success" onclick="guardarTarifaRes()" style="margin-top:8px">💾 Guardar tarifa</button>';
+      }
+      rd.innerHTML = html;
+    } else { rd.innerHTML = '<p style="color:var(--muted);font-size:12px">Sin tarifas disponibles</p>'; }
+  } catch(e) { rd.innerHTML = '<p style="color:#e74c3c;font-size:12px">' + e.message + '</p>'; } finally { btn.textContent = '📊 Obtener tarifa actual'; btn.disabled = false; }
+}
+
+async function guardarTarifaRes() {
+  if (!reservaActual || !window._lastPricing) return;
+  if (!confirm('¿Guardar esta tarifa?')) return;
+  try {
+    const res = await fetch('/reservas/' + reservaActual.id + '/guardar-tarifa', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(window._lastPricing) });
+    const data = await res.json(); if (!data.ok) throw new Error(data.error);
+    alert((data.warning ? '⚠️ ' : '✅ ') + data.mensaje); cerrarModalRes(); cargarReservas();
+  } catch(e) { alert('Error: ' + e.message); }
+}
+
+async function verificarEstadoRes() {
+  if (!reservaActual) return;
+  try {
+    const res = await fetch('/reservas/' + reservaActual.id + '/verificar', { method:'POST', headers:{'Content-Type':'application/json'} });
+    const data = await res.json(); if (!data.ok) throw new Error(data.error);
+    let msg = 'PNR: ' + data.pnr + '\n';
+    if (data.estadoActualizado) msg += '\n⚡ ESTADO: ' + data.estadoAnterior + ' → ' + data.estadoAPI + '\n';
+    else msg += '\n✅ Estado: ' + data.estadoAPI + ' (sin cambios)\n';
+    if (data.timeLimit) { const tl = new Date(data.timeLimit); msg += '\n⏰ Límite: ' + tl.toLocaleDateString('es-AR') + ' ' + tl.toLocaleTimeString('es-AR',{hour:'2-digit',minute:'2-digit'}) + '\n'; }
+    if (data.tickets?.length) { msg += '\n🎫 Tickets:\n'; data.tickets.forEach(t => msg += '   ' + t + '\n'); }
+    if (data.vuelos?.length) { msg += '\n✈️ Vuelos:\n'; data.vuelos.forEach(v => msg += '   ' + v.vuelo + ' ' + v.ruta + ' [' + v.status + ']\n'); }
+    if (data.mensaje) msg += '\nℹ️ ' + data.mensaje;
+    alert(msg);
+    if (data.estadoActualizado) { cerrarModalRes(); cargarReservas(); }
+  } catch(e) { alert('Error: ' + e.message); }
+}
+
+async function cambiarEstadoRes(estado) {
+  if (!reservaActual) return;
+  
+  // Para cancelar, usar el endpoint que cancela en la aerolínea también
+  if (estado === 'CANCELADA') {
+    const pnr = reservaActual.pnr || '';
+    const gds = reservaActual.gds || '';
+    const proveedor = gds.includes('NDC') || gds.includes('Lleego') || (reservaActual.notas||'').includes('GEA') ? 'GEA/Lleego' : 'Tucano';
+    if (!confirm(`¿Cancelar reserva ${pnr} en ${proveedor}?\n\nEsta acción cancelará la reserva en la aerolínea. No se puede deshacer.`)) return;
+    try {
+      const res = await fetch('/reservas/' + reservaActual.id + '/cancelar', { method:'POST', headers:{'Content-Type':'application/json'} });
+      const data = await res.json();
+      if (data.ok) {
+        alert('✅ ' + data.mensaje);
+        cerrarModalRes();
+        cargarReservas();
+      } else {
+        alert('❌ Error: ' + data.error);
+      }
+    } catch(e) { alert('Error: ' + e.message); }
+    return;
+  }
+
+  // Para otros estados (EMITIDA manual), solo actualizar en DB
+  if (!confirm('¿Marcar como ' + estado.toLowerCase() + '?')) return;
+  try {
+    const res = await fetch('/reservas/' + reservaActual.id + '/estado', { method:'PUT', headers:{'Content-Type':'application/json'}, body:JSON.stringify({estado}) });
+    const data = await res.json(); if (data.ok) { cerrarModalRes(); cargarReservas(); } else alert('Error: ' + data.error);
+  } catch(e) { alert('Error: ' + e.message); }
+}
+
+async function guardarNotasRes() {
+  if (!reservaActual) return;
+  try {
+    const res = await fetch('/reservas/' + reservaActual.id + '/notas', { method:'PUT', headers:{'Content-Type':'application/json'}, body:JSON.stringify({notas:document.getElementById('notasArea').value}) });
+    if ((await res.json()).ok) alert('✅ Notas guardadas');
+  } catch(e) { alert('Error: ' + e.message); }
+}
+
+async function confirmarEmisionRes() {
+  if (!reservaActual || reservaActual.estado !== 'CREADA') return;
+  try {
+    const resp = await fetch('/reservas/' + reservaActual.id + '/emitir', { method:'POST', headers:{'Content-Type':'application/json'} });
+    const data = await resp.json(); if (!data.ok) { alert('Error: ' + data.error); return; }
+    
+    // GEA direct emission via API
+    if (data.emitida) {
+      alert('✅ Reserva ' + data.pnr + ' emitida exitosamente vía GEA');
+      verDetalleReserva(reservaActual.id); // Refresh detail
+      cargarReservas(); // Refresh list
+      return;
+    }
+    
+    const plataforma = data.isGEA ? 'Lleego/GEA' : 'SCIWeb';
+    if (data.sciweb_url && confirm('Emitir reserva ' + data.pnr + '\n\nSe abrirá ' + plataforma + '. Después volvé y hacé "Verificar estado".\n\n¿Abrir?')) {
+      window.open(data.sciweb_url, '_blank');
+      const reminder = document.createElement('div');
+      reminder.style.cssText = 'margin-top:14px;padding:14px;background:rgba(21,101,192,0.15);border:1px solid rgba(21,101,192,0.3);border-radius:10px;text-align:center;';
+      reminder.innerHTML = '<p style="font-size:13px;color:#42a5f5;">✈️ ' + plataforma + ' abierto — después de emitir:</p><button class="btn-act btn-act-primary" onclick="verificarEstadoRes()" style="margin-top:6px">🔄 Verificar estado</button>';
+      document.getElementById('modalBody').appendChild(reminder);
+    }
+  } catch(e) { alert('Error: ' + e.message); }
+}
+
+// Filtros con debounce
+let searchTimerRes;
+document.getElementById('searchInput')?.addEventListener('input', () => { clearTimeout(searchTimerRes); searchTimerRes = setTimeout(cargarReservas, 400); });
+document.getElementById('filterEstado')?.addEventListener('change', cargarReservas);
+
+// Cerrar modal con Escape
+document.addEventListener('keydown', e => { if (e.key === 'Escape') { cerrarModalRes(); cerrarModal(); } });
+
+// ─── COTIZACIÓN ───
+let vuelosCotizar = []; // [{quotationId, searchId}]
+const equipajeMap = {}; // quotationId → equipaje data
+
+function toggleCotizar(quotationId, searchId, checked) {
+  if (checked) {
+    if (!vuelosCotizar.find(v => v.quotationId === quotationId)) {
+      // Mostrar modal de precio de venta antes de agregar
+      abrirModalPrecioCotizar(quotationId, searchId);
+    }
+  } else {
+    vuelosCotizar = vuelosCotizar.filter(v => v.quotationId !== quotationId);
+    delete preciosVentaCotizar[quotationId];
+    actualizarBarraCotizar();
+  }
+}
+
+const preciosVentaCotizar = {}; // quotationId → [{tipo, cantidad, precioUnitario}]
+
+async function abrirModalPrecioCotizar(quotationId, searchId) {
+  const vuelo = todosLosVuelos.find(v => v.id === quotationId);
+
+  // Crear modal
+  const overlay = document.createElement('div');
+  overlay.id = 'modalPrecioCotizar';
+  overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.7);z-index:2000;display:flex;align-items:center;justify-content:center;';
+  overlay.innerHTML = `
+    <div style="background:var(--dark1);border:1px solid var(--gold);border-radius:14px;padding:28px;max-width:480px;width:90%;position:relative;">
+      <div style="font-size:16px;font-weight:700;color:var(--gold);margin-bottom:4px;">💰 Precio de venta</div>
+      <div style="font-size:12px;color:var(--muted);margin-bottom:16px;">${vuelo?.aerolinea || ''} · ${vuelo?.itinerario?.map(l=>l.origen+'→'+l.destino).join(' | ') || ''}</div>
+      <div id="modalPrecioBreakdown" style="margin-bottom:16px;">
+        <div style="color:var(--muted);font-size:12px;">⏳ Cargando tarifas...</div>
+      </div>
+      <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:8px;">
+        <button onclick="cerrarModalPrecioCotizar(false,'${quotationId}')" 
+          style="background:none;border:1px solid var(--border);color:var(--muted);border-radius:7px;font-family:'Sora',sans-serif;font-size:12px;padding:8px 16px;cursor:pointer;">
+          Cancelar
+        </button>
+        <button id="btnConfirmarPrecioCotizar" onclick="confirmarPrecioCotizar('${quotationId}','${searchId}')"
+          style="background:var(--gold);color:#000;border:none;border-radius:7px;font-family:'Sora',sans-serif;font-size:13px;font-weight:700;padding:8px 20px;cursor:pointer;">
+          ✓ Confirmar y agregar
+        </button>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(overlay);
+
+  // Cargar breakdown
+  try {
+    const res = await fetch('/get-fare-breakdown', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ searchId, quotationId })
+    }).then(r => r.json());
+
+    const container = document.getElementById('modalPrecioBreakdown');
+    if (!container) return;
+
+    if (!res.ok || !res.breakdown?.length) {
+      container.innerHTML = '<div style="color:#e74c3c;font-size:12px;">❌ No se pudo obtener tarifas</div>';
+      return;
+    }
+
+    // Store in fareBreakdownData temporarily keyed by quotationId
+    window._cotizarBreakdown = window._cotizarBreakdown || {};
+    window._cotizarBreakdown[quotationId] = res.breakdown.map(b => ({
+      ...b,
+      precioVentaSugerido: calcularPrecioVentaPorTipo(b.neto, b.tipo_tarifa, b.comision_over),
+      precioVenta: calcularPrecioVentaPorTipo(b.neto, b.tipo_tarifa, b.comision_over)
+    }));
+
+    renderModalPrecioBreakdown(quotationId);
+  } catch(e) {
+    const container = document.getElementById('modalPrecioBreakdown');
+    if (container) container.innerHTML = `<div style="color:#e74c3c;font-size:12px;">❌ Error: ${e.message}</div>`;
+  }
+}
+
+function renderModalPrecioBreakdown(quotationId) {
+  const container = document.getElementById('modalPrecioBreakdown');
+  if (!container) return;
+  const breakdown = window._cotizarBreakdown?.[quotationId] || [];
+  const tipoLabel = { adulto: 'Adulto', menor: 'Menor', 'bebé': 'Bebé' };
+  const total = breakdown.reduce((s, b) => s + b.precioVenta * b.cantidad, 0);
+
+  let html = '<div style="display:flex;flex-direction:column;gap:10px;">';
+  for (let i = 0; i < breakdown.length; i++) {
+    const b = breakdown[i];
+    html += `
+      <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;">
+        <div style="min-width:100px;">
+          <div style="font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:1px;">${tipoLabel[b.tipo]||b.tipo} × ${b.cantidad}</div>
+          <div style="font-size:10px;color:var(--muted);">Neto: USD ${b.neto.toFixed(2)}</div>
+        </div>
+        <div>
+          <div style="font-size:10px;color:var(--muted);margin-bottom:3px;">Precio venta c/u (USD)</div>
+          <input type="number" value="${b.precioVenta.toFixed(2)}" min="0" step="0.01"
+            style="background:var(--dark3);border:1px solid var(--gold);border-radius:6px;color:var(--text);font-family:'Sora',sans-serif;font-size:14px;font-weight:700;padding:6px 10px;width:120px;outline:none;"
+            oninput="onCotizarPrecioChange('${quotationId}', ${i}, this.value)">
+        </div>
+        <div style="font-size:11px;color:var(--muted);">
+          Subtotal: <span id="cot_sub_${quotationId}_${i}" style="color:var(--gold);font-weight:700;">USD ${(b.precioVenta * b.cantidad).toFixed(2)}</span>
+        </div>
+      </div>`;
+  }
+  html += `
+    <div style="border-top:1px solid var(--border);padding-top:10px;margin-top:4px;display:flex;justify-content:space-between;">
+      <div style="font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:1px;">Total venta</div>
+      <div id="cot_total_${quotationId}" style="font-size:18px;font-weight:700;color:var(--gold);">USD ${total.toFixed(2)}</div>
+    </div>
+  </div>`;
+  container.innerHTML = html;
+}
+
+function onCotizarPrecioChange(quotationId, idx, valor) {
+  const breakdown = window._cotizarBreakdown?.[quotationId];
+  if (!breakdown) return;
+  breakdown[idx].precioVenta = parseFloat(valor) || 0;
+  const sub = document.getElementById(`cot_sub_${quotationId}_${idx}`);
+  if (sub) sub.textContent = `USD ${(breakdown[idx].precioVenta * breakdown[idx].cantidad).toFixed(2)}`;
+  const total = breakdown.reduce((s, b) => s + b.precioVenta * b.cantidad, 0);
+  const totalEl = document.getElementById(`cot_total_${quotationId}`);
+  if (totalEl) totalEl.textContent = `USD ${total.toFixed(2)}`;
+}
+
+function confirmarPrecioCotizar(quotationId, searchId) {
+  const breakdown = window._cotizarBreakdown?.[quotationId];
+  const vuelo = todosLosVuelos.find(v => v.id === quotationId);
+
+  // Guardar precios confirmados
+  preciosVentaCotizar[quotationId] = breakdown ? breakdown.map(b => ({
+    tipo: b.tipo, cantidad: b.cantidad, precioUnitario: b.precioVenta,
+    neto: b.neto, tipo_tarifa: b.tipo_tarifa, comision_over: b.comision_over
+  })) : null;
+
+  // Agregar a la lista
+  if (vuelo?.equipaje) equipajeMap[quotationId] = vuelo.equipaje;
+  vuelosCotizar.push({ quotationId, searchId, cabina: vuelo?.cabina || '' });
+  actualizarBarraCotizar();
+  cerrarModalPrecioCotizar(true, quotationId);
+}
+
+function cerrarModalPrecioCotizar(confirmed, quotationId) {
+  const overlay = document.getElementById('modalPrecioCotizar');
+  if (overlay) overlay.remove();
+  // Si canceló, desmarcar el checkbox
+  if (!confirmed) {
+    const cbs = document.querySelectorAll('.cotizar-check input[type=checkbox]');
+    cbs.forEach(cb => {
+      // Find the checkbox tied to this quotationId
+      const btn = cb.closest('[data-qid]') || cb.parentElement?.closest('[data-qid]');
+      if (!btn && cb.onchange) cb.checked = false;
+    });
+    // Simpler: just uncheck all that aren't in vuelosCotizar
+    document.querySelectorAll('.cotizar-check input[type=checkbox]').forEach(cb => {
+      const onch = cb.getAttribute('onchange') || '';
+      if (onch.includes(quotationId)) cb.checked = false;
+    });
+  }
+}
+
+function actualizarBarraCotizar() {
+  const bar = document.getElementById('cotizarBar');
+  const cnt = document.getElementById('cotizarCount');
+  if (vuelosCotizar.length > 0) {
+    bar.classList.add('show');
+    cnt.textContent = vuelosCotizar.length === 1 ? '1 vuelo seleccionado' : vuelosCotizar.length + ' vuelos seleccionados';
+  } else {
+    bar.classList.remove('show');
+  }
+}
+
+function limpiarCotizacion() {
+  vuelosCotizar = [];
+  document.querySelectorAll('.cotizar-check input[type=checkbox]').forEach(cb => cb.checked = false);
+  actualizarBarraCotizar();
+}
+
+async function generarCotizacion() {
+  if (!vuelosCotizar.length) return;
+  const btn = document.getElementById('btnGenerarCot');
+  btn.disabled = true;
+  btn.textContent = '⏳ Generando...';
+  try {
+    const opcionesConEquipaje = vuelosCotizar.map(v => ({
+      ...v,
+      equipaje: equipajeMap[v.quotationId] || null,
+      preciosVenta: preciosVentaCotizar[v.quotationId] || null
+    }));
+    const r = await fetch('/generar-cotizacion', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ opciones: opcionesConEquipaje })
+    });
+    if (!r.ok) {
+      const err = await r.json();
+      throw new Error(err.error || 'Error al generar');
+    }
+    const blob = await r.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'cotizacion_lucky_tour.pdf';
+    a.click();
+    URL.revokeObjectURL(url);
+    limpiarCotizacion();
+  } catch(e) {
+    alert('Error: ' + e.message);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = '📄 Generar PDF';
+  }
+}
+
+// (verDetalleReserva is defined above with full functionality)
+
+cargarMarkup();
+
+
+</script>
+
+
+<div class="cotizar-bar" id="cotizarBar">
+  <span class="cotizar-bar-txt" id="cotizarCount">0 vuelos seleccionados</span>
+
+  <button class="btn-cotizar-gen" id="btnGenerarCot" onclick="generarCotizacion()">📄 Generar PDF</button>
+  <button class="btn-cotizar-cancel" onclick="limpiarCotizacion()">✕ Cancelar</button>
+</div>
+<script>
+
+
+// ─── EMITIDAS: Base de reservas emitidas ───
+let emitidasData = [];
+
+document.getElementById('emitSearch')?.addEventListener('input', () => {
+  clearTimeout(window._emitTimer);
+  window._emitTimer = setTimeout(cargarEmitidas, 400);
+});
+
+async function cargarEmitidas() {
+  const cont = document.getElementById('emitidasTabla');
+  cont.innerHTML = '<div class="estado"><div class="spinner"></div><p>Cargando emitidas...</p></div>';
+  const q = document.getElementById('emitSearch')?.value?.trim() || '';
+  const params = new URLSearchParams({ estado: 'EMITIDA' });
+  if (q) params.set('q', q);
+  try {
+    emitidasData = await fetch('/reservas?' + params).then(r=>r.json());
+    renderEmitidasStats();
+    renderEmitidasTabla();
+  } catch(e) { cont.innerHTML = '<div class="no-results">Error: ' + e.message + '</div>'; }
+}
+
+function renderEmitidasStats() {
+  const total = emitidasData.length;
+  let totalUSD = 0;
+  const aeros = {};
+  emitidasData.forEach(r => {
+    totalUSD += (r.precio_usd || 0);
+    const a = r.aerolinea || '?';
+    aeros[a] = (aeros[a] || 0) + 1;
+  });
+  const aerosStr = Object.entries(aeros).map(([k,v]) => '<span style="color:var(--gold)">' + k + '</span>:' + v).join(' · ');
+  document.getElementById('emitidasStats').innerHTML =
+    '<div class="res-stat emitida"><div class="num">' + total + '</div><div class="lbl">Emitidas</div></div>' +
+    '<div class="res-stat" style="background:rgba(201,168,76,0.08);border-color:var(--gold)"><div class="num" style="color:var(--gold)">USD ' + Math.round(totalUSD).toLocaleString('es-AR') + '</div><div class="lbl">Facturado total</div></div>' +
+    '<div class="res-stat" style="background:var(--dark3);border-color:var(--border)"><div class="num" style="font-size:12px;color:var(--text)">' + aerosStr + '</div><div class="lbl">Por aerolínea</div></div>';
+}
+
+function renderEmitidasTabla() {
+  const cont = document.getElementById('emitidasTabla');
+  if (!emitidasData.length) { cont.innerHTML = '<div class="no-results">📭 No hay reservas emitidas</div>'; return; }
+  const rows = emitidasData.map(r => {
+    const pax = [];
+    if (r.adultos) pax.push(r.adultos + 'ADT');
+    if (r.ninos) pax.push(r.ninos + 'CHD');
+    if (r.infantes) pax.push(r.infantes + 'INF');
+    const fechaSal = r.fecha_salida ? new Date(r.fecha_salida).toLocaleDateString('es-AR', { day:'2-digit', month:'short' }) : '-';
+    const fechaEmit = r.fecha_emision ? new Date(r.fecha_emision).toLocaleDateString('es-AR', { day:'2-digit', month:'short', hour:'2-digit', minute:'2-digit' }) : '-';
+    const tickets = r.ticket_numbers ? (Array.isArray(r.ticket_numbers) ? r.ticket_numbers : []).join(', ') : '-';
+    const ed = r.emision_data ? (typeof r.emision_data === 'string' ? JSON.parse(r.emision_data) : r.emision_data) : null;
+    const ticketsFromEd = (!tickets || tickets === '-') && ed?.tickets ? ed.tickets.map(t => (t.carrier||'') + '-' + (t.numero||'')).join(', ') : tickets;
+    const gds = r.gds || '-';
+    const cabina = r.cabina || '-';
+    const tl = r.time_limit ? new Date(r.time_limit).toLocaleDateString('es-AR', { day:'2-digit', month:'short', hour:'2-digit', minute:'2-digit' }) : '-';
+    // Penalidades resumen
+    let penStr = '-';
+    try {
+      const pen = r.penalidades_json ? (typeof r.penalidades_json === 'string' ? JSON.parse(r.penalidades_json) : r.penalidades_json) : null;
+      if (pen) {
+        const parts = [];
+        if (pen.cambio_antes?.permite) parts.push('Cambio: $' + (pen.cambio_antes.monto||0));
+        else if (pen.cambio_antes) parts.push('Cambio: No');
+        if (pen.devolucion_antes?.permite) parts.push('Dev: $' + (pen.devolucion_antes.monto||0));
+        else if (pen.devolucion_antes) parts.push('Dev: No');
+        if (parts.length) penStr = parts.join(' | ');
+      }
+    } catch(e) {}
+    const vendedor = r.vendedor || '-';
+    // Pasajeros nombres
+    let paxNames = '-';
+    try {
+      const pjson = r.pasajeros_json ? (typeof r.pasajeros_json === 'string' ? JSON.parse(r.pasajeros_json) : r.pasajeros_json) : [];
+      if (Array.isArray(pjson) && pjson.length) {
+        paxNames = pjson.map(p => (p.apellido||'') + ' ' + (p.nombre||'')).join(', ');
+        if (paxNames.length > 40) paxNames = paxNames.substring(0,37) + '...';
+      }
+    } catch(e) {}
+    return '<tr onclick="verDetalleReserva(' + r.id + ')" style="cursor:pointer">' +
+      '<td><span class="res-pnr">' + (r.pnr||'-') + '</span></td>' +
+      '<td>' + (r.origen||'?') + '→' + (r.destino||'?') + '</td>' +
+      '<td style="color:var(--gold)">' + (r.aerolinea||'-') + '</td>' +
+      '<td class="res-fecha">' + fechaSal + '</td>' +
+      '<td style="font-size:10px">' + paxNames + '</td>' +
+      '<td class="res-precio">$' + (r.precio_usd||0).toLocaleString('es-AR',{minimumFractionDigits:0}) + '</td>' +
+      '<td style="font-size:10px;color:var(--muted)">' + gds + '</td>' +
+      '<td style="font-size:10px">' + cabina + '</td>' +
+      '<td style="font-size:9px;color:var(--muted);max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="' + ticketsFromEd + '">' + ticketsFromEd + '</td>' +
+      '<td style="font-size:10px">' + fechaEmit + '</td>' +
+      '<td style="font-size:10px;max-width:130px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="' + penStr + '">' + penStr + '</td>' +
+      '<td style="font-size:10px;color:var(--muted)">' + vendedor + '</td>' +
+    '</tr>';
+  }).join('');
+  cont.innerHTML = '<table class="res-table" style="font-size:11px"><thead><tr>' +
+    '<th>PNR</th><th>Ruta</th><th>Aero</th><th>Salida</th><th>Pasajeros</th><th>USD</th><th>GDS</th><th>Cabina</th><th>Tickets</th><th>Emitido</th><th>Penalidades</th><th>Vendedor</th>' +
+    '</tr></thead><tbody>' + rows + '</tbody></table>';
+}
+
+// ─── ADMIN: Gestión de Usuarios ───
+function mostrarFormNuevoUsuario() {
+  document.getElementById('formNuevoUsuario').style.display = 'block';
+  document.getElementById('nuNombre').focus();
+}
+
+async function cargarUsuarios() {
+  try {
+    const r = await fetch('/api/usuarios');
+    const d = await r.json();
+    if (!d.ok) return;
+    const container = document.getElementById('usuariosTabla');
+    if (!d.usuarios.length) {
+      container.innerHTML = '<p style="color:var(--muted);text-align:center;padding:40px;">No hay usuarios</p>';
+      return;
+    }
+    let html = '<table style="width:100%;border-collapse:collapse;font-size:13px;">';
+    html += '<thead><tr style="border-bottom:1px solid var(--border);">';
+    html += '<th style="text-align:left;padding:10px 8px;color:var(--muted);font-size:11px;font-weight:600;">NOMBRE</th>';
+    html += '<th style="text-align:left;padding:10px 8px;color:var(--muted);font-size:11px;font-weight:600;">USUARIO</th>';
+    html += '<th style="text-align:left;padding:10px 8px;color:var(--muted);font-size:11px;font-weight:600;">ROL</th>';
+    html += '<th style="text-align:left;padding:10px 8px;color:var(--muted);font-size:11px;font-weight:600;">PROVEEDORES</th>';
+    html += '<th style="text-align:left;padding:10px 8px;color:var(--muted);font-size:11px;font-weight:600;">ESTADO</th>';
+    html += '<th style="text-align:center;padding:10px 8px;color:var(--muted);font-size:11px;font-weight:600;">ACCIONES</th>';
+    html += '</tr></thead><tbody>';
+    for (const u of d.usuarios) {
+      const creds = u.credenciales || [];
+      const hasTucano = creds.some(c => c.proveedor === 'tucano' && c.activo);
+      const hasGea = creds.some(c => c.proveedor === 'gea' && c.activo);
+      const rolBadge = u.rol === 'admin' 
+        ? '<span style="background:rgba(212,175,55,0.2);color:#d4af37;padding:2px 8px;border-radius:4px;font-size:10px;font-weight:600;">ADMIN</span>'
+        : '<span style="background:rgba(79,195,247,0.15);color:#4fc3f7;padding:2px 8px;border-radius:4px;font-size:10px;font-weight:600;">VENDEDOR</span>';
+      const estadoBadge = u.activo
+        ? '<span style="color:#66bb6a;font-size:12px;">● Activo</span>'
+        : '<span style="color:#f85149;font-size:12px;">● Inactivo</span>';
+      const provs = [];
+      if (hasTucano) provs.push('<span style="background:rgba(79,195,247,0.12);color:#4fc3f7;padding:2px 6px;border-radius:4px;font-size:10px;">Tucano</span>');
+      if (hasGea) provs.push('<span style="background:rgba(102,187,106,0.12);color:#66bb6a;padding:2px 6px;border-radius:4px;font-size:10px;">GEA</span>');
+      
+      html += '<tr style="border-bottom:1px solid rgba(255,255,255,0.04);">';
+      html += '<td style="padding:10px 8px;font-weight:600;">' + u.nombre + '</td>';
+      html += '<td style="padding:10px 8px;color:var(--muted);">' + u.usuario + '</td>';
+      html += '<td style="padding:10px 8px;">' + rolBadge + '</td>';
+      html += '<td style="padding:10px 8px;">' + (provs.length ? provs.join(' ') : '<span style="color:#484f58;font-size:11px;">Sin vincular</span>') + '</td>';
+      html += '<td style="padding:10px 8px;">' + estadoBadge + '</td>';
+      html += '<td style="padding:10px 8px;text-align:center;">';
+      html += '<button onclick="editarUsuario(' + u.id + ')" style="background:none;border:1px solid var(--border);color:var(--muted);border-radius:6px;padding:4px 10px;font-size:11px;cursor:pointer;margin-right:4px;font-family:inherit;">✏️ Editar</button>';
+      if (u.activo) {
+        html += '<button onclick="toggleUsuario(' + u.id + ',false)" style="background:none;border:1px solid rgba(248,81,73,0.3);color:#f85149;border-radius:6px;padding:4px 10px;font-size:11px;cursor:pointer;font-family:inherit;">Desactivar</button>';
+      } else {
+        html += '<button onclick="toggleUsuario(' + u.id + ',true)" style="background:none;border:1px solid rgba(102,187,106,0.3);color:#66bb6a;border-radius:6px;padding:4px 10px;font-size:11px;cursor:pointer;font-family:inherit;">Activar</button>';
+      }
+      html += '</td></tr>';
+    }
+    html += '</tbody></table>';
+    container.innerHTML = html;
+  } catch(e) { console.error('Error cargando usuarios:', e); }
+}
+
+async function crearUsuario() {
+  const nombre = document.getElementById('nuNombre').value.trim();
+  const usuario = document.getElementById('nuUsuario').value.trim();
+  const password = document.getElementById('nuPassword').value;
+  const rol = document.getElementById('nuRol').value;
+  if (!nombre || !usuario || !password) { alert('Completá nombre, usuario y contraseña'); return; }
+  
+  try {
+    const r = await fetch('/api/usuarios', {
+      method: 'POST', headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({ nombre, usuario, password, rol })
+    });
+    const d = await r.json();
+    if (!d.ok) { alert('Error: ' + d.error); return; }
+    
+    // Guardar credenciales de proveedores
+    const tucanoUser = document.getElementById('nuTucanoUser').value.trim();
+    const tucanoPass = document.getElementById('nuTucanoPass').value.trim();
+    const geaUser = document.getElementById('nuGeaUser').value.trim();
+    const geaPass = document.getElementById('nuGeaPass').value.trim();
+    const geaAgent = document.getElementById('nuGeaAgent').value.trim();
+    
+    if (tucanoUser && tucanoPass) {
+      await fetch('/api/usuarios/' + d.id + '/credenciales', {
+        method: 'POST', headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({ proveedor: 'tucano', cred_user: tucanoUser, cred_pass: tucanoPass })
+      });
+    }
+    if (geaUser && geaPass) {
+      await fetch('/api/usuarios/' + d.id + '/credenciales', {
+        method: 'POST', headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({ proveedor: 'gea', cred_user: geaUser, cred_pass: geaPass, cred_extra: { agent: geaAgent } })
+      });
+    }
+    
+    // Limpiar form
+    document.getElementById('formNuevoUsuario').style.display = 'none';
+    ['nuNombre','nuUsuario','nuPassword','nuTucanoUser','nuTucanoPass','nuGeaUser','nuGeaPass','nuGeaAgent'].forEach(id => document.getElementById(id).value = '');
+    cargarUsuarios();
+    alert('✅ Usuario "' + usuario + '" creado');
+  } catch(e) { alert('Error: ' + e.message); }
+}
+
+async function toggleUsuario(id, activo) {
+  if (!confirm(activo ? '¿Activar este usuario?' : '¿Desactivar este usuario?')) return;
+  try {
+    await fetch('/api/usuarios/' + id, {
+      method: 'PUT', headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({ activo })
+    });
+    cargarUsuarios();
+  } catch(e) { alert('Error: ' + e.message); }
+}
+
+async function editarUsuario(id) {
+  document.getElementById('editUserId').value = id;
+  document.getElementById('editSysPass').value = '';
+  document.getElementById('editEmail').value = '';
+  document.getElementById('editTelefono').value = '';
+  document.getElementById('editTucanoUser').value = '';
+  document.getElementById('editTucanoPass').value = '';
+  document.getElementById('editGeaUser').value = '';
+  document.getElementById('editGeaPass').value = '';
+  document.getElementById('editGeaAgent').value = '';
+
+  // Cargar credenciales actuales (usuario visible, no contraseña)
+  try {
+    const r = await fetch('/api/usuarios');
+    const d = await r.json();
+    const u = (d.usuarios || []).find(x => x.id === id);
+    if (u) {
+      const creds = u.credenciales || [];
+      const tucano = creds.find(c => c.proveedor === 'tucano');
+      const gea = creds.find(c => c.proveedor === 'gea');
+      if (tucano) document.getElementById('editTucanoUser').value = tucano.cred_user || '';
+      if (gea) document.getElementById('editGeaUser').value = gea.cred_user || '';
+      if (u.email) document.getElementById('editEmail').value = u.email;
+      if (u.telefono) document.getElementById('editTelefono').value = u.telefono;
+    }
+  } catch(e) {}
+
+  const modal = document.getElementById('modalEditarUsuario');
+  modal.style.display = 'flex';
+}
+
+function cerrarModalEditar() {
+  document.getElementById('modalEditarUsuario').style.display = 'none';
+}
+
+async function guardarEdicionUsuario() {
+  const id = document.getElementById('editUserId').value;
+  const sysPass = document.getElementById('editSysPass').value.trim();
+  const email = document.getElementById('editEmail').value.trim();
+  const telefono = document.getElementById('editTelefono').value.trim();
+  const tucanoUser = document.getElementById('editTucanoUser').value.trim();
+  const tucanoPass = document.getElementById('editTucanoPass').value.trim();
+  const geaUser = document.getElementById('editGeaUser').value.trim();
+  const geaPass = document.getElementById('editGeaPass').value.trim();
+  const geaAgent = document.getElementById('editGeaAgent').value.trim();
+
+  try {
+    // Contraseña del sistema
+    if (sysPass || email || telefono) {
+      await fetch('/api/usuarios/' + id, {
+        method: 'PUT', headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({ password: sysPass || undefined, email: email || undefined, telefono: telefono || undefined })
+      });
+    }
+    // Credenciales Tucano (si hay al menos usuario o pass)
+    if (tucanoUser || tucanoPass) {
+      await fetch('/api/usuarios/' + id + '/credenciales', {
+        method: 'POST', headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({ proveedor: 'tucano', cred_user: tucanoUser, cred_pass: tucanoPass })
+      });
+    }
+    // Credenciales GEA
+    if (geaUser || geaPass) {
+      await fetch('/api/usuarios/' + id + '/credenciales', {
+        method: 'POST', headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({ proveedor: 'gea', cred_user: geaUser, cred_pass: geaPass, cred_extra: { agent: geaAgent } })
+      });
+    }
+    cerrarModalEditar();
+    cargarUsuarios();
+    alert('✅ Usuario actualizado');
+  } catch(e) { alert('Error: ' + e.message); }
+}
+</script>
+<script>
+// ─── NOTIFICACIONES ───
+let notifOpen = false;
+const _token = localStorage.getItem('lt_token');
+
+async function _nfetch(url, opts={}) {
+  opts.headers = opts.headers || {};
+  opts.headers['X-Session-Token'] = _token;
+  return fetch(url, opts);
+}
+
+async function fetchNotifCount() {
+  try {
+    const r = await _nfetch('/notificaciones/count');
+    const d = await r.json();
+    const badge = document.getElementById('notifBadge');
+    if (d.count > 0) {
+      badge.textContent = d.count > 9 ? '9+' : d.count;
+      badge.style.display = 'block';
+    } else {
+      badge.style.display = 'none';
+    }
+  } catch(e) {}
+}
+
+async function fetchNotifs() {
+  try {
+    const r = await _nfetch('/notificaciones');
+    const d = await r.json();
+    const list = document.getElementById('notifList');
+    if (!d.notificaciones?.length) {
+      list.innerHTML = '<div style="padding:24px;text-align:center;color:#666;font-size:13px;">Sin notificaciones</div>';
+      return;
+    }
+    list.innerHTML = d.notificaciones.map(n => {
+      const fecha = new Date(n.created_at);
+      const diff = Date.now() - fecha.getTime();
+      const mins = Math.floor(diff / 60000);
+      const hace = mins < 1 ? 'Justo ahora' : mins < 60 ? `Hace ${mins}min` : Math.floor(mins/60) < 24 ? `Hace ${Math.floor(mins/60)}h` : `Hace ${Math.floor(mins/1440)}d`;
+      const icono = n.tipo === 'CHECKIN_REMINDER' ? '✈️' : n.tipo === 'ESTADO_CAMBIO' ? '🔄' : n.tipo === 'VUELO_CAMBIO' ? '⚠️' : '📌';
+      const bg = n.leida ? '#1a1f2e' : '#1e2a3a';
+      const border = n.leida ? '' : 'border-left:3px solid #c9a84c;';
+      return `<div style="padding:12px 16px;${border}background:${bg};border-bottom:1px solid #262d3d;cursor:pointer;" onclick="notifClick(${n.id})">
+        <div style="display:flex;gap:8px;align-items:start;">
+          <span style="font-size:16px;">${icono}</span>
+          <div style="flex:1;min-width:0;">
+            <div style="font-size:12px;font-weight:${n.leida ? '400' : '600'};color:#e0e0e0;line-height:1.4;">${n.pnr ? '<span style="color:#c9a84c;">' + n.pnr + '</span> — ' : ''}${n.mensaje}</div>
+            <div style="font-size:10px;color:#666;margin-top:4px;">${hace}</div>
+          </div>
+        </div>
+      </div>`;
+    }).join('');
+  } catch(e) {}
+}
+
+function toggleNotifs() {
+  const panel = document.getElementById('notifPanel');
+  notifOpen = !notifOpen;
+  panel.style.display = notifOpen ? 'block' : 'none';
+  if (notifOpen) fetchNotifs();
+}
+
+async function notifClick(id) {
+  await _nfetch(`/notificaciones/${id}/leer`, { method: 'PUT' });
+  fetchNotifCount();
+  // Switch to reservas tab
+  mostrarVista('reservas', document.querySelectorAll('.nav-tab')[1]);
+}
+
+async function marcarTodasLeidas() {
+  await _nfetch('/notificaciones/leer-todas', { method: 'PUT' });
+  fetchNotifCount();
+  fetchNotifs();
+}
+
+document.addEventListener('click', e => {
+  const wrapper = document.getElementById('notifWrapper');
+  if (notifOpen && !wrapper.contains(e.target)) {
+    document.getElementById('notifPanel').style.display = 'none';
+    notifOpen = false;
+  }
+});
+
+fetchNotifCount();
+setInterval(fetchNotifCount, 60000);
+
+async function ejecutarCronManual() {
+  const btn = document.getElementById('btnVerificarTodo');
+  try {
+    btn.disabled = true;
+    btn.textContent = '⏳ Verificando...';
+    await _nfetch('/cron/verificar', { method: 'POST' });
+    btn.textContent = '✅ Listo';
+    setTimeout(() => { btn.textContent = '🔍 Verificar todo'; btn.disabled = false; }, 2000);
+    fetchNotifCount();
+    if (typeof cargarReservas === 'function') cargarReservas();
+  } catch(e) {
+    btn.textContent = '🔍 Verificar todo';
+    btn.disabled = false;
+  }
+}
+</script>
+<!-- Modal Editar Usuario -->
+<div id="modalEditarUsuario" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.7);z-index:9999;display:none;align-items:center;justify-content:center;">
+  <div style="background:#161b27;border:1px solid var(--border);border-radius:12px;padding:28px;width:420px;max-width:95vw;">
+    <h3 style="margin:0 0 20px;font-size:16px;font-weight:700;">✏️ Editar Usuario</h3>
+    <input type="hidden" id="editUserId">
+    
+    <div style="margin-bottom:16px;">
+      <div style="font-size:11px;color:var(--muted);font-weight:600;margin-bottom:6px;">DATOS DE CONTACTO</div>
+      <input id="editEmail" type="email" placeholder="Email (ej: ruth@luckytourviajes.com)" style="width:100%;background:#0d1117;border:1px solid var(--border);border-radius:6px;padding:8px 10px;color:#e6edf3;font-size:13px;box-sizing:border-box;font-family:inherit;margin-bottom:6px;">
+      <input id="editTelefono" type="text" placeholder="Teléfono (ej: +54 9 11 6847 0986)" style="width:100%;background:#0d1117;border:1px solid var(--border);border-radius:6px;padding:8px 10px;color:#e6edf3;font-size:13px;box-sizing:border-box;font-family:inherit;">
+    </div>
+
+    <div style="margin-bottom:16px;">
+      <div style="font-size:11px;color:var(--muted);font-weight:600;margin-bottom:6px;">CONTRASEÑA DEL SISTEMA</div>
+      <input id="editSysPass" type="password" placeholder="Nueva contraseña (dejar vacío para no cambiar)" style="width:100%;background:#0d1117;border:1px solid var(--border);border-radius:6px;padding:8px 10px;color:#e6edf3;font-size:13px;box-sizing:border-box;font-family:inherit;">
+    </div>
+
+    <div style="border-top:1px solid var(--border);margin:16px 0 12px;"></div>
+    <div style="font-size:11px;color:var(--muted);font-weight:600;margin-bottom:12px;">CREDENCIALES TUCANO</div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px;">
+      <input id="editTucanoUser" type="text" placeholder="Usuario" style="background:#0d1117;border:1px solid var(--border);border-radius:6px;padding:8px 10px;color:#e6edf3;font-size:13px;font-family:inherit;">
+      <input id="editTucanoPass" type="password" placeholder="Contraseña" style="background:#0d1117;border:1px solid var(--border);border-radius:6px;padding:8px 10px;color:#e6edf3;font-size:13px;font-family:inherit;">
+    </div>
+
+    <div style="border-top:1px solid var(--border);margin:16px 0 12px;"></div>
+    <div style="font-size:11px;color:var(--muted);font-weight:600;margin-bottom:12px;">CREDENCIALES GEA</div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px;">
+      <input id="editGeaUser" type="text" placeholder="Usuario" style="background:#0d1117;border:1px solid var(--border);border-radius:6px;padding:8px 10px;color:#e6edf3;font-size:13px;font-family:inherit;">
+      <input id="editGeaPass" type="password" placeholder="Contraseña" style="background:#0d1117;border:1px solid var(--border);border-radius:6px;padding:8px 10px;color:#e6edf3;font-size:13px;font-family:inherit;">
+    </div>
+    <input id="editGeaAgent" type="text" placeholder="Agente GEA (ej: GFinkelstein)" style="width:100%;background:#0d1117;border:1px solid var(--border);border-radius:6px;padding:8px 10px;color:#e6edf3;font-size:13px;box-sizing:border-box;font-family:inherit;margin-bottom:4px;">
+    <div style="font-size:10px;color:#484f58;margin-bottom:16px;">Dejá los campos vacíos para no modificar</div>
+
+    <div style="display:flex;gap:8px;justify-content:flex-end;">
+      <button onclick="cerrarModalEditar()" style="background:none;border:1px solid var(--border);color:var(--muted);border-radius:6px;padding:8px 16px;font-size:13px;cursor:pointer;font-family:inherit;">Cancelar</button>
+      <button onclick="guardarEdicionUsuario()" style="background:var(--gold);color:#000;border:none;border-radius:6px;padding:8px 16px;font-size:13px;font-weight:600;cursor:pointer;font-family:inherit;">Guardar</button>
+    </div>
+  </div>
+</div>
+</body>
+</html>
