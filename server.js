@@ -3,8 +3,62 @@ const { Resend } = require('resend');
 const express = require('express');
 const path = require('path');
 const crypto = require('crypto');
+const helmet = require('helmet');
+const cors = require('cors');
+const rateLimit = require('express-rate-limit');
 const app = express();
-app.use(express.json({ limit: '20mb' }));
+
+// ─── SEGURIDAD ────────────────────────────────────────────────
+
+// Headers de seguridad
+app.use(helmet({
+  contentSecurityPolicy: false // lo desactivamos para no romper el frontend existente
+}));
+
+// CORS — solo acepta requests del dominio propio
+const ALLOWED_ORIGINS = (process.env.ALLOWED_ORIGINS || '')
+  .split(',').map(s => s.trim()).filter(Boolean);
+// Siempre incluir el dominio Railway propio
+if (process.env.RAILWAY_PUBLIC_DOMAIN) {
+  ALLOWED_ORIGINS.push(`https://${process.env.RAILWAY_PUBLIC_DOMAIN}`);
+}
+app.use(cors({
+  origin: function(origin, callback) {
+    // Permitir requests sin origin (apps nativas, Postman interno, Railway health checks)
+    if (!origin) return callback(null, true);
+    if (ALLOWED_ORIGINS.length === 0 || ALLOWED_ORIGINS.includes(origin)) {
+      return callback(null, true);
+    }
+    callback(new Error('Origen no permitido'));
+  },
+  credentials: true
+}));
+
+// Rate limiting — anti-abuso
+const limiterGeneral = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutos
+  max: 300,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { ok: false, error: 'Demasiadas solicitudes. Intentá en unos minutos.' }
+});
+const limiterLogin = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 10, // máximo 10 intentos de login cada 15 minutos
+  message: { ok: false, error: 'Demasiados intentos de login. Esperá 15 minutos.' }
+});
+const limiterBusqueda = rateLimit({
+  windowMs: 60 * 1000, // 1 minuto
+  max: 30, // máximo 30 búsquedas por minuto
+  message: { ok: false, error: 'Demasiadas búsquedas. Esperá un momento.' }
+});
+app.use(limiterGeneral);
+app.use('/api/login', limiterLogin);
+app.use('/buscar-vuelos', limiterBusqueda);
+
+// ─────────────────────────────────────────────────────────────
+
+app.use(express.json({ limit: '5mb' })); // reducido de 20mb — no hay motivo para payloads gigantes
 
 // ─── AUTH: Sessions ───
 const sessions = new Map(); // token → { userId, nombre, usuario, rol, expiry }
@@ -24,7 +78,14 @@ function verifyPassword(password, salt, storedHash) {
 
 function createSession(user) {
   const token = crypto.randomBytes(32).toString('hex');
-  sessions.set(token, { userId: user.id, nombre: user.nombre, usuario: user.usuario, rol: user.rol, expiry: Date.now() + SESSION_TTL });
+  sessions.set(token, {
+    userId: user.id,
+    nombre: user.nombre,
+    usuario: user.usuario,
+    rol: user.rol,
+    empresa_id: user.empresa_id || 1,
+    expiry: Date.now() + SESSION_TTL
+  });
   return token;
 }
 
@@ -114,10 +175,12 @@ app.get('/api/me', (req, res) => {
 app.get('/api/usuarios', async (req, res) => {
   if (req.user?.rol !== 'admin') return res.status(403).json({ ok: false, error: 'Sin permisos' });
   try {
+    const eid = req.user.empresa_id || 1;
     const r = await db.query(`SELECT u.id, u.nombre, u.usuario, u.rol, u.activo, u.created_at, u.email, u.telefono,
       json_agg(json_build_object('proveedor', uc.proveedor, 'cred_user', uc.cred_user, 'activo', uc.activo)) FILTER (WHERE uc.id IS NOT NULL) as credenciales
       FROM usuarios u LEFT JOIN usuario_credenciales uc ON uc.usuario_id = u.id
-      GROUP BY u.id ORDER BY u.id`);
+      WHERE u.empresa_id=$1
+      GROUP BY u.id ORDER BY u.id`, [eid]);
     res.json({ ok: true, usuarios: r.rows });
   } catch(e) { res.json({ ok: false, error: e.message }); }
 });
@@ -126,10 +189,15 @@ app.post('/api/usuarios', async (req, res) => {
   if (req.user?.rol !== 'admin') return res.status(403).json({ ok: false, error: 'Sin permisos' });
   const { nombre, usuario, password, rol } = req.body;
   if (!nombre || !usuario || !password) return res.json({ ok: false, error: 'Nombre, usuario y contraseña requeridos' });
+  // Solo superadmin (usuario 'guido') puede crear otros admins
+  const rolFinal = (req.user.usuario === 'guido' && rol === 'admin') ? 'admin' : 'vendedor';
   try {
     const { salt, hash } = hashPassword(password);
-    const r = await db.query(`INSERT INTO usuarios (nombre, usuario, password_hash, password_salt, rol) VALUES ($1,$2,$3,$4,$5) RETURNING id`,
-      [nombre, usuario, hash, salt, rol || 'vendedor']);
+    const eid = req.user.empresa_id || 1;
+    const r = await db.query(
+      `INSERT INTO usuarios (empresa_id, nombre, usuario, password_hash, password_salt, rol) VALUES ($1,$2,$3,$4,$5,$6) RETURNING id`,
+      [eid, nombre, usuario, hash, salt, rolFinal]
+    );
     res.json({ ok: true, id: r.rows[0].id });
   } catch(e) {
     if (e.message.includes('unique')) return res.json({ ok: false, error: 'El usuario ya existe' });
@@ -140,14 +208,20 @@ app.post('/api/usuarios', async (req, res) => {
 app.put('/api/usuarios/:id', async (req, res) => {
   if (req.user?.rol !== 'admin') return res.status(403).json({ ok: false, error: 'Sin permisos' });
   const { nombre, password, rol, activo, email, telefono } = req.body;
+  const eid = req.user.empresa_id || 1;
+  // Solo puede modificar usuarios de su misma empresa
+  const check = await db.query('SELECT id FROM usuarios WHERE id=$1 AND empresa_id=$2', [req.params.id, eid]);
+  if (!check.rows.length) return res.status(403).json({ ok: false, error: 'Sin permisos' });
+  // No puede escalar rol a admin a menos que sea guido
+  const rolFinal = (req.user.usuario === 'guido') ? rol : 'vendedor';
   try {
     if (password) {
       const { salt, hash } = hashPassword(password);
-      await db.query('UPDATE usuarios SET nombre=COALESCE($1,nombre), password_hash=$2, password_salt=$3, rol=COALESCE($4,rol), activo=COALESCE($5,activo), email=COALESCE($6,email), telefono=COALESCE($7,telefono) WHERE id=$8',
-        [nombre, hash, salt, rol, activo, email, telefono, req.params.id]);
+      await db.query('UPDATE usuarios SET nombre=COALESCE($1,nombre), password_hash=$2, password_salt=$3, rol=COALESCE($4,rol), activo=COALESCE($5,activo), email=COALESCE($6,email), telefono=COALESCE($7,telefono) WHERE id=$8 AND empresa_id=$9',
+        [nombre, hash, salt, rolFinal, activo, email, telefono, req.params.id, eid]);
     } else {
-      await db.query('UPDATE usuarios SET nombre=COALESCE($1,nombre), rol=COALESCE($2,rol), activo=COALESCE($3,activo), email=COALESCE($4,email), telefono=COALESCE($5,telefono) WHERE id=$6',
-        [nombre, rol, activo, email, telefono, req.params.id]);
+      await db.query('UPDATE usuarios SET nombre=COALESCE($1,nombre), rol=COALESCE($2,rol), activo=COALESCE($3,activo), email=COALESCE($4,email), telefono=COALESCE($5,telefono) WHERE id=$6 AND empresa_id=$7',
+        [nombre, rolFinal, activo, email, telefono, req.params.id, eid]);
     }
     res.json({ ok: true });
   } catch(e) { res.json({ ok: false, error: e.message }); }
@@ -156,6 +230,10 @@ app.put('/api/usuarios/:id', async (req, res) => {
 // ─── ADMIN: Credenciales por proveedor ───
 app.post('/api/usuarios/:id/credenciales', async (req, res) => {
   if (req.user?.rol !== 'admin') return res.status(403).json({ ok: false, error: 'Sin permisos' });
+  const eid = req.user.empresa_id || 1;
+  // Verificar que el usuario target pertenece a la misma empresa
+  const check = await db.query('SELECT id FROM usuarios WHERE id=$1 AND empresa_id=$2', [req.params.id, eid]);
+  if (!check.rows.length) return res.status(403).json({ ok: false, error: 'Sin permisos' });
   const { proveedor, cred_user, cred_pass, cred_extra } = req.body;
   try {
     await db.query(`INSERT INTO usuario_credenciales (usuario_id, proveedor, cred_user, cred_pass, cred_extra)
@@ -578,6 +656,7 @@ if (db) {
       // Tabla de usuarios
       await db.query(`CREATE TABLE IF NOT EXISTS usuarios (
         id SERIAL PRIMARY KEY,
+        empresa_id INTEGER DEFAULT 1,
         nombre TEXT NOT NULL,
         usuario TEXT UNIQUE NOT NULL,
         password_hash TEXT NOT NULL,
@@ -586,6 +665,8 @@ if (db) {
         activo BOOLEAN DEFAULT true,
         created_at TIMESTAMPTZ DEFAULT NOW()
       )`);
+      await db.query(`ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS empresa_id INTEGER DEFAULT 1`);
+      await db.query(`UPDATE usuarios SET empresa_id=1 WHERE empresa_id IS NULL`);
       
       // Tabla de credenciales por proveedor
       await db.query(`CREATE TABLE IF NOT EXISTS usuario_credenciales (
@@ -622,6 +703,7 @@ if (db) {
       // Notificaciones y cron
       await db.query(`CREATE TABLE IF NOT EXISTS notificaciones (
         id SERIAL PRIMARY KEY,
+        empresa_id INTEGER DEFAULT 1,
         reserva_id INTEGER,
         pnr TEXT,
         tipo TEXT,
@@ -630,6 +712,8 @@ if (db) {
         leida BOOLEAN DEFAULT false,
         created_at TIMESTAMPTZ DEFAULT NOW()
       )`);
+      await db.query(`ALTER TABLE notificaciones ADD COLUMN IF NOT EXISTS empresa_id INTEGER DEFAULT 1`);
+      await db.query(`UPDATE notificaciones SET empresa_id=1 WHERE empresa_id IS NULL`);
 
       await db.query(`ALTER TABLE reservas ADD COLUMN IF NOT EXISTS ultimo_check_cron TIMESTAMPTZ`);
       await db.query(`ALTER TABLE reservas ADD COLUMN IF NOT EXISTS cron_finalizado BOOLEAN DEFAULT false`);
@@ -2075,12 +2159,12 @@ app.post('/crear-reserva', async (req, res) => {
       if (db) {
         try {
           await db.query(`INSERT INTO reservas (
-            pnr,order_id,quotation_id,tipo_viaje,origen,destino,fecha_salida,
+            empresa_id,pnr,order_id,quotation_id,tipo_viaje,origen,destino,fecha_salida,
             aerolinea,precio_usd,precio_venta_usd,moneda,adultos,ninos,infantes,estado,
             itinerario_json,pasajeros_json,contacto_json,notas,usuario_id,vendedor,
             cabina,gds,segmentos_json,moneda_original,precio_venta_detalle)
-            VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26)`,
-            [pnr, pnr, String(quotationId),
+            VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27)`,
+            [req.user?.empresa_id || 1, pnr, pnr, String(quotationId),
              vueloInfo?.tipo, vueloInfo?.origen, vueloInfo?.destino, vueloInfo?.salida,
              vueloInfo?.aerolinea, vueloInfo?.precioUSD, vueloInfo?.precioVentaUSD || null, 'USD',
              pasajeros.filter(p=>p.tipo==='ADT').length,
@@ -2424,12 +2508,12 @@ app.post('/crear-reserva', async (req, res) => {
             .filter(s => s.vuelo && s.origen);
 
           await db.query(`INSERT INTO reservas (
-            pnr,order_id,quotation_id,tipo_viaje,origen,destino,fecha_salida,
+            empresa_id,pnr,order_id,quotation_id,tipo_viaje,origen,destino,fecha_salida,
             aerolinea,precio_usd,precio_venta_usd,moneda,adultos,ninos,infantes,estado,
             itinerario_json,pasajeros_json,contacto_json,notas,usuario_id,vendedor,
             cabina,fare_basis,time_limit,gds,segmentos_json,moneda_original,precio_venta_detalle)
-            VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28)`,
-            [pnr, orderId, String(quotationId),
+            VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29)`,
+            [req.user?.empresa_id || 1, pnr, orderId, String(quotationId),
              vueloInfo?.tipo, vueloInfo?.origen, vueloInfo?.destino, vueloInfo?.salida,
              vueloInfo?.aerolinea, vueloInfo?.precioUSD, vueloInfo?.precioVentaUSD || null, 'USD',
              pasajeros.filter(p=>p.tipo==='ADT').length,
@@ -2609,14 +2693,14 @@ app.post('/crear-reserva', async (req, res) => {
                                  data.timeLimit || data.time_limit || null;
 
         const resIns = await db.query(`INSERT INTO reservas (
-          pnr,order_id,order_number,source,search_id,quotation_id,
+          empresa_id,pnr,order_id,order_number,source,search_id,quotation_id,
           tipo_viaje,origen,destino,fecha_salida,
           aerolinea,precio_usd,precio_venta_usd,moneda,adultos,ninos,infantes,estado,
           itinerario_json,pasajeros_json,contacto_json,usuario_id,vendedor,
           cabina,gds,segmentos_json,moneda_original,time_limit,precio_venta_detalle)
-          VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29)
+          VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29,$30)
           RETURNING id`,
-          [data.recordLocator, data.orderId, data.orderNumber, data.source,
+          [req.user?.empresa_id || 1, data.recordLocator, data.orderId, data.orderNumber, data.source,
            searchId, String(quotationId),
            vueloInfo?.tipo, vueloInfo?.origen, vueloInfo?.destino, vueloInfo?.salida,
            vueloInfo?.aerolinea, vueloInfo?.precioUSD, vueloInfo?.precioVentaUSD || null, vueloInfo?.moneda,
@@ -2722,7 +2806,12 @@ app.get('/reservas', async (req, res) => {
     let sql = 'SELECT * FROM reservas';
     const params = [];
     const where = [];
-    // Vendedores solo ven sus reservas, admin ve todas
+
+    // Siempre filtrar por empresa del usuario logueado
+    params.push(req.user.empresa_id || 1);
+    where.push(`empresa_id=$${params.length}`);
+
+    // Vendedores solo ven sus reservas, admin ve todas las de su empresa
     if (req.user && req.user.rol !== 'admin') {
       params.push(req.user.userId);
       where.push(`usuario_id=$${params.length}`);
@@ -2747,7 +2836,10 @@ app.get('/reservas', async (req, res) => {
 app.get('/reservas/:id', async (req, res) => {
   if (!db) return res.json({ ok: false });
   try {
-    const r = await db.query('SELECT * FROM reservas WHERE id=$1', [req.params.id]);
+    const r = await db.query(
+      'SELECT * FROM reservas WHERE id=$1 AND empresa_id=$2',
+      [req.params.id, req.user.empresa_id || 1]
+    );
     if (!r.rows.length) return res.json({ ok: false, error: 'No encontrada' });
     const reserva = r.rows[0];
     const pax = await db.query(
@@ -2786,7 +2878,7 @@ app.put('/reservas/:id/notas', async (req, res) => {
 app.post('/reservas/:id/verificar', async (req, res) => {
   if (!db) return res.json({ ok: false, error: 'Sin DB' });
   try {
-    const r = await db.query('SELECT * FROM reservas WHERE id=$1', [req.params.id]);
+    const r = await db.query('SELECT * FROM reservas WHERE id=$1 AND empresa_id=$2', [req.params.id, req.user?.empresa_id || 1]);
     if (!r.rows.length) throw new Error('Reserva no encontrada');
     const reserva = r.rows[0];
 
@@ -3042,7 +3134,7 @@ app.post('/reservas/:id/verificar', async (req, res) => {
 app.post('/reservas/:id/recotizar', async (req, res) => {
   if (!db) return res.json({ ok: false, error: 'Sin DB' });
   try {
-    const r = await db.query('SELECT * FROM reservas WHERE id=$1', [req.params.id]);
+    const r = await db.query('SELECT * FROM reservas WHERE id=$1 AND empresa_id=$2', [req.params.id, req.user?.empresa_id || 1]);
     if (!r.rows.length) throw new Error('Reserva no encontrada');
     const reserva = r.rows[0];
     if (!reserva.order_id) return res.json({ ok: false, error: 'Sin orderId' });
@@ -3287,7 +3379,7 @@ app.post('/reservas/:id/recotizar', async (req, res) => {
 app.post('/reservas/:id/guardar-tarifa', async (req, res) => {
   if (!db) return res.json({ ok: false, error: 'Sin DB' });
   try {
-    const r = await db.query('SELECT * FROM reservas WHERE id=$1', [req.params.id]);
+    const r = await db.query('SELECT * FROM reservas WHERE id=$1 AND empresa_id=$2', [req.params.id, req.user?.empresa_id || 1]);
     if (!r.rows.length) throw new Error('Reserva no encontrada');
     const reserva = r.rows[0];
 
@@ -3427,7 +3519,7 @@ app.post('/reservas/:id/guardar-tarifa', async (req, res) => {
 app.post('/reservas/:id/emitir', async (req, res) => {
   if (!db) return res.json({ ok: false, error: 'Sin DB' });
   try {
-    const r = await db.query('SELECT * FROM reservas WHERE id=$1', [req.params.id]);
+    const r = await db.query('SELECT * FROM reservas WHERE id=$1 AND empresa_id=$2', [req.params.id, req.user?.empresa_id || 1]);
     if (!r.rows.length) throw new Error('Reserva no encontrada');
     const reserva = r.rows[0];
     if (!reserva.order_id) return res.json({ ok: false, error: 'Sin orderId' });
@@ -3654,7 +3746,7 @@ Si algún dato no está visible, usá null. Para fechas usá siempre 2 dígitos 
 app.post('/reservas/:id/cancelar', async (req, res) => {
   if (!db) return res.json({ ok: false, error: 'Sin DB' });
   try {
-    const r = await db.query('SELECT * FROM reservas WHERE id=$1', [req.params.id]);
+    const r = await db.query('SELECT * FROM reservas WHERE id=$1 AND empresa_id=$2', [req.params.id, req.user?.empresa_id || 1]);
     if (!r.rows.length) throw new Error('Reserva no encontrada');
     const reserva = r.rows[0];
     if (!reserva.order_id) return res.json({ ok: false, error: 'Sin orderId' });
@@ -4230,9 +4322,13 @@ app.get('/notificaciones', async (req, res) => {
   if (!db) return res.json({ ok: false });
   try {
     const { leidas } = req.query;
-    let q = 'SELECT * FROM notificaciones ORDER BY created_at DESC LIMIT 50';
-    if (leidas === 'false') q = 'SELECT * FROM notificaciones WHERE leida=false ORDER BY created_at DESC LIMIT 50';
-    const r = await db.query(q);
+    const eid = req.user?.empresa_id || 1;
+    let r;
+    if (leidas === 'false') {
+      r = await db.query('SELECT * FROM notificaciones WHERE leida=false AND empresa_id=$1 ORDER BY created_at DESC LIMIT 50', [eid]);
+    } else {
+      r = await db.query('SELECT * FROM notificaciones WHERE empresa_id=$1 ORDER BY created_at DESC LIMIT 50', [eid]);
+    }
     res.json({ ok: true, notificaciones: r.rows });
   } catch(e) { res.json({ ok: false, error: e.message }); }
 });
@@ -4240,7 +4336,8 @@ app.get('/notificaciones', async (req, res) => {
 app.get('/notificaciones/count', async (req, res) => {
   if (!db) return res.json({ ok: false, count: 0 });
   try {
-    const r = await db.query('SELECT COUNT(*) as c FROM notificaciones WHERE leida=false');
+    const eid = req.user?.empresa_id || 1;
+    const r = await db.query('SELECT COUNT(*) as c FROM notificaciones WHERE leida=false AND empresa_id=$1', [eid]);
     res.json({ ok: true, count: parseInt(r.rows[0].c) });
   } catch(e) { res.json({ ok: false, count: 0 }); }
 });
@@ -4248,7 +4345,8 @@ app.get('/notificaciones/count', async (req, res) => {
 app.put('/notificaciones/:id/leer', async (req, res) => {
   if (!db) return res.json({ ok: false });
   try {
-    await db.query('UPDATE notificaciones SET leida=true WHERE id=$1', [req.params.id]);
+    const eid = req.user?.empresa_id || 1;
+    await db.query('UPDATE notificaciones SET leida=true WHERE id=$1 AND empresa_id=$2', [req.params.id, eid]);
     res.json({ ok: true });
   } catch(e) { res.json({ ok: false, error: e.message }); }
 });
@@ -4256,7 +4354,8 @@ app.put('/notificaciones/:id/leer', async (req, res) => {
 app.put('/notificaciones/leer-todas', async (req, res) => {
   if (!db) return res.json({ ok: false });
   try {
-    await db.query('UPDATE notificaciones SET leida=true WHERE leida=false');
+    const eid = req.user?.empresa_id || 1;
+    await db.query('UPDATE notificaciones SET leida=true WHERE leida=false AND empresa_id=$1', [eid]);
     res.json({ ok: true });
   } catch(e) { res.json({ ok: false, error: e.message }); }
 });
@@ -5960,4 +6059,129 @@ app.post('/generar-cotizacion', async (req, res) => {
     console.error('[Cotizacion] Error:', e.message);
     res.status(500).json({ ok: false, error: e.message });
   }
+});
+
+// ═══════════════════════════════════════════════════════════════
+// SUPERADMIN — Solo accesible por usuario 'guido'
+// ═══════════════════════════════════════════════════════════════
+
+function requireSuperAdmin(req, res, next) {
+  if (!req.user) return res.status(401).json({ ok: false, error: 'No autenticado' });
+  if (req.user.usuario !== 'guido') return res.status(403).json({ ok: false, error: 'Acceso denegado' });
+  next();
+}
+
+// Página superadmin
+app.get('/superadmin', (req, res) => {
+  res.sendFile(require('path').join(__dirname, 'public', 'superadmin.html'));
+});
+
+// ── Empresas ────────────────────────────────────────────────────
+
+// Listar todas las empresas con resumen
+app.get('/superadmin/empresas', requireSuperAdmin, async (req, res) => {
+  try {
+    const r = await db.query(`
+      SELECT e.*,
+        COUNT(DISTINCT u.id) FILTER (WHERE u.activo=true) as usuarios_activos,
+        COUNT(DISTINCT r.id) as total_reservas,
+        COUNT(DISTINCT r.id) FILTER (WHERE r.estado='CREADA') as reservas_creadas,
+        COUNT(DISTINCT r.id) FILTER (WHERE r.estado='EMITIDA') as reservas_emitidas,
+        COALESCE(SUM(r.precio_venta_usd), 0) as volumen_usd
+      FROM empresas e
+      LEFT JOIN usuarios u ON u.empresa_id = e.id
+      LEFT JOIN reservas r ON r.empresa_id = e.id
+      GROUP BY e.id
+      ORDER BY e.id
+    `);
+    res.json({ ok: true, empresas: r.rows });
+  } catch(e) { res.json({ ok: false, error: e.message }); }
+});
+
+// Crear empresa
+app.post('/superadmin/empresas', requireSuperAdmin, async (req, res) => {
+  const { nombre, dominio } = req.body;
+  if (!nombre) return res.json({ ok: false, error: 'Nombre requerido' });
+  try {
+    const r = await db.query(
+      `INSERT INTO empresas (nombre, dominio, activo) VALUES ($1,$2,true) RETURNING *`,
+      [nombre.trim(), (dominio || '').trim() || null]
+    );
+    res.json({ ok: true, empresa: r.rows[0] });
+  } catch(e) { res.json({ ok: false, error: e.message }); }
+});
+
+// Editar empresa
+app.put('/superadmin/empresas/:id', requireSuperAdmin, async (req, res) => {
+  const { nombre, dominio } = req.body;
+  try {
+    const r = await db.query(
+      `UPDATE empresas SET nombre=COALESCE($1,nombre), dominio=$2 WHERE id=$3 RETURNING *`,
+      [nombre, dominio || null, req.params.id]
+    );
+    res.json({ ok: true, empresa: r.rows[0] });
+  } catch(e) { res.json({ ok: false, error: e.message }); }
+});
+
+// Activar / desactivar empresa
+app.put('/superadmin/empresas/:id/estado', requireSuperAdmin, async (req, res) => {
+  const { activo } = req.body;
+  try {
+    await db.query(`UPDATE empresas SET activo=$1 WHERE id=$2`, [activo, req.params.id]);
+    // Si se desactiva, también desactivar sus usuarios
+    if (!activo) {
+      await db.query(`UPDATE usuarios SET activo=false WHERE empresa_id=$1 AND usuario != 'guido'`, [req.params.id]);
+    }
+    res.json({ ok: true });
+  } catch(e) { res.json({ ok: false, error: e.message }); }
+});
+
+// ── Usuarios de cualquier empresa ───────────────────────────────
+
+// Listar usuarios de una empresa
+app.get('/superadmin/empresas/:id/usuarios', requireSuperAdmin, async (req, res) => {
+  try {
+    const r = await db.query(
+      `SELECT id, nombre, usuario, rol, activo, email, created_at FROM usuarios WHERE empresa_id=$1 ORDER BY id`,
+      [req.params.id]
+    );
+    res.json({ ok: true, usuarios: r.rows });
+  } catch(e) { res.json({ ok: false, error: e.message }); }
+});
+
+// Crear usuario admin para una empresa
+app.post('/superadmin/empresas/:id/usuarios', requireSuperAdmin, async (req, res) => {
+  const { nombre, usuario, password, rol } = req.body;
+  if (!nombre || !usuario || !password) return res.json({ ok: false, error: 'Nombre, usuario y contraseña requeridos' });
+  try {
+    const { salt, hash } = hashPassword(password);
+    const r = await db.query(
+      `INSERT INTO usuarios (empresa_id, nombre, usuario, password_hash, password_salt, rol) VALUES ($1,$2,$3,$4,$5,$6) RETURNING id`,
+      [req.params.id, nombre, usuario, hash, salt, rol || 'admin']
+    );
+    res.json({ ok: true, id: r.rows[0].id });
+  } catch(e) {
+    if (e.message.includes('unique')) return res.json({ ok: false, error: 'El usuario ya existe' });
+    res.json({ ok: false, error: e.message });
+  }
+});
+
+// Activar/desactivar usuario
+app.put('/superadmin/usuarios/:id/estado', requireSuperAdmin, async (req, res) => {
+  const { activo } = req.body;
+  try {
+    await db.query(`UPDATE usuarios SET activo=$1 WHERE id=$2 AND usuario != 'guido'`, [activo, req.params.id]);
+    res.json({ ok: true });
+  } catch(e) { res.json({ ok: false, error: e.message }); }
+});
+
+// Cambiar contraseña de cualquier usuario
+app.put('/superadmin/usuarios/:id/password', requireSuperAdmin, async (req, res) => {
+  const { password } = req.body;
+  if (!password || password.length < 6) return res.json({ ok: false, error: 'Contraseña mínimo 6 caracteres' });
+  try {
+    const { salt, hash } = hashPassword(password);
+    await db.query(`UPDATE usuarios SET password_hash=$1, password_salt=$2 WHERE id=$3`, [hash, salt, req.params.id]);
+    res.json({ ok: true });
+  } catch(e) { res.json({ ok: false, error: e.message }); }
 });
