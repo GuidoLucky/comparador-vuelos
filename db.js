@@ -6,9 +6,29 @@ const pool = new Pool({
 });
 
 async function init() {
+  // ── Empresas (tenants) ──────────────────────────────────────
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS empresas (
+      id SERIAL PRIMARY KEY,
+      nombre TEXT NOT NULL,
+      dominio TEXT,
+      activo BOOLEAN DEFAULT true,
+      created_at TIMESTAMPTZ DEFAULT NOW()
+    );
+  `);
+
+  // Empresa por defecto (Lucky Tour)
+  await pool.query(`
+    INSERT INTO empresas (id, nombre, dominio, activo)
+    VALUES (1, 'Lucky Tour', 'comparador-vuelos-production.up.railway.app', true)
+    ON CONFLICT (id) DO NOTHING;
+  `);
+
+  // ── Clientes ────────────────────────────────────────────────
   await pool.query(`
     CREATE TABLE IF NOT EXISTS clientes (
       id SERIAL PRIMARY KEY,
+      empresa_id INTEGER REFERENCES empresas(id) DEFAULT 1,
       apellido TEXT NOT NULL,
       nombre TEXT NOT NULL,
       email TEXT,
@@ -35,9 +55,13 @@ async function init() {
       created_at TIMESTAMP DEFAULT NOW(),
       updated_at TIMESTAMP DEFAULT NOW()
     );
+  `);
 
+  // ── Reservas ────────────────────────────────────────────────
+  await pool.query(`
     CREATE TABLE IF NOT EXISTS reservas (
       id SERIAL PRIMARY KEY,
+      empresa_id INTEGER REFERENCES empresas(id) DEFAULT 1,
       pnr TEXT,
       order_id TEXT,
       order_number INTEGER,
@@ -60,7 +84,9 @@ async function init() {
       contacto_json TEXT,
       created_at TIMESTAMP DEFAULT NOW()
     );
+  `);
 
+  await pool.query(`
     CREATE TABLE IF NOT EXISTS reserva_pasajeros (
       id SERIAL PRIMARY KEY,
       reserva_id INTEGER REFERENCES reservas(id),
@@ -71,6 +97,7 @@ async function init() {
       email TEXT
     );
   `);
+
   await pool.query(`
     CREATE TABLE IF NOT EXISTS config (
       clave TEXT PRIMARY KEY,
@@ -78,6 +105,16 @@ async function init() {
       updated_at TIMESTAMP DEFAULT NOW()
     );
   `);
+
+  // ── Migraciones seguras (idempotentes) ──────────────────────
+  // Agregar empresa_id a tablas existentes si no tienen
+  await pool.query(`ALTER TABLE clientes  ADD COLUMN IF NOT EXISTS empresa_id INTEGER REFERENCES empresas(id) DEFAULT 1`);
+  await pool.query(`ALTER TABLE reservas  ADD COLUMN IF NOT EXISTS empresa_id INTEGER REFERENCES empresas(id) DEFAULT 1`);
+
+  // Asignar empresa 1 a registros históricos que no tengan empresa_id
+  await pool.query(`UPDATE clientes SET empresa_id=1 WHERE empresa_id IS NULL`);
+  await pool.query(`UPDATE reservas SET empresa_id=1 WHERE empresa_id IS NULL`);
+
   console.log('[DB] PostgreSQL listo');
 }
 
