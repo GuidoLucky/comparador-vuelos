@@ -1,0 +1,568 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Superadmin — Lucky Tour</title>
+<style>
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background:#f0f2f5; color:#1a1a2e; }
+
+  .nav { background:#1a1a2e; padding:12px 24px; display:flex; align-items:center; gap:20px; }
+  .nav .brand { color:#c9a84c; font-weight:700; font-size:18px; margin-right:auto; }
+  .nav a { color:rgba(255,255,255,0.7); text-decoration:none; font-size:14px; font-weight:500; }
+  .nav a:hover { color:#fff; }
+  .nav .badge-super { background:#c9a84c; color:#1a1a2e; padding:3px 10px; border-radius:20px; font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:0.5px; }
+
+  .container { max-width:1200px; margin:0 auto; padding:24px; }
+  .page-header { display:flex; align-items:center; justify-content:space-between; margin-bottom:24px; flex-wrap:wrap; gap:12px; }
+  .page-header h1 { font-size:24px; color:#1a1a2e; }
+  .page-header h1 span { color:#c9a84c; }
+
+  /* STATS GLOBALES */
+  .stats-global { display:grid; grid-template-columns:repeat(auto-fit,minmax(160px,1fr)); gap:16px; margin-bottom:28px; }
+  .stat { background:#fff; border-radius:12px; padding:18px 20px; box-shadow:0 1px 3px rgba(0,0,0,0.08); }
+  .stat .num { font-size:30px; font-weight:700; color:#1a1a2e; }
+  .stat .lbl { font-size:12px; color:#888; text-transform:uppercase; letter-spacing:0.5px; margin-top:3px; }
+  .stat.gold .num { color:#c9a84c; }
+  .stat.green .num { color:#27ae60; }
+
+  /* EMPRESAS GRID */
+  .empresas-header { display:flex; align-items:center; justify-content:space-between; margin-bottom:16px; }
+  .empresas-header h2 { font-size:17px; font-weight:700; }
+  .empresas-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(340px,1fr)); gap:16px; }
+
+  .empresa-card { background:#fff; border-radius:14px; box-shadow:0 1px 4px rgba(0,0,0,0.08); overflow:hidden; transition:box-shadow .15s; }
+  .empresa-card:hover { box-shadow:0 4px 16px rgba(0,0,0,0.12); }
+  .empresa-card.inactiva { opacity:0.55; }
+
+  .empresa-card .card-top { padding:18px 20px 14px; display:flex; align-items:flex-start; justify-content:space-between; gap:12px; }
+  .empresa-card .card-top .info { flex:1; min-width:0; }
+  .empresa-card .card-top .info h3 { font-size:16px; font-weight:700; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .empresa-card .card-top .info .dominio { font-size:12px; color:#888; margin-top:3px; }
+  .empresa-card .card-top .info .eid { font-size:11px; color:#bbb; margin-top:2px; font-family:monospace; }
+
+  .empresa-card .card-stats { padding:0 20px 14px; display:grid; grid-template-columns:repeat(3,1fr); gap:8px; }
+  .empresa-card .cs { text-align:center; background:#f8f9fa; border-radius:8px; padding:8px 4px; }
+  .empresa-card .cs .cn { font-size:18px; font-weight:700; color:#1a1a2e; }
+  .empresa-card .cs .cl { font-size:10px; color:#888; text-transform:uppercase; }
+  .empresa-card .cs.em .cn { color:#27ae60; }
+  .empresa-card .cs.vol .cn { font-size:14px; color:#c9a84c; }
+
+  .empresa-card .card-actions { border-top:1px solid #f0f0f0; padding:12px 20px; display:flex; gap:8px; flex-wrap:wrap; }
+
+  /* BUTTONS */
+  .btn { display:inline-flex; align-items:center; gap:6px; padding:8px 14px; border-radius:8px; font-size:13px; font-weight:600; border:none; cursor:pointer; transition:all .15s; }
+  .btn-primary { background:#1a1a2e; color:#fff; }
+  .btn-primary:hover { background:#2d2d4e; }
+  .btn-gold { background:#c9a84c; color:#fff; }
+  .btn-gold:hover { background:#b8962e; }
+  .btn-sm { padding:6px 10px; font-size:12px; }
+  .btn-ghost { background:transparent; color:#555; border:1px solid #ddd; }
+  .btn-ghost:hover { background:#f0f0f0; }
+  .btn-danger { background:#fff0f0; color:#c0392b; border:1px solid #f5c0c0; }
+  .btn-danger:hover { background:#fde8e8; }
+  .btn-success { background:#e8f8ef; color:#27ae60; border:1px solid #a8e6c0; }
+  .btn-success:hover { background:#d0f0de; }
+
+  /* BADGE ESTADO */
+  .badge-activa { background:#e8f8ef; color:#27ae60; padding:3px 10px; border-radius:20px; font-size:11px; font-weight:600; }
+  .badge-inactiva { background:#fde8e8; color:#c0392b; padding:3px 10px; border-radius:20px; font-size:11px; font-weight:600; }
+
+  /* MODAL */
+  .modal-overlay { display:none; position:fixed; inset:0; background:rgba(0,0,0,0.5); z-index:200; justify-content:center; align-items:flex-start; padding:40px 20px; overflow-y:auto; }
+  .modal-overlay.show { display:flex; }
+  .modal { background:#fff; border-radius:16px; width:100%; max-width:560px; box-shadow:0 20px 60px rgba(0,0,0,0.3); }
+  .modal-header { padding:20px 24px 16px; border-bottom:1px solid #eee; display:flex; justify-content:space-between; align-items:center; }
+  .modal-header h2 { font-size:17px; font-weight:700; }
+  .modal-close { background:none; border:none; font-size:22px; cursor:pointer; color:#999; line-height:1; }
+  .modal-close:hover { color:#333; }
+  .modal-body { padding:24px; }
+  .modal-footer { padding:16px 24px; border-top:1px solid #eee; display:flex; justify-content:flex-end; gap:10px; }
+
+  /* FORM */
+  .form-group { margin-bottom:16px; }
+  .form-group label { display:block; font-size:13px; font-weight:600; color:#444; margin-bottom:6px; }
+  .form-group input, .form-group select { width:100%; padding:10px 12px; border:1px solid #ddd; border-radius:8px; font-size:14px; background:#fff; transition:border-color .15s; }
+  .form-group input:focus, .form-group select:focus { outline:none; border-color:#1a1a2e; }
+  .form-hint { font-size:12px; color:#888; margin-top:4px; }
+
+  /* USUARIOS TABLE */
+  .usuarios-table { width:100%; border-collapse:collapse; margin-top:12px; }
+  .usuarios-table th { background:#f8f9fa; padding:9px 12px; text-align:left; font-size:11px; text-transform:uppercase; color:#888; letter-spacing:0.4px; border-bottom:2px solid #eee; }
+  .usuarios-table td { padding:10px 12px; border-bottom:1px solid #f0f0f0; font-size:13px; }
+  .usuarios-table tr:hover td { background:#f8f9ff; }
+  .rol-badge { display:inline-block; padding:2px 8px; border-radius:10px; font-size:10px; font-weight:700; text-transform:uppercase; }
+  .rol-admin { background:#eaf2fb; color:#2980b9; }
+  .rol-vendedor { background:#f0f0f0; color:#666; }
+
+  /* TOAST */
+  .toast { position:fixed; bottom:24px; right:24px; background:#1a1a2e; color:#fff; padding:12px 20px; border-radius:10px; font-size:14px; font-weight:500; z-index:999; opacity:0; transform:translateY(10px); transition:all .25s; pointer-events:none; }
+  .toast.show { opacity:1; transform:translateY(0); }
+  .toast.error { background:#c0392b; }
+  .toast.success { background:#27ae60; }
+
+  /* LOADING */
+  .spinner { display:inline-block; width:16px; height:16px; border:2px solid rgba(255,255,255,0.3); border-top-color:#fff; border-radius:50%; animation:spin .6s linear infinite; }
+  @keyframes spin { to { transform:rotate(360deg); } }
+
+  .empty { text-align:center; padding:40px; color:#aaa; font-size:14px; }
+</style>
+</head>
+<body>
+
+<nav class="nav">
+  <span class="brand">✈ Lucky Tour</span>
+  <span class="badge-super">⚡ Superadmin</span>
+  <a href="/">Buscador</a>
+  <a href="/reservas.html">Reservas</a>
+  <a id="btnLogout" href="#" style="color:#e74c3c;">Salir</a>
+</nav>
+
+<div class="container">
+  <div class="page-header">
+    <h1>Panel <span>Superadmin</span></h1>
+    <button class="btn btn-gold" onclick="abrirModalNuevaEmpresa()">+ Nueva empresa</button>
+  </div>
+
+  <!-- Stats globales -->
+  <div class="stats-global" id="statsGlobal">
+    <div class="stat"><div class="num">—</div><div class="lbl">Empresas activas</div></div>
+    <div class="stat gold"><div class="num">—</div><div class="lbl">Usuarios totales</div></div>
+    <div class="stat green"><div class="num">—</div><div class="lbl">Reservas totales</div></div>
+  </div>
+
+  <!-- Lista empresas -->
+  <div class="empresas-header">
+    <h2>Empresas</h2>
+  </div>
+  <div class="empresas-grid" id="empresasGrid">
+    <div class="empty">Cargando...</div>
+  </div>
+</div>
+
+<!-- MODAL: Nueva / Editar empresa -->
+<div class="modal-overlay" id="modalEmpresa">
+  <div class="modal">
+    <div class="modal-header">
+      <h2 id="modalEmpresaTitulo">Nueva empresa</h2>
+      <button class="modal-close" onclick="cerrarModal('modalEmpresa')">×</button>
+    </div>
+    <div class="modal-body">
+      <input type="hidden" id="empresaId">
+      <div class="form-group">
+        <label>Nombre de la agencia *</label>
+        <input type="text" id="empresaNombre" placeholder="Ej: Viajes López">
+      </div>
+      <div class="form-group">
+        <label>Dominio</label>
+        <input type="text" id="empresaDominio" placeholder="Ej: viajeslopez.com">
+        <div class="form-hint">El dominio que se usará para CORS (podés dejarlo vacío por ahora)</div>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="cerrarModal('modalEmpresa')">Cancelar</button>
+      <button class="btn btn-primary" onclick="guardarEmpresa()" id="btnGuardarEmpresa">Guardar</button>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL: Usuarios de una empresa -->
+<div class="modal-overlay" id="modalUsuarios">
+  <div class="modal" style="max-width:680px;">
+    <div class="modal-header">
+      <h2 id="modalUsuariosTitulo">Usuarios</h2>
+      <button class="modal-close" onclick="cerrarModal('modalUsuarios')">×</button>
+    </div>
+    <div class="modal-body">
+      <div id="usuariosContent"></div>
+      <hr style="margin:20px 0; border:none; border-top:1px solid #eee;">
+      <h3 style="font-size:14px; font-weight:700; margin-bottom:14px; color:#444;">Crear usuario</h3>
+      <input type="hidden" id="nuevaEmpresaId">
+      <div style="display:grid; grid-template-columns:1fr 1fr; gap:12px;">
+        <div class="form-group">
+          <label>Nombre completo *</label>
+          <input type="text" id="nuevoNombre" placeholder="Juan García">
+        </div>
+        <div class="form-group">
+          <label>Usuario (login) *</label>
+          <input type="text" id="nuevoUsuario" placeholder="jgarcia">
+        </div>
+        <div class="form-group">
+          <label>Contraseña *</label>
+          <input type="password" id="nuevoPassword" placeholder="Mínimo 6 caracteres">
+        </div>
+        <div class="form-group">
+          <label>Rol</label>
+          <select id="nuevoRol">
+            <option value="admin">Admin</option>
+            <option value="vendedor">Vendedor</option>
+          </select>
+        </div>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="cerrarModal('modalUsuarios')">Cerrar</button>
+      <button class="btn btn-gold" onclick="crearUsuario()" id="btnCrearUsuario">Crear usuario</button>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL: Cambiar contraseña -->
+<div class="modal-overlay" id="modalPassword">
+  <div class="modal" style="max-width:400px;">
+    <div class="modal-header">
+      <h2>Cambiar contraseña</h2>
+      <button class="modal-close" onclick="cerrarModal('modalPassword')">×</button>
+    </div>
+    <div class="modal-body">
+      <input type="hidden" id="pwdUsuarioId">
+      <p id="pwdUsuarioNombre" style="font-size:14px; color:#555; margin-bottom:16px;"></p>
+      <div class="form-group">
+        <label>Nueva contraseña *</label>
+        <input type="password" id="nuevaPassword" placeholder="Mínimo 6 caracteres">
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="cerrarModal('modalPassword')">Cancelar</button>
+      <button class="btn btn-primary" onclick="guardarPassword()">Guardar</button>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+let empresasData = [];
+let empresaEditandoId = null;
+let empresaUsuariosActual = null;
+
+// ── Init ────────────────────────────────────────────────────────
+document.addEventListener('DOMContentLoaded', async () => {
+  // Verificar que es superadmin
+  try {
+    const me = await fetch('/api/me').then(r => r.json());
+    if (!me.ok || me.usuario !== 'guido') {
+      alert('Acceso denegado. Solo disponible para el administrador principal.');
+      window.location.href = '/';
+      return;
+    }
+  } catch(e) {
+    window.location.href = '/login';
+    return;
+  }
+
+  document.getElementById('btnLogout').addEventListener('click', async (e) => {
+    e.preventDefault();
+    await fetch('/api/logout', { method: 'POST' });
+    window.location.href = '/login';
+  });
+
+  cargarEmpresas();
+});
+
+// ── Cargar empresas ─────────────────────────────────────────────
+async function cargarEmpresas() {
+  try {
+    const r = await fetch('/superadmin/empresas').then(r => r.json());
+    if (!r.ok) throw new Error(r.error);
+    empresasData = r.empresas;
+    renderEmpresas();
+    renderStats();
+  } catch(e) {
+    document.getElementById('empresasGrid').innerHTML = `<div class="empty">Error cargando empresas: ${e.message}</div>`;
+  }
+}
+
+function renderStats() {
+  const activas = empresasData.filter(e => e.activo).length;
+  const usuarios = empresasData.reduce((s, e) => s + parseInt(e.usuarios_activos || 0), 0);
+  const reservas = empresasData.reduce((s, e) => s + parseInt(e.total_reservas || 0), 0);
+  const stats = document.getElementById('statsGlobal');
+  stats.children[0].querySelector('.num').textContent = activas;
+  stats.children[1].querySelector('.num').textContent = usuarios;
+  stats.children[2].querySelector('.num').textContent = reservas;
+}
+
+function renderEmpresas() {
+  const grid = document.getElementById('empresasGrid');
+  if (!empresasData.length) {
+    grid.innerHTML = '<div class="empty">No hay empresas todavía</div>';
+    return;
+  }
+
+  grid.innerHTML = empresasData.map(e => {
+    const vol = parseFloat(e.volumen_usd || 0);
+    const volStr = vol > 0 ? 'USD ' + vol.toLocaleString('es-AR', {maximumFractionDigits:0}) : '—';
+    return `
+    <div class="empresa-card ${e.activo ? '' : 'inactiva'}" id="card-empresa-${e.id}">
+      <div class="card-top">
+        <div class="info">
+          <h3>${esc(e.nombre)}</h3>
+          <div class="dominio">${e.dominio ? '🌐 ' + esc(e.dominio) : '<span style="color:#ccc">Sin dominio</span>'}</div>
+          <div class="eid">ID: ${e.id}</div>
+        </div>
+        <span class="badge-${e.activo ? 'activa' : 'inactiva'}">${e.activo ? 'Activa' : 'Inactiva'}</span>
+      </div>
+      <div class="card-stats">
+        <div class="cs">
+          <div class="cn">${e.usuarios_activos || 0}</div>
+          <div class="cl">Usuarios</div>
+        </div>
+        <div class="cs em">
+          <div class="cn">${e.reservas_emitidas || 0}</div>
+          <div class="cl">Emitidas</div>
+        </div>
+        <div class="cs vol">
+          <div class="cn">${volStr}</div>
+          <div class="cl">Volumen</div>
+        </div>
+      </div>
+      <div class="card-actions">
+        <button class="btn btn-ghost btn-sm" onclick="abrirUsuarios(${e.id}, '${esc(e.nombre)}')">👥 Usuarios</button>
+        <button class="btn btn-ghost btn-sm" onclick="abrirEditarEmpresa(${e.id})">✏️ Editar</button>
+        ${e.activo
+          ? `<button class="btn btn-danger btn-sm" onclick="toggleEmpresa(${e.id}, false)">⏸ Desactivar</button>`
+          : `<button class="btn btn-success btn-sm" onclick="toggleEmpresa(${e.id}, true)">▶ Activar</button>`
+        }
+      </div>
+    </div>`;
+  }).join('');
+}
+
+// ── Nueva empresa ───────────────────────────────────────────────
+function abrirModalNuevaEmpresa() {
+  empresaEditandoId = null;
+  document.getElementById('empresaId').value = '';
+  document.getElementById('empresaNombre').value = '';
+  document.getElementById('empresaDominio').value = '';
+  document.getElementById('modalEmpresaTitulo').textContent = 'Nueva empresa';
+  document.getElementById('btnGuardarEmpresa').textContent = 'Crear empresa';
+  abrirModal('modalEmpresa');
+}
+
+function abrirEditarEmpresa(id) {
+  const e = empresasData.find(x => x.id == id);
+  if (!e) return;
+  empresaEditandoId = id;
+  document.getElementById('empresaId').value = id;
+  document.getElementById('empresaNombre').value = e.nombre;
+  document.getElementById('empresaDominio').value = e.dominio || '';
+  document.getElementById('modalEmpresaTitulo').textContent = 'Editar empresa';
+  document.getElementById('btnGuardarEmpresa').textContent = 'Guardar cambios';
+  abrirModal('modalEmpresa');
+}
+
+async function guardarEmpresa() {
+  const nombre = document.getElementById('empresaNombre').value.trim();
+  const dominio = document.getElementById('empresaDominio').value.trim();
+  if (!nombre) return toast('El nombre es requerido', 'error');
+
+  const btn = document.getElementById('btnGuardarEmpresa');
+  btn.innerHTML = '<span class="spinner"></span>';
+  btn.disabled = true;
+
+  try {
+    let r;
+    if (empresaEditandoId) {
+      r = await fetch(`/superadmin/empresas/${empresaEditandoId}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ nombre, dominio })
+      }).then(r => r.json());
+    } else {
+      r = await fetch('/superadmin/empresas', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ nombre, dominio })
+      }).then(r => r.json());
+    }
+
+    if (!r.ok) throw new Error(r.error);
+    cerrarModal('modalEmpresa');
+    toast(empresaEditandoId ? 'Empresa actualizada ✓' : 'Empresa creada ✓', 'success');
+    cargarEmpresas();
+  } catch(e) {
+    toast(e.message, 'error');
+  } finally {
+    btn.innerHTML = empresaEditandoId ? 'Guardar cambios' : 'Crear empresa';
+    btn.disabled = false;
+  }
+}
+
+// ── Toggle empresa ──────────────────────────────────────────────
+async function toggleEmpresa(id, activo) {
+  const e = empresasData.find(x => x.id == id);
+  const accion = activo ? 'activar' : 'desactivar';
+  if (!confirm(`¿${accion.charAt(0).toUpperCase() + accion.slice(1)} "${e?.nombre}"?${!activo ? '\n\nEsto también desactivará todos sus usuarios.' : ''}`)) return;
+
+  try {
+    const r = await fetch(`/superadmin/empresas/${id}/estado`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ activo })
+    }).then(r => r.json());
+    if (!r.ok) throw new Error(r.error);
+    toast(`Empresa ${activo ? 'activada' : 'desactivada'} ✓`, 'success');
+    cargarEmpresas();
+  } catch(e) { toast(e.message, 'error'); }
+}
+
+// ── Usuarios ────────────────────────────────────────────────────
+async function abrirUsuarios(empresaId, nombreEmpresa) {
+  empresaUsuariosActual = empresaId;
+  document.getElementById('nuevaEmpresaId').value = empresaId;
+  document.getElementById('modalUsuariosTitulo').textContent = `Usuarios — ${nombreEmpresa}`;
+  document.getElementById('nuevoNombre').value = '';
+  document.getElementById('nuevoUsuario').value = '';
+  document.getElementById('nuevoPassword').value = '';
+  document.getElementById('nuevoRol').value = 'admin';
+  document.getElementById('usuariosContent').innerHTML = '<div class="empty">Cargando...</div>';
+  abrirModal('modalUsuarios');
+  await recargarUsuarios(empresaId);
+}
+
+async function recargarUsuarios(empresaId) {
+  try {
+    const r = await fetch(`/superadmin/empresas/${empresaId}/usuarios`).then(r => r.json());
+    if (!r.ok) throw new Error(r.error);
+
+    if (!r.usuarios.length) {
+      document.getElementById('usuariosContent').innerHTML = '<div class="empty">Sin usuarios todavía</div>';
+      return;
+    }
+
+    document.getElementById('usuariosContent').innerHTML = `
+      <table class="usuarios-table">
+        <thead>
+          <tr>
+            <th>Nombre</th>
+            <th>Usuario</th>
+            <th>Rol</th>
+            <th>Estado</th>
+            <th>Acciones</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${r.usuarios.map(u => `
+            <tr>
+              <td><strong>${esc(u.nombre)}</strong></td>
+              <td style="font-family:monospace; font-size:12px;">${esc(u.usuario)}</td>
+              <td><span class="rol-badge rol-${u.rol}">${u.rol}</span></td>
+              <td>
+                ${u.activo
+                  ? '<span style="color:#27ae60; font-size:12px;">● Activo</span>'
+                  : '<span style="color:#e74c3c; font-size:12px;">● Inactivo</span>'
+                }
+              </td>
+              <td style="display:flex; gap:6px; flex-wrap:wrap;">
+                <button class="btn btn-ghost btn-sm" onclick="abrirCambiarPassword(${u.id}, '${esc(u.nombre)}')">🔑</button>
+                ${u.activo
+                  ? `<button class="btn btn-danger btn-sm" onclick="toggleUsuario(${u.id}, false, ${empresaUsuariosActual})">Desactivar</button>`
+                  : `<button class="btn btn-success btn-sm" onclick="toggleUsuario(${u.id}, true, ${empresaUsuariosActual})">Activar</button>`
+                }
+              </td>
+            </tr>
+          `).join('')}
+        </tbody>
+      </table>
+    `;
+  } catch(e) {
+    document.getElementById('usuariosContent').innerHTML = `<div class="empty">Error: ${e.message}</div>`;
+  }
+}
+
+async function crearUsuario() {
+  const empresaId = document.getElementById('nuevaEmpresaId').value;
+  const nombre = document.getElementById('nuevoNombre').value.trim();
+  const usuario = document.getElementById('nuevoUsuario').value.trim();
+  const password = document.getElementById('nuevoPassword').value;
+  const rol = document.getElementById('nuevoRol').value;
+
+  if (!nombre || !usuario || !password) return toast('Completá todos los campos', 'error');
+  if (password.length < 6) return toast('Contraseña mínimo 6 caracteres', 'error');
+
+  const btn = document.getElementById('btnCrearUsuario');
+  btn.innerHTML = '<span class="spinner"></span>';
+  btn.disabled = true;
+
+  try {
+    const r = await fetch(`/superadmin/empresas/${empresaId}/usuarios`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ nombre, usuario, password, rol })
+    }).then(r => r.json());
+
+    if (!r.ok) throw new Error(r.error);
+    toast('Usuario creado ✓', 'success');
+    document.getElementById('nuevoNombre').value = '';
+    document.getElementById('nuevoUsuario').value = '';
+    document.getElementById('nuevoPassword').value = '';
+    await recargarUsuarios(empresaId);
+  } catch(e) {
+    toast(e.message, 'error');
+  } finally {
+    btn.innerHTML = 'Crear usuario';
+    btn.disabled = false;
+  }
+}
+
+async function toggleUsuario(userId, activo, empresaId) {
+  try {
+    const r = await fetch(`/superadmin/usuarios/${userId}/estado`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ activo })
+    }).then(r => r.json());
+    if (!r.ok) throw new Error(r.error);
+    toast(`Usuario ${activo ? 'activado' : 'desactivado'} ✓`, 'success');
+    await recargarUsuarios(empresaId);
+  } catch(e) { toast(e.message, 'error'); }
+}
+
+function abrirCambiarPassword(userId, nombre) {
+  document.getElementById('pwdUsuarioId').value = userId;
+  document.getElementById('pwdUsuarioNombre').textContent = `Usuario: ${nombre}`;
+  document.getElementById('nuevaPassword').value = '';
+  abrirModal('modalPassword');
+}
+
+async function guardarPassword() {
+  const userId = document.getElementById('pwdUsuarioId').value;
+  const password = document.getElementById('nuevaPassword').value;
+  if (!password || password.length < 6) return toast('Contraseña mínimo 6 caracteres', 'error');
+
+  try {
+    const r = await fetch(`/superadmin/usuarios/${userId}/password`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ password })
+    }).then(r => r.json());
+    if (!r.ok) throw new Error(r.error);
+    cerrarModal('modalPassword');
+    toast('Contraseña actualizada ✓', 'success');
+  } catch(e) { toast(e.message, 'error'); }
+}
+
+// ── Helpers ─────────────────────────────────────────────────────
+function abrirModal(id) { document.getElementById(id).classList.add('show'); }
+function cerrarModal(id) { document.getElementById(id).classList.remove('show'); }
+
+function toast(msg, tipo = '') {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.className = `toast show ${tipo}`;
+  setTimeout(() => { t.classList.remove('show'); }, 3000);
+}
+
+function esc(str) {
+  return String(str || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
+}
+
+// Cerrar modal al clickear fuera
+document.querySelectorAll('.modal-overlay').forEach(el => {
+  el.addEventListener('click', e => { if (e.target === el) el.classList.remove('show'); });
+});
+</script>
+</body>
+</html>
