@@ -6185,3 +6185,24 @@ app.put('/superadmin/usuarios/:id/password', requireSuperAdmin, async (req, res)
     res.json({ ok: true });
   } catch(e) { res.json({ ok: false, error: e.message }); }
 });
+// ─── GENERAR DOC (Voucher / Confirmación) con LibreOffice ───
+const { execFile } = require('child_process');
+app.post('/generar-doc', async (req, res) => {
+  const { tipo, datos } = req.body;
+  if (!tipo || !datos) return res.json({ ok: false, error: 'Faltan tipo o datos' });
+  const scriptPath = require('path').join(__dirname, 'generar_docs.py');
+  const jsonStr = JSON.stringify(datos);
+  execFile('python3', [scriptPath, tipo, jsonStr], { maxBuffer: 20 * 1024 * 1024, timeout: 90000 }, (err, stdout, stderr) => {
+    if (err) {
+      console.error('[GenDoc] Error:', err.message, stderr);
+      return res.json({ ok: false, error: err.message });
+    }
+    try {
+      const result = JSON.parse(stdout.trim());
+      res.json(result);
+    } catch(e) {
+      console.error('[GenDoc] Parse error:', stdout.substring(0, 300));
+      res.json({ ok: false, error: 'Respuesta inválida del script' });
+    }
+  });
+});
