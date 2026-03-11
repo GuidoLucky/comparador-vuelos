@@ -1,8 +1,8 @@
 [phases.setup]
-aptPkgs = ['fonts-dejavu-core', 'python3', 'python3-pip']
+aptPkgs = ['fonts-dejavu-core', 'python3', 'python3-pip', 'libreoffice']
 
 [phases.install]
-cmds = ['npm install', 'pip install reportlab --break-system-packages']
+cmds = ['npm install', 'pip install reportlab python-pptx openpyxl --break-system-packages']
 
 [start]
 cmd = 'node server.js'
