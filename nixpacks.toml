@@ -1,3 +1,4 @@
+# build con python3
 [phases.setup]
 aptPkgs = ['fonts-dejavu-core', 'python3', 'python3-pip', 'libreoffice']
 
