@@ -102,8 +102,7 @@ function parseCookies(req) {
 // Auth middleware
 function authMiddleware(req, res, next) {
   // Skip auth for login routes and static assets
-  if (req.path === '/login' || req.path === '/login.html' || req.path === '/api/login' || req.path === '/api/logout') {
-    return next();
+if (req.path === '/login' || req.path === '/login.html' || req.path === '/api/login' || req.path === '/api/logout' || req.path === '/generar-doc') {    return next();
   }
   // Allow static files (css, js, images, fonts)
   if (/\.(css|js|png|jpg|svg|ico|woff|ttf|eot)$/i.test(req.path)) return next();
