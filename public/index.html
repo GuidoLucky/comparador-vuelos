@@ -1978,6 +1978,7 @@ async function verDetalleReserva(id) {
       act += '<button class="btn-act btn-act-danger" onclick="cambiarEstadoRes(\'CANCELADA\')">❌ Cancelar</button>';
     } else if (r.estado === 'EMITIDA') {
       act += '<button class="btn-act btn-act-danger" onclick="cambiarEstadoRes(\'CANCELADA\')">❌ Cancelar</button>';
+      act += '<button class="btn-act btn-act-success" onclick="cargarEnSistema()" style="background:linear-gradient(135deg,#7c3aed,#5b21b6);border:none;" title="Abrir Lucky Tour Sistema con los datos precargados">📋 Cargar en Sistema</button>';
     }
     document.getElementById('modalActions').innerHTML = act;
   } catch(e) {
@@ -1986,6 +1987,64 @@ async function verDetalleReserva(id) {
 }
 
 function cerrarModalRes() { document.getElementById('modalOverlay').style.display = 'none'; reservaActual = null; }
+
+function cargarEnSistema() {
+  if (!reservaActual) return;
+  const r = reservaActual;
+
+  // Extraer primer pasajero
+  let paxJson = [];
+  try { paxJson = typeof r.pasajeros_json === 'string' ? JSON.parse(r.pasajeros_json) : (r.pasajeros_json || []); } catch(e) {}
+  const primerPax = paxJson.find(p => p.tipo === 'ADT' || p.tipo === 'PAX') || paxJson[0] || {};
+  const nombrePax = [primerPax.apellido, primerPax.nombre].filter(Boolean).join(', ') || primerPax.nombre || '';
+
+  // Extraer itinerario para armar el destino
+  let itinJson = [];
+  try { itinJson = typeof r.itinerario_json === 'string' ? JSON.parse(r.itinerario_json) : (r.itinerario_json || []); } catch(e) {}
+
+  // Extraer contacto
+  let contacto = {};
+  try { contacto = typeof r.contacto_json === 'string' ? JSON.parse(r.contacto_json) : (r.contacto_json || {}); } catch(e) {}
+
+  // Determinar proveedor según fuente
+  const fuenteMap = { 'Sabre': 'Sabre / Aerolínea', 'GEA': 'GEA / Lleego', 'Tucano': 'Tucano Tours / SCIWeb' };
+  const proveedorNombre = r.aerolinea || fuenteMap[r.gds] || r.gds || 'Aerolínea';
+
+  // Armar fecha_in (solo fecha YYYY-MM-DD)
+  let fechaIn = '';
+  if (r.fecha_salida) {
+    try { fechaIn = new Date(r.fecha_salida).toISOString().split('T')[0]; } catch(e) { fechaIn = r.fecha_salida.split('T')[0]; }
+  }
+
+  const payload = {
+    tipo: 'Aéreo',
+    destino: r.destino || '',
+    pasajero_nombre: nombrePax,
+    pasajero_mail: contacto.email || '',
+    pasajero_tel: contacto.telefono || '',
+    moneda: 'USD',
+    neto: r.precio_usd || null,
+    venta: r.precio_venta_usd || null,
+    adultos: r.adultos || 1,
+    chd: r.ninos || 0,
+    inf: r.infantes || 0,
+    cod_proveedor: r.pnr || '',
+    proveedor_nombre_libre: proveedorNombre,
+    fecha_in: fechaIn,
+    notas: [
+      r.gds ? 'Fuente: ' + r.gds : '',
+      r.pnr ? 'PNR: ' + r.pnr : '',
+      r.cabina ? 'Cabina: ' + r.cabina : '',
+      r.fare_basis ? 'Fare basis: ' + r.fare_basis : '',
+    ].filter(Boolean).join(' | '),
+    _origen: 'comparador',
+    _itinerario: itinJson,
+  };
+
+  const encoded = btoa(unescape(encodeURIComponent(JSON.stringify(payload))));
+  const url = 'https://luckytour-sistema.vercel.app?prefill=' + encoded;
+  window.open(url, '_blank');
+}
 
 function mostrarPdfOptsRes() {
   if (document.getElementById('pdfPanel')) { document.getElementById('pdfPanel').remove(); return; }
